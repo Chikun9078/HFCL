@@ -1,0 +1,1763 @@
+Development 5
+-------------------------
+Payment Recipt Smartform
+--------------------------------------------------------------------------------------------------------------------
+
+
+
+--------------------------------------------------------------------------------------------------------------------
+Package                        : ZFI
+TR                             : DFHK909351                      FI: Payment Recipt Form (released 13-08-2024)
+
+D. program                     : ZFI_PAYMENT_RECIEPT_PRINT       FI:PRNT: Payment Reciept Report
+smartform                      : ZFISF_PAYMENT_RECIEPT_FORM      FI:SMFM:Pyment Reciept Form          
+smartstyle                     : ZFISF_PAYMENT_RECIPT_STYLE      FI:SF:STYLE:Payment Recipt Sty        
+TCode                          : zfi0048                         FI: Payment Recipt Smartform
+
+header structure               : ZFI_PAYMENT_RECIPT_HEADER_ST    FI: Structure for Payment Recipt Header      
+item   structure               : ZFI_PAYMENT_RECIPT_ITEM_ST      FI: Structure for Payment Recipt ITEM  
+item   table type              : ZFI_PAYMENT_RECIPT_ITEM_TT      FI: Table type for Payment Recipt ITEM 
+
+----------------------------------------------------------------------------------------------------------------------
+REPORT zfi_payment_reciept_report.
+TYPES: BEGIN OF ty_bkpf,
+         belnr LIKE bkpf-belnr,
+         bukrs LIKE bkpf-bukrs,
+         gjahr LIKE bkpf-gjahr,
+         blart LIKE bkpf-blart,
+         budat LIKE bkpf-budat,
+       END OF ty_bkpf.
+
+TYPES : BEGIN OF ty_bseg,
+          bukrs LIKE bseg-bukrs,
+          belnr LIKE bseg-belnr,
+          gjahr LIKE bseg-gjahr,
+          koart LIKE bseg-koart,
+          bupla LIKE bseg-bupla,
+          vbel2 LIKE bseg-vbel2,
+          posn2 LIKE bseg-posn2,
+          dmbtr LIKE bseg-dmbtr,
+          gsber LIKE bseg-gsber,
+          mwskz LIKE bseg-mwskz,
+        END OF ty_bseg.
+
+TYPES :BEGIN OF ty_j1bbranch,
+         bukrs      LIKE bseg-bukrs,
+         branch     LIKE j_1bbranch-branch,
+         adrnr      LIKE j_1bbranch-adrnr,
+         gstin      LIKE j_1bbranch-gstin,
+         city1      LIKE adrc-city1,
+         region     LIKE adrc-region,
+         street     LIKE adrc-street,
+         str_suppl3 LIKE adrc-str_suppl3,
+         post_code1 LIKE adrc-post_code1,
+         tel_number LIKE adrc-tel_number,
+         fax_number LIKE adrc-fax_number,
+       END OF ty_j1bbranch.
+
+TYPES: BEGIN OF ty_vbkd,
+         vbeln LIKE vbkd-vbeln,
+         bstkd LIKE vbkd-bstkd,
+         bstdk LIKE vbkd-bstdk,
+       END OF ty_vbkd.
+
+TYPES: BEGIN OF ty_bill_paying,
+         vbeln      LIKE vbak-vbeln,
+         parvw      LIKE vbpa-parvw,
+         adrnr      LIKE vbpa-adrnr,
+         kunnr      LIKE kna1-kunnr,
+         land1      LIKE kna1-land1,
+         name1      LIKE kna1-name1,
+         street     LIKE adrc-street,
+         mc_street  LIKE adrc-mc_street,
+         mc_city1   LIKE adrc-mc_city1,
+         post_code1 LIKE adrc-post_code1,
+         regio      LIKE adrc-region,
+         j_1ipanno  LIKE kna1-j_1ipanno,
+         stcd3      LIKE kna1-stcd3,
+         bezei      LIKE t005u-bezei,
+       END OF ty_bill_paying.
+
+TYPES: BEGIN OF ty_srv_desc,
+         belnr    TYPE belnr_d,
+         tdobject TYPE tdobject,
+         tdname   TYPE tdobname,
+         tdid     TYPE tdid,
+         tdspras  TYPE spras,
+         tdline   TYPE tdline,
+       END OF ty_srv_desc.
+
+TYPES: BEGIN OF ty_hsn,
+         vbeln TYPE vbeln_va,
+         posnr TYPE posnr_va,
+         matnr TYPE matnr,
+         gsber TYPE gsber,
+         steuc LIKE marc-steuc,
+       END OF ty_hsn.
+
+TYPES: BEGIN OF ty_taxable,
+         bukrs LIKE bseg-bukrs,
+         belnr LIKE bseg-belnr,
+         gjahr LIKE bseg-gjahr,
+         hkont LIKE bseg-hkont,
+         dmbtr LIKE bseg-dmbtr,
+       END OF ty_taxable.
+
+TYPES : BEGIN OF ty_gstrate,
+          kappl LIKE a003-kappl,
+          kschl LIKE a003-kschl,
+          aland LIKE a003-aland,
+          mwskz LIKE a003-mwskz,
+          knumh LIKE a003-knumh,
+          kbetr LIKE konp-kbetr,
+        END OF ty_gstrate.
+
+TYPES:BEGIN OF ty_gstamount,
+        bukrs LIKE bseg-bukrs,
+        belnr LIKE bseg-belnr,
+        gjahr LIKE bseg-gjahr,
+        ktosl LIKE bseg-ktosl,
+        dmbtr LIKE bseg-dmbtr,
+      END OF ty_gstamount.
+
+DATA: lv_belnr  TYPE belnr_d,
+      lv_tdname TYPE thead-tdname,
+      lv_word   TYPE char50,
+      lv_result TYPE ZCHAR600.
+
+DATA: lv_TL_CGST           TYPE	dmbrt,
+      lv_TL_SGST           TYPE dmbrt,
+      lv_TL_IGST           TYPE dmbrt,
+      lv_TL_ADVANCE        TYPE dmbrt,
+      lv_TL_TAXABLE        TYPE dmbrt,
+      lv_TOTAL_TAX_AMOUNT  TYPE dmbrt,
+      lv_TOTAL_AMOUNT      TYPE dmbrt,
+      lv_TOTAL_TAX_WORD    TYPE ZCHAR600,
+      lv_TOTAL_AMOUNT_WORD TYPE ZCHAR600.
+
+DATA: ls_srv_desc TYPE ty_srv_desc,
+      ls_header   TYPE zfi_payment_recipt_header_st,
+      ls_item     TYPE zfi_payment_recipt_item_st.
+
+DATA: lt_bkpf        TYPE TABLE OF ty_bkpf,
+      lt_bseg        TYPE TABLE OF ty_bseg,
+      lt_j1bbranch   TYPE TABLE OF ty_j1bbranch,
+      lt_vbkd        TYPE TABLE OF ty_vbkd,
+      lt_bill_paying TYPE TABLE OF ty_bill_paying,
+      lt_srv_desc    TYPE TABLE OF ty_srv_desc,
+      lt_tab         TYPE TABLE OF tline,
+      lt_hsn         TYPE TABLE OF ty_hsn,
+      lt_taxable     TYPE TABLE OF ty_taxable,
+      lt_gst_rate    TYPE TABLE OF ty_gstrate,
+      lt_gst_amount  TYPE TABLE OF ty_gstamount,
+      lt_header      TYPE TABLE OF zfi_payment_recipt_header_st,
+      lt_item        TYPE TABLE OF zfi_payment_recipt_item_st.
+
+DATA : lv_formname           TYPE  tdsfname,
+       lv_fm_name            TYPE  rs38l_fnam,
+       ls_output_options     TYPE  ssfcompop,
+       ls_control_parameters TYPE  ssfctrlop,
+       ls_job_output_info    TYPE  ssfcrescl,
+       ls_FNL_output_info    TYPE  ssfcrescl.
+
+DATA: es_header TYPE zfi_payment_recipt_header_st,
+      et_item   TYPE TABLE OF zfi_payment_recipt_item_st.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS : s_belnr FOR lv_belnr OBLIGATORY.                                 " Document Number
+  PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY ,                                       " companny code
+              p_GJAHR TYPE gjahr OBLIGATORY .                                       " Fiscal year
+SELECTION-SCREEN END OF BLOCK b1 .
+
+START-OF-SELECTION.
+  "--> Validation check.....
+  SELECT belnr,bukrs,gjahr,blart,budat
+  FROM bkpf
+  INTO TABLE @lt_bkpf
+  WHERE belnr IN @s_belnr AND
+        bukrs  = @p_bukrs AND
+        gjahr  = @p_gjahr AND
+        blart  = 'DI'.
+
+  "    * if lt_bkpf have data then only smartform will be print/Continue the process .
+  "    * otherwise it will show error message.
+  IF lt_bkpf IS NOT INITIAL.
+    PERFORM get_data.
+    PERFORM process_data.
+    PERFORM display_data.
+  ELSE.
+    MESSAGE 'No record exists for this combination/Document Type for Payment Reciept(DI) is not Present for the Document.' TYPE 'I' DISPLAY LIKE 'E'.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_header_data.
+  PERFORM get_item_data.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form GET_HEADER_DATA
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_data .
+  PERFORM get_bseg_data.
+  PERFORM get_J1BBRANCH_data.
+  PERFORM get_vbkd_data.
+  PERFORM get_bill_paying_data.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_ITEM_DATA
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_ITEM_data .
+  PERFORM get_desc_service_data.
+  PERFORM get_hsn_data.
+  PERFORM get_taxable_amount_data.
+  PERFORM get_gst_rate_data.
+  PERFORM get_gst_amount_data.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  PERFORM get_header_result.
+  PERFORM get_item_result.
+
+  CLEAR : ls_header.
+  LOOP AT lt_header INTO ls_header.
+
+    CLEAR:lv_TL_CGST ,lv_TL_SGST,lv_TL_IGST,
+          lv_TL_ADVANCE,lv_TL_TAXABLE,lv_TOTAL_TAX_AMOUNT,
+          lv_TOTAL_AMOUNT,lv_TOTAL_TAX_WORD,lv_TOTAL_AMOUNT_WORD.
+
+    "--> calculate the total Advance amount,taxable amount,cgst,sgst,igst,totsl tax,total amount(inc tax)..
+    LOOP AT  lt_item INTO DATA(ls_item).
+      IF ls_item-recipt_no EQ ls_header-recipt_no.
+        lv_tl_advance       = lv_tl_advance       + ls_item-advance_amount.
+        lv_tl_taxable       = lv_tl_taxable       + ls_item-taxable_amount.
+        lv_tl_cgst          = lv_tl_cgst          + ls_item-cgst_amount.
+        lv_tl_sgst          = lv_tl_sgst          + ls_item-sgst_amount.
+        lv_tl_igst          = lv_tl_igst          + ls_item-igst_amount.
+        lv_total_tax_amount = lv_total_tax_amount + ls_item-total_tax.
+        lv_total_amount     = lv_total_amount     + ls_item-total_amount.
+      ENDIF.
+      CLEAR: ls_item.
+    ENDLOOP.
+
+    "--> convert Total Tax Tmount & Total Amount(Incl. Tax) in word..
+    CALL FUNCTION 'HR_IN_CHG_INR_WRDS'
+      EXPORTING
+        amt_in_num         = CONV pc207-betrg( lv_total_tax_amount )
+      IMPORTING
+        amt_in_words       = lv_total_tax_word
+      EXCEPTIONS
+        data_type_mismatch = 1
+        OTHERS             = 2.
+    IF sy-subrc <> 0.
+      " Implement suitable error handling here
+    ENDIF.
+
+    TRANSLATE lv_total_tax_word TO LOWER CASE .
+    SPLIT lv_total_tax_word AT space INTO TABLE DATA(itab) .
+    LOOP AT itab ASSIGNING  FIELD-SYMBOL(<temp>) .
+      lv_word = <temp> .
+      TRANSLATE lv_word+0(1) TO UPPER CASE .
+      CONCATENATE lv_result lv_word INTO lv_result SEPARATED BY space .
+    ENDLOOP .
+    lv_total_tax_word = lv_result.
+    CLEAR: lv_word,lv_result,itab.
+
+    CALL FUNCTION 'HR_IN_CHG_INR_WRDS'
+      EXPORTING
+        amt_in_num         = CONV pc207-betrg( lv_total_amount )
+      IMPORTING
+        amt_in_words       = lv_total_amount_word
+      EXCEPTIONS
+        data_type_mismatch = 1
+        OTHERS             = 2.
+    IF sy-subrc <> 0.
+      " Implement suitable error handling here
+    ENDIF.
+
+    TRANSLATE lv_total_amount_word TO LOWER CASE .
+    SPLIT lv_total_amount_word AT space INTO TABLE itab .
+    LOOP AT itab ASSIGNING <temp> .
+      lv_word = <temp> .
+      TRANSLATE lv_word+0(1) TO UPPER CASE .
+      CONCATENATE  lv_result lv_word INTO lv_result SEPARATED BY space .
+    ENDLOOP .
+    lv_total_amount_word = lv_result.
+
+    ls_header-tl_advance        = lv_tl_advance.
+    ls_header-tl_taxable        = lv_tl_taxable.
+    ls_header-tl_cgst           = lv_tl_cgst.
+    ls_header-tl_sgst           = lv_tl_sgst.
+    ls_header-tl_igst           = lv_tl_igst.
+    ls_header-total_tax_amount  = lv_total_tax_amount.
+    ls_header-total_amount      = lv_total_amount.
+
+    ls_header-total_tax_word    = COND #( WHEN lv_total_tax_amount IS INITIAL THEN 'NIL'
+                                          ELSE |{ lv_total_tax_word } only|
+                                        ).
+    ls_header-total_amount_word = COND #( WHEN lv_total_amount IS INITIAL THEN 'NIL'
+                                          ELSE |{ lv_total_amount_word } only|
+                                        ).
+    MODIFY lt_header FROM ls_header.
+  ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+
+  CLEAR : lv_formname,lv_fm_name,ls_output_options,
+          ls_control_parameters,ls_fnL_output_info.
+
+  "--> Smartform Name..
+  lv_formname = 'ZFISF_PAYMENT_RECIEPT_FORM'.
+
+*  ls_output_options-tdcopies = 5.
+  ls_output_options-tddest   = 'LOCL'.
+
+  ls_control_parameters-preview   = 'X'.
+  ls_control_parameters-getotf    = 'X'.
+  ls_control_parameters-no_dialog = 'X'.
+*  ls_control_parameters-no_open   = 'X'.
+*  ls_control_parameters-no_close  = 'X'.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lv_formname
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = lv_fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+  IF lt_header IS NOT INITIAL.
+    CLEAR:es_header,ls_item.
+    LOOP AT lt_header INTO Ls_header.
+      es_header = ls_header.
+      LOOP AT lt_item INTO ls_item.
+        IF  ls_item-recipt_no EQ ls_header-recipt_no.
+          APPEND ls_item TO et_item.
+          CLEAR ls_item.
+        ENDIF.
+      ENDLOOP.
+
+      CALL FUNCTION lv_fm_name
+        EXPORTING
+          control_parameters = ls_control_parameters
+          output_options     = ls_output_options
+          user_settings      = ' '
+          ls_header          = es_header
+          lt_item            = et_item
+        IMPORTING
+          job_output_info    = ls_job_output_info
+        EXCEPTIONS
+          formatting_error   = 1
+          internal_error     = 2
+          send_error         = 3
+          user_canceled      = 4
+          OTHERS             = 5.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      CALL FUNCTION 'SSF_CLOSE'
+        IMPORTING
+          job_output_info  = ls_job_output_info
+        EXCEPTIONS
+          formatting_error = 1
+          internal_error   = 2
+          send_error       = 3
+          OTHERS           = 4.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+      CLEAR: ls_header,es_header,et_item,ls_job_output_info.
+    ENDLOOP.
+  ENDIF.
+
+  CALL FUNCTION 'HR_IT_DISPLAY_WITH_PDF'
+    TABLES
+      otf_table = ls_fnL_output_info-otfdata.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_bseg_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_bseg_data .
+  IF lt_bkpf IS NOT INITIAL .
+    SELECT bukrs,belnr,gjahr,koart,
+           bupla,vbel2,posn2,dmbtr,
+           gsber,mwskz
+    FROM bseg                                                            "#EC CI_NO_TRANSFORM
+    INTO TABLE @lt_bseg
+    FOR ALL ENTRIES IN @lt_bkpf                                            ""#EC CI_NOORDER
+    WHERE belnr = @lt_bkpf-belnr AND
+          bukrs = @lt_bkpf-bukrs AND
+          gjahr = @lt_bkpf-gjahr AND
+          koart = 'D'
+      .
+  ENDIF.
+
+  SORT  lt_bseg BY belnr.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_J1BBRANCH_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_J1BBRANCH_data .
+  IF lt_bseg IS NOT INITIAL.
+    SELECT a~bukrs,a~branch,a~adrnr,a~gstin,
+           b~city1,b~region,b~street,b~str_suppl3,
+           b~post_code1,b~tel_number,b~fax_number
+    FROM j_1bbranch AS a
+    LEFT OUTER JOIN adrc AS b ON a~adrnr = b~addrnumber                    "#EC CI_BUFFJOIN
+    FOR ALL ENTRIES IN @lt_bseg
+    WHERE bukrs  = @lt_bseg-bukrs AND
+          branch = @lt_bseg-bupla
+    INTO TABLE @lt_j1bbranch.
+  ENDIF.
+
+  SORT lt_j1bbranch BY bukrs branch.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_vbkd_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_vbkd_data .
+  IF lt_bseg IS NOT INITIAL.
+    SELECT vbeln,bstkd,bstdk
+    FROM vbkd
+    FOR ALL ENTRIES IN @lt_bseg
+    WHERE vbeln = @lt_bseg-vbel2
+    INTO TABLE @lt_vbkd.
+  ENDIF.
+
+  SORT lt_vbkd BY vbeln.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_bil_paying_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_bill_paying_data .
+  IF lt_bseg IS NOT INITIAL .
+    SELECT a~vbeln,a~parvw,a~adrnr,a~kunnr,a~land1,
+           b~name1,b~street,b~mc_street,b~mc_city1,b~post_code1,
+           c~regio,c~j_1ipanno,c~stcd3,
+           d~bezei
+    FROM vbpa AS a
+    LEFT OUTER JOIN adrc AS b ON a~adrnr = b~addrnumber
+    LEFT OUTER JOIN kna1 AS c ON a~kunnr = c~kunnr AND
+                                 a~land1 = c~land1
+    LEFT OUTER JOIN t005u AS d ON c~regio = d~bland AND                           "#EC CI_BUFFJOIN
+                                  a~land1 = d~land1 AND
+                                  d~spras = @sy-langu
+    FOR ALL ENTRIES IN @lt_bseg
+    WHERE a~vbeln = @lt_bseg-vbel2 AND
+          a~parvw IN ( 'RE','RG' )            "BP = RE & PY = RG (here these values are taken because fro value BP & PY no value fatching from vbap table)
+    INTO TABLE @lt_bill_paying.
+  ENDIF.
+
+  SORT lt_bill_paying BY vbeln parvw.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_desc_service
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_desc_service_data .
+
+  SELECT tdobject,tdname,tdid,tdspras                       "#EC CI_NOWHERE.
+     FROM stxh INTO TABLE @DATA(lt_stxh).
+
+  IF lt_bkpf IS NOT INITIAL .
+    LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+      lv_tdname = |{ p_bukrs }{ ls_bkpf-belnr }{ p_gjahr }001|.
+
+      SELECT SINGLE * FROM @lt_stxh AS stxh
+             WHERE stxh~tdname = @lv_tdname
+             INTO @DATA(ls_stxh).
+
+      IF sy-subrc EQ 0.
+        ls_srv_desc-belnr = ls_bkpf-belnr.
+        ls_srv_desc-tdid = ls_stxh-tdid.
+        ls_srv_desc-tdname = ls_stxh-tdname.
+        ls_srv_desc-tdobject = ls_stxh-tdobject.
+        ls_srv_desc-tdspras = ls_stxh-tdspras.
+
+        CALL FUNCTION 'READ_TEXT'                                      ##FM_SUBRC_OK
+          EXPORTING
+            client                  = sy-mandt                       " Client
+            id                      = ls_stxh-tdid                   " Text ID of text to be read
+            language                = ls_stxh-tdspras                " Language of text to be read
+            name                    = lv_tdname                      " Name of text to be read
+            object                  = ls_stxh-tdobject               " Object of text to be read
+          TABLES
+            lines                   = lt_tab                         " Lines of text read
+          EXCEPTIONS
+            id                      = 1                              " Text ID invalid
+            language                = 2                              " Invalid language
+            name                    = 3                              " Invalid text name
+            not_found               = 4                              " Text not found
+            object                  = 5                              " Invalid text object
+            reference_check         = 6                              " Reference chain interrupted
+            wrong_access_to_archive = 7                              " Archive handle invalid for access
+            OTHERS                  = 8.
+
+
+        READ TABLE lt_tab INTO DATA(ls_tab) INDEX 1.
+        IF sy-subrc EQ 0.
+          ls_srv_desc-tdline = ls_tab-tdline.
+        ENDIF.
+      ENDIF.
+      APPEND ls_srv_desc TO lt_srv_desc.
+      CLEAR :ls_srv_desc,ls_bkpf,ls_stxh,lv_tdname.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_srv_desc BY belnr .
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_hsn_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_hsn_data.
+  IF lt_bseg IS NOT INITIAL.
+
+    SELECT a~vbeln,a~posnr,a~matnr,a~gsber,
+           b~steuc
+      FROM vbap AS a
+      LEFT OUTER JOIN marc AS b ON a~matnr = b~matnr AND
+                                   a~gsber = b~werks
+      FOR ALL ENTRIES IN @lt_bseg
+      WHERE a~vbeln = @lt_bseg-vbel2 AND
+            a~posnr = @lt_bseg-posn2
+      INTO TABLE @lt_hsn.
+  ENDIF.
+
+  SORT lt_hsn BY vbeln posnr.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_taxable_amount_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_taxable_amount_data .
+  IF lt_bkpf IS NOT INITIAL.
+
+    SELECT bukrs,belnr,gjahr,hkont,dmbtr
+    FROM bseg
+    FOR ALL ENTRIES IN @lt_bkpf
+    WHERE bukrs = @lt_bkpf-bukrs AND
+          belnr = @lt_bkpf-belnr AND
+          gjahr = @lt_bkpf-gjahr AND
+          hkont IN ('0022040117','0022040118','0022040119')
+    INTO TABLE @lt_taxable.
+  ENDIF.
+
+  SORT lt_taxable BY belnr hkont.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_gst_rate_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_gst_rate_data .
+  IF  lt_bseg IS NOT INITIAL.
+
+    SELECT a~kappl,a~kschl,a~aland,
+           a~mwskz,a~knumh,
+           b~kbetr
+    FROM a003 AS a
+    LEFT OUTER JOIN konp AS b ON a~knumh = b~knumh                                       "#EC CI_BUFFJOIN
+    FOR ALL ENTRIES IN @lt_bseg
+    WHERE a~kappl = 'TX'          AND
+          a~aland = 'IN'          AND
+          a~mwskz = @lt_bseg-mwskz AND
+          a~kschl IN ('JOCG','JOSG','JOIG')
+    INTO TABLE @lt_gst_rate.
+  ENDIF.
+
+  SORT lt_gst_rate BY mwskz kschl.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_gst_amount_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_gst_amount_data .
+  IF lt_bkpf IS NOT INITIAL.
+
+    SELECT bukrs,belnr,gjahr,ktosl,dmbtr
+    FROM bseg                                             ""#EC CI_NOORDER
+    FOR ALL ENTRIES IN @lt_bkpf
+    WHERE belnr = @lt_bkpf-belnr AND
+          bukrs = @lt_bkpf-bukrs AND
+          gjahr = @lt_bkpf-gjahr AND
+          ktosl IN ('JOC','JOS','JOI')
+    INTO TABLE @lt_gst_amount
+     .
+  ENDIF.
+
+  SORT lt_gst_amount BY belnr ktosl.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_header_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_result .
+
+  IF  lt_bkpf IS NOT INITIAL.
+    LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+
+      IF ls_bkpf-bukrs EQ '1100'.
+        ls_header-bukrs            = ls_bkpf-bukrs.
+        ls_header-website          = 'www.hfcl.com'.                                                              "##NO_TEXT
+        ls_header-email            = 'sales.hfcl@hfcl.com'.                                                       "##NO_TEXT
+        ls_header-cin              = 'L64200HP1987PLC007466'.                                                     "##NO_TEXT
+        ls_header-pan              = 'AAACH4041D'.                                                                "##NO_TEXT
+        ls_header-plant_name       = 'HFCL Limited'.                                                              "##NO_TEXT
+        ls_header-plant_name_f     ='(Formerly Himachal Futuristic Comunications Limited )'.                      "##NO_TEXT
+        ls_header-head_office_adrc = |8,Commercial Complex,Masjid Moth,Greater Kailash II,New Delhi,110048|.      "##NO_TEXT
+
+      ELSEIF ls_bkpf-bukrs  EQ '1200'.
+        ls_header-bukrs            = ls_bkpf-bukrs.
+        ls_header-website          = 'www.htllimited.com'.                                                         "##NO_TEXT
+        ls_header-email            = 'sales.htl@htllimited.com'.                                                   "##NO_TEXT
+        ls_header-cin              = 'U93090TN1960PLC004355'.                                                      "##NO_TEXT
+        ls_header-pan              = 'AAACH5516'.                                                                  "##NO_TEXT
+        ls_header-plant_name       = 'HTL Limited'.                                                                "##NO_TEXT.                                                              "##NO_TEXT
+        ls_header-plant_name_f     ='(Formerly Hindustan Teleprinters Limited )'.                                  "##NO_TEXT                                                                             "##NO_TEXT
+        ls_header-head_office_adrc = |G.S.T. Road Guindy,Chennai,600032|.                                          "##NO_TEXT
+      ENDIF.
+
+      "--> Fetch recipt no,recipt date,form titel,fiscal year
+      ls_header-form_titel   = 'Receipt Voucher'.
+      ls_header-recipt_no    = ls_bkpf-belnr.
+      ls_header-recipt_date  = ls_bkpf-budat.
+      ls_header-gjahr        = ls_bkpf-gjahr.
+
+      READ TABLE lt_bseg INTO DATA(ls_bseg) WITH KEY belnr = ls_bkpf-belnr BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        "-->Fetch sales order no(vbel2).....
+        ls_header-sales_or_no = ls_bseg-vbel2.
+
+        "--> Fetch gstin,place of supplier(state & code),plant(Street,str_supl3,post,phone,fax)
+        READ TABLE lt_j1bbranch INTO DATA(ls_j1bbranch) WITH KEY bukrs = ls_bseg-bukrs
+                                                                 branch = ls_bseg-bupla BINARY SEARCH.
+        IF  sy-subrc EQ 0.
+          ls_header-gstin             = ls_j1bbranch-gstin.
+          ls_header-pos_state         = ls_j1bbranch-city1.
+          ls_header-pos_code          = ls_j1bbranch-region.
+          ls_header-plant_street      = ls_j1bbranch-street.
+          ls_header-plant_str_suppl3  = ls_j1bbranch-str_suppl3.
+          ls_header-plant_city1       = ls_j1bbranch-city1.
+          ls_header-plant_post_code1  = ls_j1bbranch-post_code1.
+          ls_header-plant_phoneno     = ls_j1bbranch-tel_number.
+          ls_header-plant_faxno       = ls_j1bbranch-fax_number.
+        ENDIF.
+
+        "--> Fetch purchase order no & Date............
+        READ TABLE lt_vbkd INTO DATA(ls_vbkd) WITH KEY vbeln = ls_bseg-vbel2 BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_header-purchase_or_no   = ls_vbkd-bstkd.
+          ls_header-purchase_or_date = ls_vbkd-bstdk.
+        ENDIF.
+
+        "--> Fetch "Billing To" Details...............
+        READ TABLE lt_bill_paying INTO DATA(ls_billing) WITH KEY vbeln = ls_bseg-vbel2
+                                                                 parvw = 'RE' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_header-bill_name1      = ls_billing-name1.
+          ls_header-bill_street     = ls_billing-street.
+          ls_header-bill_mc_street  = ls_billing-mc_street.
+          ls_header-bill_mc_city1   = ls_billing-mc_city1.
+          ls_header-bill_post_code1 = ls_billing-post_code1.
+          ls_header-bill_state_code = ls_billing-regio.
+          ls_header-bill_state_name = ls_billing-bezei.
+          ls_header-bill_gst_no     = ls_billing-stcd3.
+          ls_header-bill_pan_no     = ls_billing-j_1ipanno.
+
+        ENDIF.
+
+        "--> Fetch "Paying Authority" Details...............
+        READ TABLE lt_bill_paying INTO DATA(ls_paying) WITH KEY vbeln = ls_bseg-vbel2
+                                                                parvw = 'RG' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_header-paying_name1      = ls_paying-name1.
+          ls_header-paying_street     = ls_paying-street.
+          ls_header-paying_mc_street  = ls_billing-mc_street.
+          ls_header-paying_mc_city1   = ls_paying-mc_city1.
+          ls_header-paying_post_code1 = ls_paying-post_code1.
+          ls_header-paying_state_code = ls_paying-regio.
+          ls_header-paying_state_name = ls_paying-bezei.
+          ls_header-paying_gst_no     = ls_paying-stcd3.
+          ls_header-paying_pan_no     = ls_paying-j_1ipanno.
+        ENDIF.
+      ENDIF.
+
+      APPEND ls_header TO lt_header.
+      CLEAR: ls_header,ls_bkpf,ls_bseg,ls_j1bbranch,ls_vbkd,ls_billing,ls_paying.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_header BY recipt_no.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_item_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_item_result .
+  DATA: lv_serial TYPE sy-index.
+
+  IF lt_bkpf IS NOT INITIAL.
+    LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+
+      READ TABLE lt_bseg INTO DATA(ls_bseg) WITH  KEY belnr = ls_bkpf-belnr BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        lv_serial         = lv_serial + 1.
+        ls_item-serial_no = lv_serial.
+        ls_item-recipt_no = ls_bseg-belnr.
+
+        "--> fetch Good/Service Description.....
+        READ TABLE lt_srv_desc INTO DATA(ls_srv_desc) WITH  KEY belnr = ls_bseg-belnr BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-srv_desc = ls_srv_desc-tdline.
+        ENDIF.
+
+        "--> Fetch HSN(Goods)/SAC (Services) .....
+        READ TABLE lt_hsn INTO DATA(ls_hsn) WITH KEY vbeln = ls_bseg-vbel2
+                                                     posnr = ls_bseg-posn2 BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-hsn_val = ls_hsn-steuc.
+        ENDIF.
+
+        "--> Fetch Advance Amount Received data......
+        ls_item-advance_amount = ls_bseg-dmbtr.
+
+        "--> Fetch Taxable Amount data...............
+        READ TABLE lt_taxable INTO DATA(ls_taxable) WITH KEY belnr = ls_bseg-belnr
+                                                             hkont = '0022040117' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-taxable_amount = ( ls_taxable-dmbtr * 100 ).
+        ENDIF.
+
+        IF ls_item-taxable_amount IS INITIAL.
+          READ TABLE lt_taxable INTO ls_taxable WITH KEY belnr = ls_bseg-belnr
+                                                               hkont = '0022040118' BINARY SEARCH.
+          IF sy-subrc EQ 0.
+            ls_item-taxable_amount = ( ls_taxable-dmbtr * 100 ).
+          ENDIF.
+        ENDIF.
+
+        IF ls_item-taxable_amount IS INITIAL.
+          READ TABLE lt_taxable INTO ls_taxable WITH KEY belnr = ls_bseg-belnr
+                                                               hkont = '0022040119' BINARY SEARCH.
+          IF sy-subrc EQ 0.
+            ls_item-taxable_amount = ( ls_taxable-dmbtr * 100 ).
+          ENDIF.
+        ENDIF.
+
+        "--> fetch CGST Rate and Amount data.................
+        READ TABLE lt_gst_rate INTO DATA(ls_cgst_rate) WITH KEY mwskz = ls_bseg-mwskz
+                                                                kschl = 'JOCG' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-cgst_rate = ( ls_cgst_rate-kbetr DIV 10 ).
+        ENDIF.
+
+        READ TABLE lt_gst_amount INTO DATA(ls_cgst_amount) WITH KEY belnr = ls_bseg-belnr
+                                                                    ktosl = 'JOC' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-cgst_amount = ls_cgst_amount-dmbtr.
+        ENDIF.
+
+        "--> fetch SGST Rate and Amount data.................
+        READ TABLE lt_gst_rate INTO DATA(ls_sgst_rate) WITH KEY mwskz = ls_bseg-mwskz
+                                                                kschl = 'JOSG' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-sgst_rate = ( ls_sgst_rate-kbetr DIV 10 ).
+        ENDIF.
+
+        READ TABLE lt_gst_amount INTO DATA(ls_sgst_amount) WITH KEY belnr = ls_bseg-belnr
+                                                                    ktosl = 'JOS' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-sgst_amount = ls_sgst_amount-dmbtr.
+        ENDIF.
+
+        "--> fetch IGST Rate and Amount data.................
+        READ TABLE lt_gst_rate INTO DATA(ls_igst_rate) WITH KEY mwskz = ls_bseg-mwskz
+                                                                kschl = 'JOIG' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-igst_rate = ( ls_igst_rate-kbetr DIV 10 ).
+        ENDIF.
+
+        READ TABLE lt_gst_amount INTO DATA(ls_igst_amount) WITH KEY belnr = ls_bseg-belnr
+                                                                    ktosl = 'JOI' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-igst_amount = ls_igst_amount-dmbtr.
+        ENDIF.
+
+        "--> Fetch total tex,total amount(incl tex)
+        ls_item-total_tax    = ( ls_cgst_amount-dmbtr + ls_sgst_amount-dmbtr + ls_igst_amount-dmbtr ).
+        ls_item-total_amount = ls_bseg-dmbtr.
+
+        APPEND ls_item TO lt_item.
+        CLEAR: ls_bkpf,ls_bseg,ls_srv_desc,ls_hsn,
+               ls_taxable,ls_cgst_rate,ls_cgst_amount,
+               ls_sgst_rate,ls_sgst_amount,ls_igst_rate,ls_igst_amount,lv_serial.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+
+ENDFORM.
+
+
+
+
+---------------------------------------------------------------------------------------------------------------------
+*&---------------------------------------------------------------------*
+*& Include          ZI_PR_STRUCTURE_TYPE
+*&---------------------------------------------------------------------*
+
+TYPES: BEGIN OF ty_bkpf,
+         belnr LIKE bkpf-belnr,
+         bukrs LIKE bkpf-bukrs,
+         gjahr LIKE bkpf-gjahr,
+         blart LIKE bkpf-blart,
+         budat LIKE bkpf-budat,
+       END OF ty_bkpf.
+
+TYPES : BEGIN OF ty_bseg,
+          bukrs LIKE bseg-bukrs,
+          belnr LIKE bseg-belnr,
+          gjahr LIKE bseg-gjahr,
+          buzei LIKE bseg-buzei,
+          koart LIKE bseg-koart,
+          bupla LIKE bseg-bupla,
+          vbel2 LIKE bseg-vbel2,
+          posn2 LIKE bseg-posn2,
+          dmbtr LIKE bseg-dmbtr,
+          gsber LIKE bseg-gsber,
+          mwskz LIKE bseg-mwskz,
+        END OF ty_bseg.
+
+TYPES :BEGIN OF ty_j1bbranch,
+         bukrs      LIKE bseg-bukrs,
+         branch     LIKE j_1bbranch-branch,
+         adrnr      LIKE j_1bbranch-adrnr,
+         gstin      LIKE j_1bbranch-gstin,
+         city1      LIKE adrc-city1,
+         region     LIKE adrc-region,
+         street     LIKE adrc-street,
+         str_suppl3 LIKE adrc-str_suppl3,
+         post_code1 LIKE adrc-post_code1,
+         tel_number LIKE adrc-tel_number,
+         fax_number LIKE adrc-fax_number,
+       END OF ty_j1bbranch.
+
+TYPES: BEGIN OF ty_vbkd,
+         vbeln LIKE vbkd-vbeln,
+         bstkd LIKE vbkd-bstkd,
+         bstdk LIKE vbkd-bstdk,
+       END OF ty_vbkd.
+
+TYPES: BEGIN OF ty_bill_paying,
+         vbeln      LIKE vbak-vbeln,
+         parvw      LIKE vbpa-parvw,
+         adrnr      LIKE vbpa-adrnr,
+         kunnr      LIKE kna1-kunnr,
+         land1      LIKE kna1-land1,
+         name1      LIKE kna1-name1,
+         street     LIKE adrc-street,
+         mc_street  LIKE adrc-mc_street,
+         mc_city1   LIKE adrc-mc_city1,
+         post_code1 LIKE adrc-post_code1,
+         regio      LIKE adrc-region,
+         j_1ipanno  LIKE kna1-j_1ipanno,
+         stcd3      LIKE kna1-stcd3,
+         bezei      LIKE t005u-bezei,
+       END OF ty_bill_paying.
+
+TYPES: BEGIN OF ty_srv_desc,
+         belnr    TYPE belnr_d,
+         tdobject TYPE tdobject,
+         tdname   TYPE tdobname,
+         tdid     TYPE tdid,
+         tdspras  TYPE spras,
+         tdline   TYPE tdline,
+       END OF ty_srv_desc.
+
+TYPES: BEGIN OF ty_hsn,
+         vbeln TYPE vbeln_va,
+         posnr TYPE posnr_va,
+         matnr TYPE matnr,
+         gsber TYPE gsber,
+         steuc LIKE marc-steuc,
+       END OF ty_hsn.
+
+TYPES: BEGIN OF ty_taxable,
+         bukrs LIKE bseg-bukrs,
+         belnr LIKE bseg-belnr,
+         gjahr LIKE bseg-gjahr,
+         hkont LIKE bseg-hkont,
+         dmbtr LIKE bseg-dmbtr,
+       END OF ty_taxable.
+
+TYPES: BEGIN OF ty_gst_data,
+         bukrs LIKE bset-bukrs,
+         belnr LIKE bset-belnr,
+         gjahr LIKE bset-gjahr,
+         buzei LIKE bset-buzei,
+         txgrp LIKE bset-txgrp,
+         shkzg LIKE bset-shkzg,
+         hwste LIKE bset-hwste,
+         ktosl LIKE bset-ktosl,
+         kschl LIKE bset-kschl,
+         kbetr LIKE bset-kbetr,
+       END OF ty_gst_data.
+
+*&---------------------------------------------------------------------*
+*& Include          ZI_PR_DATA_OBJECT_DECLARATION
+*&---------------------------------------------------------------------*
+DATA: lv_belnr  TYPE belnr_d,
+      lv_tdname TYPE thead-tdname,
+      lv_word   TYPE char50,
+      lv_result TYPE zchar600.
+
+DATA: lv_TL_CGST           TYPE	dmbrt,
+      lv_TL_SGST           TYPE dmbrt,
+      lv_TL_IGST           TYPE dmbrt,
+      lv_TL_ADVANCE        TYPE dmbrt,
+      lv_TL_TAXABLE        TYPE dmbrt,
+      lv_TOTAL_TAX_AMOUNT  TYPE dmbrt,
+      lv_TOTAL_AMOUNT      TYPE dmbrt,
+      lv_TOTAL_TAX_WORD    TYPE zchar600,
+      lv_TOTAL_AMOUNT_WORD TYPE zchar600.
+
+DATA: ls_srv_desc TYPE ty_srv_desc,
+      ls_header   TYPE zfi_payment_recipt_header_st,
+      ls_item     TYPE zfi_payment_recipt_item_st.
+
+DATA: lt_bkpf        TYPE TABLE OF ty_bkpf,
+      lt_bseg        TYPE TABLE OF ty_bseg,
+      lt_j1bbranch   TYPE TABLE OF ty_j1bbranch,
+      lt_vbkd        TYPE TABLE OF ty_vbkd,
+      lt_bill_paying TYPE TABLE OF ty_bill_paying,
+      lt_srv_desc    TYPE TABLE OF ty_srv_desc,
+      lt_tab         TYPE TABLE OF tline,
+      lt_hsn         TYPE TABLE OF ty_hsn,
+      lt_taxable     TYPE TABLE OF ty_taxable,
+      lt_gst_data    TYPE TABLE OF ty_gst_data,
+      lt_header      TYPE TABLE OF zfi_payment_recipt_header_st,
+      lt_item        TYPE TABLE OF zfi_payment_recipt_item_st.
+
+DATA : lv_formname           TYPE  tdsfname,
+       lv_fm_name            TYPE  rs38l_fnam,
+       ls_output_options     TYPE  ssfcompop,
+       ls_control_parameters TYPE  ssfctrlop,
+       ls_job_output_info    TYPE  ssfcrescl,
+       ls_FNL_output_info    TYPE  ssfcrescl.
+
+DATA: es_header TYPE zfi_payment_recipt_header_st,
+      et_item   TYPE TABLE OF zfi_payment_recipt_item_st.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS : s_belnr FOR lv_belnr OBLIGATORY.                                 " Document Number
+  PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY ,                                       " companny code
+              p_GJAHR TYPE gjahr OBLIGATORY .                                       " Fiscal year
+SELECTION-SCREEN END OF BLOCK b1 .
+
+START-OF-SELECTION.
+  "--> Validation check.....
+  SELECT belnr,bukrs,gjahr,blart,budat
+  FROM bkpf
+  INTO TABLE @lt_bkpf
+  WHERE belnr IN @s_belnr AND
+        bukrs  = @p_bukrs AND
+        gjahr  = @p_gjahr AND
+        blart  = 'DI'.
+
+  "    * if lt_bkpf have data then only smartform will be print/Continue the process .
+  "    * otherwise it will show error message.
+  IF lt_bkpf IS NOT INITIAL.
+    PERFORM get_data.
+    PERFORM process_data.
+    PERFORM display_data.
+  ELSE.
+    MESSAGE 'No record exists for this combination/Document Type for Payment Reciept(DI) is not Present for the Document.' TYPE 'I' DISPLAY LIKE 'E'.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_header_data.
+  PERFORM get_item_data.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form GET_HEADER_DATA
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_data .
+  PERFORM get_bseg_data.
+  PERFORM get_J1BBRANCH_data.
+  PERFORM get_vbkd_data.
+  PERFORM get_bill_paying_data.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_ITEM_DATA
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_ITEM_data .
+  PERFORM get_desc_service_data.
+  PERFORM get_hsn_data.
+  PERFORM get_taxable_amount_data.
+  PERFORM get_gst_data.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  PERFORM get_header_result.
+  PERFORM get_item_result.
+
+  CLEAR : ls_header.
+  LOOP AT lt_header INTO ls_header.
+
+    CLEAR:lv_TL_CGST ,lv_TL_SGST,lv_TL_IGST,
+          lv_TL_ADVANCE,lv_TL_TAXABLE,lv_TOTAL_TAX_AMOUNT,
+          lv_TOTAL_AMOUNT,lv_TOTAL_TAX_WORD,lv_TOTAL_AMOUNT_WORD.
+
+    "--> calculate the total Advance amount,taxable amount,cgst,sgst,igst,totsl tax,total amount(inc tax)..
+    LOOP AT  lt_item INTO DATA(ls_item).
+      IF ls_item-recipt_no EQ ls_header-recipt_no.
+        lv_tl_advance       = lv_tl_advance       + ls_item-advance_amount.
+        lv_tl_taxable       = lv_tl_taxable       + ls_item-taxable_amount.
+        lv_tl_cgst          = lv_tl_cgst          + ls_item-cgst_amount.
+        lv_tl_sgst          = lv_tl_sgst          + ls_item-sgst_amount.
+        lv_tl_igst          = lv_tl_igst          + ls_item-igst_amount.
+        lv_total_tax_amount = lv_total_tax_amount + ls_item-total_tax.
+        lv_total_amount     = lv_total_amount     + ls_item-total_amount.
+      ENDIF.
+      CLEAR: ls_item.
+    ENDLOOP.
+
+    "--> convert Total Tax Tmount & Total Amount(Incl. Tax) in word..
+    CALL FUNCTION 'HR_IN_CHG_INR_WRDS'
+      EXPORTING
+        amt_in_num         = CONV pc207-betrg( lv_total_tax_amount )
+      IMPORTING
+        amt_in_words       = lv_total_tax_word
+      EXCEPTIONS
+        data_type_mismatch = 1
+        OTHERS             = 2.
+    IF sy-subrc <> 0.
+      " Implement suitable error handling here
+    ENDIF.
+
+    TRANSLATE lv_total_tax_word TO LOWER CASE .
+    SPLIT lv_total_tax_word AT space INTO TABLE DATA(itab) .
+    LOOP AT itab ASSIGNING  FIELD-SYMBOL(<temp>) .
+      lv_word = <temp> .
+      TRANSLATE lv_word+0(1) TO UPPER CASE .
+      CONCATENATE lv_result lv_word INTO lv_result SEPARATED BY space .
+    ENDLOOP .
+    lv_total_tax_word = lv_result.
+    CLEAR: lv_word,lv_result,itab.
+
+    CALL FUNCTION 'HR_IN_CHG_INR_WRDS'
+      EXPORTING
+        amt_in_num         = CONV pc207-betrg( lv_total_amount )
+      IMPORTING
+        amt_in_words       = lv_total_amount_word
+      EXCEPTIONS
+        data_type_mismatch = 1
+        OTHERS             = 2.
+    IF sy-subrc <> 0.
+      " Implement suitable error handling here
+    ENDIF.
+
+    TRANSLATE lv_total_amount_word TO LOWER CASE .
+    SPLIT lv_total_amount_word AT space INTO TABLE itab .
+    LOOP AT itab ASSIGNING <temp> .
+      lv_word = <temp> .
+      TRANSLATE lv_word+0(1) TO UPPER CASE .
+      CONCATENATE  lv_result lv_word INTO lv_result SEPARATED BY space .
+    ENDLOOP .
+    lv_total_amount_word = lv_result.
+
+    ls_header-tl_advance        = lv_tl_advance.
+    ls_header-tl_taxable        = lv_tl_taxable.
+    ls_header-tl_cgst           = lv_tl_cgst.
+    ls_header-tl_sgst           = lv_tl_sgst.
+    ls_header-tl_igst           = lv_tl_igst.
+    ls_header-total_tax_amount  = lv_total_tax_amount.
+    ls_header-total_amount      = lv_total_amount.
+
+    ls_header-total_tax_word    = COND #( WHEN lv_total_tax_amount IS INITIAL THEN 'NIL'
+                                          ELSE |{ lv_total_tax_word } only|
+                                        ).
+    ls_header-total_amount_word = COND #( WHEN lv_total_amount IS INITIAL THEN 'NIL'
+                                          ELSE |{ lv_total_amount_word } only|
+                                        ).
+    MODIFY lt_header FROM ls_header.
+  ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+
+  CLEAR : lv_formname,lv_fm_name,ls_output_options,
+          ls_control_parameters,ls_fnL_output_info.
+
+  "--> Smartform Name..
+  lv_formname = 'ZFISF_PAYMENT_RECIEPT_FORM'.
+
+*  ls_output_options-tdcopies = 5.
+  ls_output_options-tddest   = 'LOCL'.
+
+  ls_control_parameters-preview   = 'X'.
+  ls_control_parameters-getotf    = 'X'.
+  ls_control_parameters-no_dialog = 'X'.
+*  ls_control_parameters-no_open   = 'X'.
+*  ls_control_parameters-no_close  = 'X'.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lv_formname
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = lv_fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+  IF lt_header IS NOT INITIAL.
+    CLEAR:es_header,ls_item.
+    LOOP AT lt_header INTO Ls_header.
+      es_header = ls_header.
+      LOOP AT lt_item INTO ls_item.
+        IF  ls_item-recipt_no EQ ls_header-recipt_no.
+          APPEND ls_item TO et_item.
+          CLEAR ls_item.
+        ENDIF.
+      ENDLOOP.
+
+      CALL FUNCTION lv_fm_name
+        EXPORTING
+          control_parameters = ls_control_parameters
+          output_options     = ls_output_options
+          user_settings      = ' '
+          ls_header          = es_header
+          lt_item            = et_item
+        IMPORTING
+          job_output_info    = ls_job_output_info
+        EXCEPTIONS
+          formatting_error   = 1
+          internal_error     = 2
+          send_error         = 3
+          user_canceled      = 4
+          OTHERS             = 5.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      CALL FUNCTION 'SSF_CLOSE'
+        IMPORTING
+          job_output_info  = ls_job_output_info
+        EXCEPTIONS
+          formatting_error = 1
+          internal_error   = 2
+          send_error       = 3
+          OTHERS           = 4.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+      CLEAR: ls_header,es_header,et_item,ls_job_output_info.
+    ENDLOOP.
+  ENDIF.
+
+  CALL FUNCTION 'HR_IT_DISPLAY_WITH_PDF'
+    TABLES
+      otf_table = ls_fnL_output_info-otfdata.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_bseg_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_bseg_data .
+  IF lt_bkpf IS NOT INITIAL .
+    SELECT bukrs,belnr,gjahr,buzei,koart,
+           bupla,vbel2,posn2,dmbtr,
+           gsber,mwskz
+    FROM bseg                                      "#EC CI_NO_TRANSFORM
+    INTO TABLE @lt_bseg
+    FOR ALL ENTRIES IN @lt_bkpf                                            ""#EC CI_NOORDER
+    WHERE belnr = @lt_bkpf-belnr AND
+          bukrs = @lt_bkpf-bukrs AND
+          gjahr = @lt_bkpf-gjahr AND
+          koart = 'D'
+      .
+  ENDIF.
+
+  SORT  lt_bseg BY belnr.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_J1BBRANCH_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_J1BBRANCH_data .
+  IF lt_bseg IS NOT INITIAL.
+    SELECT j_1bbranch~bukrs,j_1bbranch~branch,j_1bbranch~adrnr,j_1bbranch~gstin,
+           adrc~city1,adrc~region,adrc~street,adrc~str_suppl3,
+           adrc~post_code1,adrc~tel_number,adrc~fax_number
+    FROM j_1bbranch
+    LEFT OUTER JOIN adrc ON j_1bbranch~adrnr = adrc~addrnumber "#EC CI_BUFFJOIN
+    FOR ALL ENTRIES IN @lt_bseg
+    WHERE bukrs  = @lt_bseg-bukrs AND
+          branch = @lt_bseg-bupla
+    INTO TABLE @lt_j1bbranch.
+  ENDIF.
+
+  SORT lt_j1bbranch BY bukrs branch.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_vbkd_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_vbkd_data .
+  IF lt_bseg IS NOT INITIAL.
+    SELECT vbeln,bstkd,bstdk
+    FROM vbkd
+    FOR ALL ENTRIES IN @lt_bseg
+    WHERE vbeln = @lt_bseg-vbel2
+    INTO TABLE @lt_vbkd.
+  ENDIF.
+
+  SORT lt_vbkd BY vbeln.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_bil_paying_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_bill_paying_data .
+  IF lt_bseg IS NOT INITIAL .
+    SELECT vbpa~vbeln,vbpa~parvw,vbpa~adrnr,vbpa~kunnr,vbpa~land1,
+           adrc~name1,adrc~street,adrc~mc_street,adrc~mc_city1,adrc~post_code1,
+           kna1~regio,kna1~j_1ipanno,kna1~stcd3,
+           t005u~bezei
+    FROM vbpa
+    LEFT OUTER JOIN adrc ON vbpa~adrnr = adrc~addrnumber
+    LEFT OUTER JOIN kna1 ON vbpa~kunnr = kna1~kunnr AND
+                            vbpa~land1 = kna1~land1
+    LEFT OUTER JOIN t005u ON kna1~regio  = t005u~bland AND "#EC CI_BUFFJOIN
+                             vbpa~land1  = t005u~land1 AND
+                             t005u~spras = @sy-langu
+    FOR ALL ENTRIES IN @lt_bseg
+    WHERE vbpa~vbeln = @lt_bseg-vbel2 AND
+          vbpa~parvw IN ( 'RE','RG' )            "BP = RE & PY = RG (here these values are taken because fro value BP & PY no value fatching from vbap table)
+    INTO TABLE @lt_bill_paying.
+  ENDIF.
+
+  SORT lt_bill_paying BY vbeln parvw.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_desc_service
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_desc_service_data .
+
+  SELECT tdobject,tdname,tdid,tdspras                  "#EC CI_NOWHERE.
+     FROM stxh INTO TABLE @DATA(lt_stxh).
+
+  IF lt_bkpf IS NOT INITIAL .
+    LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+      lv_tdname = |{ p_bukrs }{ ls_bkpf-belnr }{ p_gjahr }001|.
+
+      SELECT SINGLE * FROM @lt_stxh AS stxh
+             WHERE stxh~tdname = @lv_tdname
+             INTO @DATA(ls_stxh).
+
+      IF sy-subrc EQ 0.
+        ls_srv_desc-belnr = ls_bkpf-belnr.
+        ls_srv_desc-tdid = ls_stxh-tdid.
+        ls_srv_desc-tdname = ls_stxh-tdname.
+        ls_srv_desc-tdobject = ls_stxh-tdobject.
+        ls_srv_desc-tdspras = ls_stxh-tdspras.
+
+        CALL FUNCTION 'READ_TEXT' ##FM_SUBRC_OK
+          EXPORTING
+            client                  = sy-mandt                       " Client
+            id                      = ls_stxh-tdid                   " Text ID of text to be read
+            language                = ls_stxh-tdspras                " Language of text to be read
+            name                    = lv_tdname                      " Name of text to be read
+            object                  = ls_stxh-tdobject               " Object of text to be read
+          TABLES
+            lines                   = lt_tab                         " Lines of text read
+          EXCEPTIONS
+            id                      = 1                              " Text ID invalid
+            language                = 2                              " Invalid language
+            name                    = 3                              " Invalid text name
+            not_found               = 4                              " Text not found
+            object                  = 5                              " Invalid text object
+            reference_check         = 6                              " Reference chain interrupted
+            wrong_access_to_archive = 7                              " Archive handle invalid for access
+            OTHERS                  = 8.
+
+
+        READ TABLE lt_tab INTO DATA(ls_tab) INDEX 1.
+        IF sy-subrc EQ 0.
+          ls_srv_desc-tdline = ls_tab-tdline.
+        ENDIF.
+      ENDIF.
+      APPEND ls_srv_desc TO lt_srv_desc.
+      CLEAR :ls_srv_desc,ls_bkpf,ls_stxh,lv_tdname.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_srv_desc BY belnr .
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_hsn_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_hsn_data.
+  IF lt_bseg IS NOT INITIAL.
+
+    SELECT vbap~vbeln,vbap~posnr,vbap~matnr,vbap~gsber,
+           marc~steuc
+      FROM vbap
+      LEFT OUTER JOIN marc ON vbap~matnr = marc~matnr AND
+                              vbap~gsber = marc~werks
+      FOR ALL ENTRIES IN @lt_bseg
+      WHERE vbap~vbeln = @lt_bseg-vbel2 AND
+            vbap~posnr = @lt_bseg-posn2
+      INTO TABLE @lt_hsn.
+  ENDIF.
+
+  SORT lt_hsn BY vbeln posnr.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_taxable_amount_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_taxable_amount_data .
+  IF lt_bkpf IS NOT INITIAL.
+
+    SELECT bukrs,belnr,gjahr,hkont,dmbtr
+    FROM bseg
+    FOR ALL ENTRIES IN @lt_bkpf
+    WHERE bukrs = @lt_bkpf-bukrs AND
+          belnr = @lt_bkpf-belnr AND
+          gjahr = @lt_bkpf-gjahr
+    INTO TABLE @lt_taxable.
+  ENDIF.
+
+  SORT lt_taxable BY belnr hkont.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_gst_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_gst_data .
+  IF lt_bseg IS NOT INITIAL.
+
+    SELECT bukrs,belnr,gjahr,buzei,txgRP,
+           shkzg,hwste,ktosl,kschl,kbetr
+    FROM bset INTO TABLE @lt_gst_data
+    FOR ALL ENTRIES IN @lt_bseg
+    WHERE bukrs = @lt_bseg-bukrs AND
+          belnr = @lt_bseg-belnr AND
+          gjahr = @lt_bseg-gjahr AND
+          txgrp = @lt_bseg-buzei AND
+          hwste GT 0.
+  ENDIF.
+
+  SORT lt_gst_data BY belnr ktosl kschl.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_header_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_result .
+
+  IF  lt_bkpf IS NOT INITIAL.
+    LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+
+      IF ls_bkpf-bukrs EQ '1100'.
+        ls_header-bukrs            = ls_bkpf-bukrs.
+        ls_header-website          = 'www.hfcl.com'.                                                              "##NO_TEXT
+        ls_header-email            = 'sales.hfcl@hfcl.com'.                                                       "##NO_TEXT
+        ls_header-cin              = 'L64200HP1987PLC007466'.                                                     "##NO_TEXT
+        ls_header-pan              = 'AAACH4041D'.                                                                "##NO_TEXT
+        ls_header-plant_name       = 'HFCL Limited'.                                                              "##NO_TEXT
+        ls_header-plant_name_f     ='(Formerly Himachal Futuristic Comunications Limited )'.                      "##NO_TEXT
+        ls_header-head_office_adrc = |8,Commercial Complex,Masjid Moth,Greater Kailash II,New Delhi,110048|.      "##NO_TEXT
+
+      ELSEIF ls_bkpf-bukrs  EQ '1200'.
+        ls_header-bukrs            = ls_bkpf-bukrs.
+        ls_header-website          = 'www.htllimited.com'.                                                         "##NO_TEXT
+        ls_header-email            = 'sales.htl@htllimited.com'.                                                   "##NO_TEXT
+        ls_header-cin              = 'U93090TN1960PLC004355'.                                                      "##NO_TEXT
+        ls_header-pan              = 'AAACH5516'.                                                                  "##NO_TEXT
+        ls_header-plant_name       = 'HTL Limited'.                                                                "##NO_TEXT.                                                              "##NO_TEXT
+        ls_header-plant_name_f     ='(Formerly Hindustan Teleprinters Limited )'.                                  "##NO_TEXT                                                                             "##NO_TEXT
+        ls_header-head_office_adrc = |G.S.T. Road Guindy,Chennai,600032|.                                          "##NO_TEXT
+      ENDIF.
+
+      "--> Fetch recipt no,recipt date,form titel,fiscal year
+      ls_header-form_titel   = 'Receipt Voucher'.
+      ls_header-recipt_no    = ls_bkpf-belnr.
+      ls_header-recipt_date  = ls_bkpf-budat.
+      ls_header-gjahr        = ls_bkpf-gjahr.
+
+      READ TABLE lt_bseg INTO DATA(ls_bseg) WITH KEY belnr = ls_bkpf-belnr BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        "-->Fetch sales order no(vbel2).....
+        ls_header-sales_or_no = ls_bseg-vbel2.
+
+        "--> Fetch gstin,place of supplier(state & code),plant(Street,str_supl3,post,phone,fax)
+        READ TABLE lt_j1bbranch INTO DATA(ls_j1bbranch) WITH KEY bukrs = ls_bseg-bukrs
+                                                                 branch = ls_bseg-bupla BINARY SEARCH.
+        IF  sy-subrc EQ 0.
+          ls_header-gstin             = ls_j1bbranch-gstin.
+          ls_header-pos_state         = ls_j1bbranch-city1.
+          ls_header-pos_code          = ls_j1bbranch-region.
+          ls_header-plant_street      = ls_j1bbranch-street.
+          ls_header-plant_str_suppl3  = ls_j1bbranch-str_suppl3.
+          ls_header-plant_city1       = ls_j1bbranch-city1.
+          ls_header-plant_post_code1  = ls_j1bbranch-post_code1.
+          ls_header-plant_phoneno     = ls_j1bbranch-tel_number.
+          ls_header-plant_faxno       = ls_j1bbranch-fax_number.
+        ENDIF.
+
+        "--> Fetch purchase order no & Date............
+        READ TABLE lt_vbkd INTO DATA(ls_vbkd) WITH KEY vbeln = ls_bseg-vbel2 BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_header-purchase_or_no   = ls_vbkd-bstkd.
+          ls_header-purchase_or_date = ls_vbkd-bstdk.
+        ENDIF.
+
+        "--> Fetch "Billing To" Details...............
+        READ TABLE lt_bill_paying INTO DATA(ls_billing) WITH KEY vbeln = ls_bseg-vbel2
+                                                                 parvw = 'RE' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_header-bill_name1      = ls_billing-name1.
+          ls_header-bill_street     = ls_billing-street.
+          ls_header-bill_mc_street  = ls_billing-mc_street.
+          ls_header-bill_mc_city1   = ls_billing-mc_city1.
+          ls_header-bill_post_code1 = ls_billing-post_code1.
+          ls_header-bill_state_code = ls_billing-regio.
+          ls_header-bill_state_name = ls_billing-bezei.
+          ls_header-bill_gst_no     = ls_billing-stcd3.
+          ls_header-bill_pan_no     = ls_billing-j_1ipanno.
+        ENDIF.
+
+        "--> Fetch "Paying Authority" Details...............
+        READ TABLE lt_bill_paying INTO DATA(ls_paying) WITH KEY vbeln = ls_bseg-vbel2
+                                                                parvw = 'RG' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_header-paying_name1      = ls_paying-name1.
+          ls_header-paying_street     = ls_paying-street.
+          ls_header-paying_mc_street  = ls_billing-mc_street.
+          ls_header-paying_mc_city1   = ls_paying-mc_city1.
+          ls_header-paying_post_code1 = ls_paying-post_code1.
+          ls_header-paying_state_code = ls_paying-regio.
+          ls_header-paying_state_name = ls_paying-bezei.
+          ls_header-paying_gst_no     = ls_paying-stcd3.
+          ls_header-paying_pan_no     = ls_paying-j_1ipanno.
+        ENDIF.
+      ENDIF.
+
+      APPEND ls_header TO lt_header.
+      CLEAR: ls_header,ls_bkpf,ls_bseg,ls_j1bbranch,ls_vbkd,ls_billing,ls_paying.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_header BY recipt_no.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_item_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_item_result .
+  DATA: lv_serial TYPE sy-index.
+
+  IF lt_bkpf IS NOT INITIAL.
+    LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+
+      READ TABLE lt_bseg INTO DATA(ls_bseg) WITH  KEY belnr = ls_bkpf-belnr BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        lv_serial         = lv_serial + 1.
+        ls_item-serial_no = lv_serial.
+        ls_item-recipt_no = ls_bseg-belnr.
+
+        "--> fetch Good/Service Description.....
+        READ TABLE lt_srv_desc INTO DATA(ls_srv_desc) WITH  KEY belnr = ls_bseg-belnr BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-srv_desc = ls_srv_desc-tdline.
+        ENDIF.
+
+        "--> Fetch HSN(Goods)/SAC (Services) .....
+        READ TABLE lt_hsn INTO DATA(ls_hsn) WITH KEY vbeln = ls_bseg-vbel2
+                                                     posnr = ls_bseg-posn2 BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-hsn_val = ls_hsn-steuc.
+        ENDIF.
+
+        "--> Fetch Advance Amount Received data......
+        ls_item-advance_amount = ls_bseg-dmbtr.
+
+        "--> Fetch Taxable Amount data...............
+        READ TABLE lt_taxable INTO DATA(ls_taxable) WITH KEY belnr = ls_bseg-belnr
+                                                             hkont = '0022040117' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-taxable_amount = ( ls_taxable-dmbtr * 100 ).
+        ENDIF.
+
+        IF ls_item-taxable_amount IS INITIAL.
+          READ TABLE lt_taxable INTO ls_taxable WITH KEY belnr = ls_bseg-belnr
+                                                               hkont = '0022040118' BINARY SEARCH.
+          IF sy-subrc EQ 0.
+            ls_item-taxable_amount = ( ls_taxable-dmbtr * 100 ).
+          ENDIF.
+        ENDIF.
+
+        IF ls_item-taxable_amount IS INITIAL.
+          READ TABLE lt_taxable INTO ls_taxable WITH KEY belnr = ls_bseg-belnr
+                                                               hkont = '0022040119' BINARY SEARCH.
+          IF sy-subrc EQ 0.
+            ls_item-taxable_amount = ( ls_taxable-dmbtr * 100 ).
+          ENDIF.
+        ENDIF.
+
+        "--> fetch CGST Rate and Amount data.................
+        READ TABLE lt_gst_data INTO DATA(ls_cgst_rate) WITH KEY belnr = ls_bseg-belnr
+                                                                kschl = 'JOCG' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-cgst_rate = ( ls_cgst_rate-kbetr DIV 10 ).
+        ENDIF.
+
+        READ TABLE lt_gst_data INTO DATA(ls_cgst_amount) WITH KEY belnr = ls_bseg-belnr
+                                                                    ktosl = 'JOC' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-cgst_amount = ls_cgst_amount-hwste.
+        ENDIF.
+
+        "--> fetch SGST Rate and Amount data.................
+        READ TABLE lt_gst_data INTO DATA(ls_sgst_rate) WITH KEY belnr = ls_bseg-belnr
+                                                                kschl = 'JOSG' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-sgst_rate = ( ls_sgst_rate-kbetr DIV 10 ).
+        ENDIF.
+
+        READ TABLE lt_gst_data INTO DATA(ls_sgst_amount) WITH KEY belnr = ls_bseg-belnr
+                                                                    ktosl = 'JOS' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-sgst_amount = ls_sgst_amount-hwste.
+        ENDIF.
+
+        "--> fetch IGST Rate and Amount data.................
+        READ TABLE lt_gst_data INTO DATA(ls_igst_rate) WITH KEY belnr = ls_bseg-belnr
+                                                                kschl = 'JOIG' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-igst_rate = ( ls_igst_rate-kbetr DIV 10 ).
+        ENDIF.
+
+        READ TABLE lt_gst_data INTO DATA(ls_igst_amount) WITH KEY belnr = ls_bseg-belnr
+                                                                    ktosl = 'JOI' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-igst_amount = ls_igst_amount-hwste.
+        ENDIF.
+
+        "--> Fetch total tex,total amount(incl tex)
+        ls_item-total_tax    = ( ls_cgst_amount-hwste + ls_sgst_amount-hwste + ls_igst_amount-hwste ).
+        ls_item-total_amount = ls_bseg-dmbtr.
+
+        APPEND ls_item TO lt_item.
+        CLEAR: ls_bkpf,ls_bseg,ls_srv_desc,ls_hsn,
+               ls_taxable,ls_cgst_rate,ls_cgst_amount,
+               ls_sgst_rate,ls_sgst_amount,ls_igst_rate,ls_igst_amount,lv_serial.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+ENDFORM.

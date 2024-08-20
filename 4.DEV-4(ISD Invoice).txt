@@ -1,0 +1,577 @@
+ Development 4: ISD Invoice Smartforms
+-----------------------------------------------------------------------------------------------------------------------------------
+
+An ISD (Input Service Distributor) invoice is a document issued by an Input Service Distributor under the GST (Goods and Services Tax) regime in India.
+The Input Service Distributor is a business entity that receives invoices for services used by its branches or units and then distributes the Input Tax Credit (ITC) 
+to those branches or units. This system ensures that the branches or units that actually use the services can benefit from the tax credit.
+
+Let's consider a company named ABC Corp. ABC Corp has a head office in Mumbai (Maharashtra) and two branch offices, one in Bangalore (Karnataka) and another in Delhi.
+Service Received: The head office in Mumbai receives a service from a consulting firm worth ₹1,00,000, with a GST of ₹18,000 (18% GST).
+
+ISD Role: The head office in Mumbai, acting as an ISD, needs to distribute this ₹18,000 ITC to the branches in Bangalore and Delhi, 
+          as these branches utilize the service.
+Distribution Process:
+Head Office (ISD): Issues an ISD invoice to each branch with the proportionate ITC.
+Branch in Bangalore: Receives an ISD invoice for ₹9,000 (50% of the ITC).
+Branch in Delhi: Receives an ISD invoice for ₹9,000 (50% of the ITC).
+---------------------------------------------------------------------------------------------------------------
+Package                        : ZFI
+TR                             : DFHK909258               FI:ISD Invoice                   (Released 5-08-2024)
+                                 DFHK909289               FI:ISD Invoice                   (Released 5-08-2024)
+
+D. program                     : ZFI_ISD_INVOICE_REPORT   FI:PRNT:Input Service Distributor(ISD) Invoice
+smartform                      : ZFISF_ISD_IVOICE_FORM    FI:SMFM: ISD Invoice
+smartstyle                     : ZFISF_ISD_INVOICE_STYLE  FI:SF:STYLE: ISD Invoice 
+TCode                          : ZFI0047
+
+------------------------------------------------------------------------------------------------------------------------------------
+*&---------------------------------------------------------------------*
+*& Report ZFI_ISD_INVOICE_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zfi_isd_invoice_report.
+
+TYPES: BEGIN OF ty_bkpf,
+         belnr LIKE bkpf-belnr,
+         bukrs LIKE bkpf-bukrs,
+         gjahr LIKE bkpf-gjahr,
+         blart LIKE bkpf-blart,
+         budat LIKE bkpf-budat,
+       END OF ty_bkpf.
+
+TYPES : BEGIN OF ty_get_header,
+          bukrs      LIKE bseg-bukrs,
+          belnr      LIKE bseg-belnr,
+          gjahr      LIKE bseg-gjahr,
+          bschl      LIKE bseg-bschl,
+          bupla      LIKE bseg-bupla,
+          gstin      LIKE j_1bbranch-gstin,
+          stras      LIKE t001w-stras,
+          pstlz      LIKE t001w-pstlz,
+          ort01      LIKE t001w-ort01,
+          adrnr      LIKE t001w-adrnr,
+          tel_number LIKE adrc-tel_number,
+          fax_number LIKE adrc-fax_number,
+        END OF ty_get_header.
+
+TYPES: BEGIN OF ty_headoffice,
+         bukrs      LIKE t001-bukrs,
+         adrnr      LIKE t001-adrnr,
+         street     LIKE adrc-street,
+         str_suppl1 LIKE adrc-str_suppl1,
+         str_suppl2 LIKE adrc-str_suppl2,
+         str_suppl3 LIKE adrc-str_suppl3,
+         location   LIKE adrc-location,
+         city1      LIKE adrc-city1,
+         post_code1 LIKE adrc-post_code1,
+       END OF ty_headoffice.
+
+TYPES: BEGIN OF ty_srv_desc,
+         belnr    TYPE belnr_d,
+         tdobject TYPE tdobject,
+         tdname   TYPE tdobname,
+         tdid     TYPE tdid,
+         tdspras  TYPE spras,
+         tdline   TYPE tdline,
+       END OF ty_srv_desc.
+
+TYPES: BEGIN OF ty_get_item,
+         Bukrs LIKE bseg-bukrs,
+         belnr LIKE bseg-belnr,
+         gjahr LIKE bseg-gjahr,
+         buzei LIKE bseg-buzei,
+         zuonr LIKE bseg-zuonr,
+         hkont LIKE bseg-hkont,
+         dmbtr LIKE bseg-dmbtr,
+       END OF ty_get_item.
+
+DATA: lv_belnr          TYPE belnr_d,
+      lv_serial         TYPE sy-index,
+      lv_total_cgst     TYPE dmbrt,
+      lv_total_sgst     TYPE dmbrt,
+      lv_total_igst     TYPE dmbrt,
+      lv_total_gst      TYPE dmbrt,
+      lv_total_gst_word TYPE char300,
+      lv_word           TYPE char50,
+      lv_result         TYPE char50,
+      lv_tdname         TYPE thead-tdname.
+
+DATA:ls_srv_desc TYPE ty_srv_desc,
+     ls_header   TYPE zfi_isd_invc_header_s,
+     ls_item     TYPE zfi_isd_invc_item_s.
+
+DATA: lt_bkpf          TYPE TABLE OF ty_bkpf,
+      lt_get_header    TYPE TABLE OF ty_get_header,
+      lt_headoffice    TYPE TABLE OF ty_headoffice,
+      lt_srv_desc      TYPE TABLE OF ty_srv_desc,
+      lt_get_item      TYPE TABLE OF ty_get_item,
+      lt_header_RESULT TYPE TABLE OF zfi_isd_invc_header_s,
+      lt_item_RESULT   TYPE TABLE OF zfi_isd_invc_item_s,
+      lt_tab           TYPE TABLE OF tline.
+
+DATA: es_header TYPE zfi_isd_invc_header_s,
+      et_item   TYPE zfi_isd_invc_item_t.
+
+DATA : lv_formname           TYPE  tdsfname,
+       lv_fm_name            TYPE  rs38l_fnam,
+       ls_output_options     TYPE  ssfcompop,
+       ls_control_parameters TYPE  ssfctrlop,
+       ls_job_output_info    TYPE  ssfcrescl,
+       ls_FNL_output_info    TYPE  ssfcrescl.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS : s_belnr FOR lv_belnr OBLIGATORY.                                 " Document Number
+  PARAMETERS: p_bukrs TYPE bukrs OBLIGATORY ,                                       " companny code
+              p_GJAHR TYPE gjahr OBLIGATORY .                                       " Fiscal year
+SELECTION-SCREEN END OF BLOCK b1 .
+
+START-OF-SELECTION.
+  "--> Validation check.....
+  SELECT belnr,bukrs,gjahr,blart,budat
+               FROM bkpf
+               INTO TABLE @lt_bkpf
+               WHERE belnr IN @s_belnr AND
+                     bukrs  = @p_bukrs AND
+                     gjahr  = @p_gjahr AND
+                     blart  = 'IS'.
+
+  "    * if lt_bkpf have data then only smartform will be print/Continue the process .
+  "    * otherwise it will show error message.
+  IF lt_bkpf IS NOT INITIAL.
+
+    PERFORM get_data.
+    PERFORM process_data.
+    PERFORM display_data.
+
+  ELSE.
+    MESSAGE 'No record exists for this combination/Document Type for ISD Invoice is not Present for the Document.' TYPE 'I' DISPLAY LIKE 'E'.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form get_data.
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data.
+  "--> perform related to header
+  PERFORM get_header_data.
+
+  "--> perform related to item
+  PERFORM get_Service_description.
+  PERFORM Get_item_data.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  PERFORM get_header_result.
+  PERFORM get_item_result.
+
+  "--> Calculating Total Gst,cgst,sgst,igst amount for the Invoice Numbers........
+  LOOP AT lt_header_result INTO DATA(ls_header_result).
+    CLEAR:lv_total_cgst,lv_total_sgst,
+          lv_total_igst,lv_total_gst,lv_total_gst_word.
+
+    LOOP AT lt_item_result INTO DATA(ls_item_result)
+                            WHERE belnr = ls_header_result-invoice_no.
+
+      "--> Set CGST's,SGST's and IGST's rate value as '0.00' if it initial.
+      ls_item_result-cgst_rate  = COND #( WHEN ls_item_result-cgst_rate IS INITIAL THEN '0.00'
+                                       ELSE ls_item_result-cgst_rate
+                                     ).
+      ls_item_result-sgst_rate  = COND #( WHEN ls_item_result-sgst_rate IS INITIAL THEN '0.00'
+                                       ELSE ls_item_result-sgst_rate
+                                     ).
+      ls_item_result-igst_rate  = COND #( WHEN ls_item_result-igst_rate IS INITIAL THEN '0.00'
+                                       ELSE ls_item_result-igst_rate
+                                     ).
+
+      "--> Calculating Total cgst,sgst,igst amount
+      lv_total_cgst = lv_total_cgst + ls_item_result-cgst_amount.
+      lv_total_sgst = lv_total_sgst + ls_item_result-sgst_amount.
+      lv_total_igst = lv_total_igst + ls_item_result-igst_amount.
+
+      MODIFY lt_item_result FROM ls_item_result.
+    ENDLOOP.
+    "--> calculate total gst amount
+    lv_total_gst = ( lv_total_cgst + lv_total_sgst + lv_total_igst ).
+
+    "--> Convert the Total Gst Amount in word
+    CALL FUNCTION 'HR_IN_CHG_INR_WRDS'
+      EXPORTING
+        amt_in_num         = CONV pc207-betrg( lv_total_gst )
+      IMPORTING
+        amt_in_words       = lv_total_gst_word
+      EXCEPTIONS
+        data_type_mismatch = 1
+        OTHERS             = 2.
+    IF sy-subrc <> 0.
+      " Implement suitable error handling here
+    ENDIF.
+
+    TRANSLATE lv_total_gst_word TO LOWER CASE .
+    SPLIT lv_total_gst_word AT space INTO TABLE DATA(itab) .
+    LOOP AT itab ASSIGNING  FIELD-SYMBOL(<temp>) .
+      lv_word = <temp> .
+      TRANSLATE lv_word+0(1) TO UPPER CASE .
+      CONCATENATE lv_result lv_word INTO lv_result SEPARATED BY space .
+    ENDLOOP .
+    lv_total_gst_word = lv_result.
+
+    ls_header_result-total_cgst        = lv_total_cgst.
+    ls_header_result-total_sgst        = lv_total_sgst.
+    ls_header_result-total_igst        = lv_total_igst.
+    ls_header_result-total_gst_amont   = lv_total_gst.
+
+    ls_header_result-total_gst_amount_word  = COND #( WHEN lv_total_gst IS INITIAL THEN lv_total_gst_word
+                                           ELSE |{ lv_total_gst_word } only|
+                                         ).
+    MODIFY lt_header_result FROM ls_header_result.
+  ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+
+  CLEAR : lv_formname,lv_fm_name,ls_output_options,
+          ls_control_parameters,ls_fnL_output_info.
+
+  "--> Smartform Name..
+  lv_formname = 'ZFISF_ISD_IVOICE_FORM'.
+
+*  ls_output_options-tdcopies = 5.
+  ls_output_options-tddest   = 'LOCL'.
+
+  ls_control_parameters-preview   = 'X'.
+  ls_control_parameters-getotf    = 'X'.
+  ls_control_parameters-no_dialog = 'X'.
+*  ls_control_parameters-no_open   = 'X'.
+*  ls_control_parameters-no_close  = 'X'.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lv_formname
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = lv_fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+  IF lt_header_result IS NOT INITIAL.
+    CLEAR:es_header,ls_item.
+    LOOP AT lt_header_result INTO DATA(Ls_header).
+      es_header = ls_header.
+      LOOP AT lt_item_result INTO ls_item WHERE belnr EQ ls_header-invoice_no.
+        APPEND ls_item TO et_item.
+        CLEAR ls_item.
+      ENDLOOP.
+
+      CALL FUNCTION lv_fm_name
+        EXPORTING
+          control_parameters = ls_control_parameters
+          output_options     = ls_output_options
+          user_settings      = ' '
+          ls_header          = es_header
+          lt_item            = et_item
+        IMPORTING
+          job_output_info    = ls_job_output_info
+        EXCEPTIONS
+          formatting_error   = 1
+          internal_error     = 2
+          send_error         = 3
+          user_canceled      = 4
+          OTHERS             = 5.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      CALL FUNCTION 'SSF_CLOSE'
+        IMPORTING
+          job_output_info  = ls_job_output_info
+        EXCEPTIONS
+          formatting_error = 1
+          internal_error   = 2
+          send_error       = 3
+          OTHERS           = 4.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+      CLEAR: ls_header,es_header,et_item,ls_job_output_info.
+    ENDLOOP.
+  ENDIF.
+
+  CALL FUNCTION 'HR_IT_DISPLAY_WITH_PDF'
+    TABLES
+      otf_table = ls_fnL_output_info-otfdata.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_header_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_result .
+  IF lt_bkpf IS NOT INITIAL.
+    LOOP AT  lt_bkpf INTO DATA(ls_bkpf).
+
+      IF ls_bkpf-bukrs             = '1100'.                                                                      "##NO_TEXT
+        ls_header-website          = 'www.hfcl.com'.                                                              "##NO_TEXT
+        ls_header-email            = 'sales.hfcl@hfcl.com'.                                                             "##NO_TEXT
+        ls_header-cin              = 'L64200HP1987PLC007466'.                                                     "##NO_TEXT
+        ls_header-pan              = 'AAACH4041D'.                                                                "##NO_TEXT
+        ls_header-plant_name       = 'HFCL Limited'.                                                              "##NO_TEXT
+        ls_header-plant_name_f     ='(Formerly Himachal Futuristic Comunications Limited )'.                      "##NO_TEXT
+        ls_header-head_office_adrc = |8,Commercial Complex,Masjid Moth,Greater Kailash II,New Delhi,110048|.      "##NO_TEXT
+
+      ELSEIF ls_bkpf-bukrs         = '1200'.                                                                       "##NO_TEXT
+        ls_header-website          = 'www.htllimited.com'.                                                        "##NO_TEXT
+        ls_header-email            = 'sales.htl@htllimited.com'.                                                   "##NO_TEXT
+        ls_header-cin              = 'U93090TN1960PLC004355'.                                                      "##NO_TEXT
+        ls_header-pan              = 'AAACH5516'.                                                                  "##NO_TEXT
+        ls_header-plant_name       = 'HTL Limited'.                                                                "##NO_TEXT.                                                              "##NO_TEXT
+        ls_header-plant_name_f     ='(Formerly Hindustan Teleprinters Limited )'.                                  "##NO_TEXT                                                                             "##NO_TEXT
+        ls_header-head_office_adrc = |G.S.T. Road Guindy,Chennai,600032|.                                          "##NO_TEXT
+      ENDIF.
+
+      "Company code and fiscal year data....
+      ls_header-bukrs = ls_bkpf-bukrs.
+      ls_header-gjahr = ls_bkpf-gjahr.
+
+      "invoice data and date........
+      ls_header-invoice_no   = ls_bkpf-belnr.
+      ls_header-invoice_date = ls_bkpf-budat.
+
+      "Fetch Plant Address..........
+      READ TABLE lt_get_header INTO DATA(ls_get_header50) WITH KEY belnr = ls_bkpf-belnr
+                                                                   bschl = '50' BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        ls_header-plant_street   = ls_get_header50-street.
+        ls_header-plant_str_suppl3   = ls_get_header50-str_suppl3.
+        ls_header-plant_city1   = ls_get_header50-city1.
+        ls_header-plant_POST_CODE1   = ls_get_header50-post_code1.
+        ls_header-gstin         = ls_get_header50-gstin.
+        ls_header-plant_phoneno = ls_get_header50-tel_number.
+        ls_header-plant_faxno   = ls_get_header50-fax_number.
+      ENDIF.
+
+      "Fetch CD Address..........
+      READ TABLE lt_get_header INTO DATA(ls_get_header40) WITH KEY belnr = ls_bkpf-belnr
+                                                                   bschl = '40' BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        ls_header-dr_street = ls_get_header40-street.
+        ls_header-dr_str_suppl3 = ls_get_header40-str_suppl3.
+        ls_header-dr_city1 = ls_get_header40-city1.
+        ls_header-dr_post_code1 = ls_get_header40-post_code1.
+        ls_header-dr_gstin = ls_get_header40-gstin.
+      ENDIF.
+
+      APPEND ls_header TO lt_header_result.
+      CLEAR: ls_bkpf,ls_get_header50,ls_get_header40.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_header_result BY invoice_no.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_ITEM_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_ITEM_result .
+  CLEAR: lv_serial.
+  IF lt_bkpf IS NOT INITIAL.
+    LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+      LOOP AT lt_get_item INTO DATA(ls_get_item) WHERE belnr = ls_bkpf-belnr AND
+                                                       buzei = '001'.
+        lv_serial         = lv_serial + 1.
+        ls_item-serial_no = lv_serial.
+        ls_item-belnr     = ls_get_item-belnr.
+
+        "--> fetch Service Description....
+        READ TABLE lt_srv_desc INTO DATA(ls_srvdesc) WITH KEY belnr = ls_get_item-belnr BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-srv_desc = ls_srvdesc-tdline.
+        ENDIF.
+
+        "-->fetch cgst Detail.............
+        READ TABLE lt_get_item INTO DATA(ls_cgst) WITH KEY belnr = ls_get_item-belnr
+                                                           hkont = '0022040107' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-cgst_rate   = ls_cgst-zuonr.
+          ls_item-cgst_amount = ls_cgst-dmbtr.
+        ENDIF.
+
+        "-->fetch sgst Detail.............
+        READ TABLE lt_get_item INTO DATA(ls_sgst) WITH KEY belnr = ls_get_item-belnr
+                                                           hkont = '0022040108' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-sgst_rate   = ls_sgst-zuonr.
+          ls_item-sgst_amount = ls_sgst-dmbtr.
+        ENDIF.
+
+        "-->fetch igst Detail.............
+        READ TABLE lt_get_item INTO DATA(ls_igst) WITH KEY belnr = ls_get_item-belnr
+                                                           hkont = '0022040109' BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          ls_item-igst_rate   = ls_igst-zuonr.
+          ls_item-igst_amount = ls_igst-dmbtr.
+        ENDIF.
+
+        APPEND ls_item TO lt_item_result.
+        CLEAR: ls_get_item,ls_srvdesc,ls_cgst,ls_sgst,ls_igst.
+      ENDLOOP.
+      CLEAR ls_bkpf.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_item_result BY belnr.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_header_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_data.
+  IF lt_bkpf IS NOT INITIAL.
+    SELECT                                              "#EC CI_NOORDER
+      a~bukrs,a~belnr,a~gjahr,a~bschl,a~bupla,
+      b~gstin,b~adrnr,
+      c~street,c~str_suppl3,c~city1,c~post_code1,
+      c~tel_number,c~fax_number
+      FROM bseg AS a
+           LEFT OUTER JOIN  j_1bbranch AS b ON a~bupla = b~branch AND "#EC CI_BUFFJOIN
+                                               b~bukrs = @p_bukrs
+           LEFT OUTER JOIN adrc AS c ON b~adrnr = c~addrnumber
+
+      FOR ALL ENTRIES IN @lt_bkpf                  "#EC CI_NO_TRANSFORM
+      WHERE a~belnr  = @lt_bkpf-belnr AND
+            a~bukrs  = @p_bukrs AND
+            a~gjahr  = @p_gjahr AND
+            a~bschl IN ( '40','50' )
+      INTO TABLE @lt_get_header
+       .
+  ENDIF.
+  SORT lt_get_header BY belnr bschl.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_Service_description
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_Service_description .
+
+  SELECT
+     tdobject,tdname,tdid,tdspras
+     FROM stxh INTO TABLE @DATA(lt_stxh).              "#EC CI_NOWHERE.
+
+  IF lt_bkpf IS NOT INITIAL .
+    LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+      lv_tdname = |{ p_bukrs }{ ls_bkpf-belnr }{ p_gjahr }001|.
+
+      SELECT SINGLE * FROM @lt_stxh AS stxh
+                      WHERE stxh~tdname = @lv_tdname
+                      INTO @DATA(ls_stxh).
+
+      IF sy-subrc EQ 0.
+        ls_srv_desc-belnr = ls_bkpf-belnr.
+        ls_srv_desc-tdid = ls_stxh-tdid.
+        ls_srv_desc-tdname = ls_stxh-tdname.
+        ls_srv_desc-tdobject = ls_stxh-tdobject.
+        ls_srv_desc-tdspras = ls_stxh-tdspras.
+
+        CALL FUNCTION 'READ_TEXT'
+          EXPORTING
+            client                  = sy-mandt                       " Client
+            id                      = ls_stxh-tdid                   " Text ID of text to be read
+            language                = ls_stxh-tdspras                " Language of text to be read
+            name                    = lv_tdname                      " Name of text to be read
+            object                  = ls_stxh-tdobject               " Object of text to be read
+          TABLES
+            lines                   = lt_tab                         " Lines of text read
+          EXCEPTIONS
+            id                      = 1                " Text ID invalid
+            language                = 2                " Invalid language
+            name                    = 3                " Invalid text name
+            not_found               = 4                " Text not found
+            object                  = 5                " Invalid text object
+            reference_check         = 6                " Reference chain interrupted
+            wrong_access_to_archive = 7                " Archive handle invalid for access
+            OTHERS                  = 8.
+        IF sy-subrc <> 0.
+          " Implement suitable error handling here
+        ENDIF.
+
+        READ TABLE lt_tab INTO DATA(ls_tab) INDEX 1.
+        IF sy-subrc EQ 0.
+          ls_srv_desc-tdline = ls_tab-tdline.
+        ENDIF.
+      ENDIF.
+      APPEND ls_srv_desc TO lt_srv_desc.
+      CLEAR :ls_srv_desc,ls_bkpf,ls_stxh,lv_tdname.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_srv_desc BY belnr.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_item_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_item_data.
+  SELECT
+     Bukrs,belnr,gjahr,buzei,zuonr,hkont,dmbtr
+     FROM bseg
+     INTO TABLE @lt_get_item
+     WHERE belnr IN @s_belnr AND
+           bukrs = @p_bukrs AND
+           gjahr = @p_gjahr
+     ORDER BY belnr,hkont.
+ENDFORM.
