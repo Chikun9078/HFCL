@@ -218,16 +218,18 @@ FORM process_data .
         es_header_data-classf = ls_format_data-classf.
 
         SELECT SINGLE cuobj_bm FROM mch1 INTO @DATA(lv_cuobj) WHERE matnr = @<fs_header>-matnr
-                                                AND  charg = @<fs_header>-charg.                             "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                AND  charg = @<fs_header>-charg.                         "#EC CI_NOFIRST "#EC CI_NOFIELD
 
-        SELECT SINGLE atwrt FROM  ausp INTO @es_header_data-atwrt WHERE objek = @lv_cuobj.                   "#EC CI_NOFIRST "#EC CI_NOFIELD                                  "  es_header_data exporting Header structure to smartform
+        SELECT SINGLE atwrt FROM  ausp INTO @es_header_data-atwrt WHERE objek = @lv_cuobj.               "#EC CI_NOFIRST "#EC CI_NOFIELD                                  "  es_header_data exporting Header structure to smartform
 
         "--> Fetching Reason of rejection...........
-        SELECT mblnr,mjahr FROM qamb INTO TABLE @DATA(lt_qamb) WHERE prueflos = @es_header_data-prueflos.   "#EC CI_NOFIRST "#EC CI_NOFIELD
+        SELECT mblnr,mjahr FROM qamb INTO TABLE @DATA(lt_qamb) 
+                                    WHERE prueflos = @es_header_data-prueflos.   "#EC CI_NOFIRST "#EC CI_NOFIELD
 
-        SELECT mblnr,mjahr,bwart,sgtxt FROM mseg FOR ALL ENTRIES IN @lt_qamb  WHERE mblnr = @lt_qamb-mblnr AND
-                                                                                  mjahr = @lt_qamb-mjahr AND
-                                                                                  bwart = '122' INTO TABLE @DATA(lt_mseg).  "#EC CI_NOFIRST "#EC CI_NOFIELD
+        SELECT mblnr,mjahr,bwart,sgtxt FROM mseg 
+        FOR ALL ENTRIES IN @lt_qamb  WHERE mblnr = @lt_qamb-mblnr AND
+                                           mjahr = @lt_qamb-mjahr AND
+                                           bwart = '122' INTO TABLE @DATA(lt_mseg).  "#EC CI_NOFIRST "#EC CI_NOFIELD
         CLEAR :lv_sgtxt.
         LOOP AT lt_mseg INTO DATA(ls_mseg) WHERE sgtxt IS NOT INITIAL.
 
@@ -241,17 +243,26 @@ FORM process_data .
 
 
         "--> Fetching Material Specification formart no..........
-        SELECT  SINGLE prueflos,plnty,plnnr,zaehl FROM qals INTO @DATA(ls_qals_TEMP) WHERE prueflos = @es_header_data-prueflos. "#EC CI_NOFIRST "#EC CI_NOFIELD
-        SELECT SINGLE plnty,plnnr,zaehl,ltxa1 FROM plpo INTO @DATA(ls_plpo) WHERE plnty = @ls_qals_temp-plnty AND
-                                                                                  plnnr = @ls_qals_temp-plnnr AND
-                                                                                  zaehl = @ls_qals_temp-zaehl.                   "#EC CI_NOFIRST "#EC CI_NOFIELD
+        SELECT  SINGLE prueflos,plnty,plnnr,zaehl 
+        FROM qals INTO @DATA(ls_qals_TEMP) 
+        WHERE prueflos = @es_header_data-prueflos.                                        "#EC CI_NOFIRST "#EC CI_NOFIELD
+
+        SELECT SINGLE plnty,plnnr,zaehl,ltxa1 
+        FROM plpo INTO @DATA(ls_plpo) WHERE plnty = @ls_qals_temp-plnty AND
+                                            plnnr = @ls_qals_temp-plnnr AND
+                                            zaehl = @ls_qals_temp-zaehl.                   "#EC CI_NOFIRST "#EC CI_NOFIELD
+
         es_header_data-ltxa1 = ls_plpo-ltxa1.
 
         "--> Company code name and address............
-        SELECT SINGLE werks,name2,stras,ort01,pstlz FROM t001w  INTO @DATA(ls_toolw) WHERE werks = @p_plant.                     "#EC CI_NOFIRST "#EC CI_NOFIELD
+        SELECT SINGLE werks,name2,stras,ort01,pstlz 
+        FROM t001w  INTO @DATA(ls_toolw) 
+        WHERE werks = @p_plant.                     "#EC CI_NOFIRST "#EC CI_NOFIELD
 
-        SELECT SINGLE Bukrs FROM mseg INTO  @DATA(lv_COMPANY_CODE)  WHERE mblnr = @es_header_data-mblnr
-                                                                      AND mjahr = @es_header_data-mjahr.                         "#EC CI_NOFIRST "#EC CI_NOFIELD
+        SELECT SINGLE Bukrs 
+        FROM mseg INTO  @DATA(lv_COMPANY_CODE) 
+        WHERE mblnr = @es_header_data-mblnr
+          AND mjahr = @es_header_data-mjahr.                         "#EC CI_NOFIRST "#EC CI_NOFIELD
 
         IF lv_COMPANY_CODE = '1100'.
           es_address_data-company_code_name = 'HFCL Limited'.
@@ -346,7 +357,10 @@ FORM process_data .
 
               IF ls_item_data-maschine IS INITIAL and
                  sample_results-add_info1 is not INITIAL.
-                SELECT SINGLE equnr,eqktx FROM eqkt INTO @DATA(ls_eqkt) WHERE equnr = @sample_results-add_info1.    "#EC CI_NOFIRST "#EC CI_NOFIELD
+                SELECT SINGLE equnr,eqktx 
+                FROM eqkt INTO @DATA(ls_eqkt) 
+                WHERE equnr = @sample_results-add_info1.                              "#EC CI_NOFIRST "#EC CI_NOFIELD
+
                 ls_item_data-maschine   = sample_results-add_info1.
                 ls_item_data-eqktx = ls_eqkt-eqktx.
 
@@ -357,10 +371,12 @@ FORM process_data .
                                                      ELSE sample_results-original_input ) .
                 IF sample_results-code_grp1 IS NOT INITIAL.
                   lv_code = CONV qcode( ls_item_data-obsrval1 ).
-                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text1) WHERE katalogart  = '1'                         "#EC CI_NOFIRST "#EC CI_NOFIELD
-                                                                                 AND    codegruppe = @sample_results-code_grp1
-                                                                                 AND    code       = @lv_code
-                                                                                 AND    sprache    = 'E'.
+                  SELECT SINGLE kurztext 
+                  FROM QpCT INTO @DATA(lv_text1) 
+                  WHERE katalogart  = '1'                         "#EC CI_NOFIRST "#EC CI_NOFIELD
+                AND    codegruppe = @sample_results-code_grp1
+                AND    code       = @lv_code
+                AND    sprache    = 'E'.
 
                   ls_item_data-obsrval1_t =  |-{ lv_text1 }|.
                 ENDIF.
@@ -374,10 +390,12 @@ FORM process_data .
                                                      ELSE sample_results-original_input ) .
                 IF sample_results-code_grp1 IS NOT INITIAL.
                   lv_code = CONV qcode( ls_item_data-obsrval2 ).
-                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text2) WHERE katalogart = '1'                    "#EC CI_NOFIRST "#EC CI_NOFIELD
-                                                                 AND    codegruppe = @sample_results-code_grp1
-                                                                 AND    code       = @lv_code
-                                                                 AND    sprache    = 'E'.
+
+                  SELECT SINGLE kurztext 
+                  FROM QpCT INTO @DATA(lv_text2) WHERE katalogart = '1'                    "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                AND    codegruppe = @sample_results-code_grp1
+                                                AND    code       = @lv_code
+                                                AND    sprache    = 'E'.
 
                   ls_item_data-obsrval2_t =  |-{ lv_text2 }|.
                 ENDIF.
@@ -390,10 +408,11 @@ FORM process_data .
 
                 IF sample_results-code_grp1 IS NOT INITIAL.
                   lv_code = CONV qcode( ls_item_data-obsrval3 ).
-                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text3) WHERE katalogart  = '1'                           "#EC CI_NOFIRST "#EC CI_NOFIELD
-                                                                 AND    codegruppe = @sample_results-code_grp1
-                                                                 AND    code       = @lv_code
-                                                                 AND    sprache    = 'E'.
+                  SELECT SINGLE kurztext 
+                  FROM QpCT INTO @DATA(lv_text3) WHERE katalogart  = '1'                           "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                AND    codegruppe = @sample_results-code_grp1
+                                                AND    code       = @lv_code
+                                                AND    sprache    = 'E'.
                   ls_item_data-obsrval3_t = |-{ lv_text3 }|.
                 ENDIF.
               ENDIF.
@@ -404,10 +423,11 @@ FORM process_data .
                                                      ELSE sample_results-original_input ) .
                 IF sample_results-code_grp1 IS NOT INITIAL.
                   lv_code = CONV qcode( ls_item_data-obsrval4 ).
-                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text4) WHERE katalogart  = '1'                           "#EC CI_NOFIRST "#EC CI_NOFIELD
-                                                                 AND    codegruppe = @sample_results-code_grp1
-                                                                 AND    code       = @lv_code
-                                                                 AND    sprache    = 'E'.
+                  SELECT SINGLE kurztext 
+                  FROM QpCT INTO @DATA(lv_text4) WHERE katalogart  = '1'                           "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                AND    codegruppe = @sample_results-code_grp1
+                                                AND    code       = @lv_code
+                                                AND    sprache    = 'E'.
 
                   ls_item_data-obsrval4_t = |-{ lv_text4 }|.
                 ENDIF.
@@ -419,10 +439,11 @@ FORM process_data .
                                                      ELSE sample_results-original_input ) .
                 IF sample_results-code_grp1 IS NOT INITIAL.
                   lv_code = CONV qcode( ls_item_data-obsrval5 ).
-                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text5) WHERE katalogart  = '1'                        "#EC CI_NOFIRST "#EC CI_NOFIELD
-                                                                 AND    codegruppe = @sample_results-code_grp1
-                                                                 AND    code       = @lv_code
-                                                                 AND    sprache    = 'E'.
+                  SELECT SINGLE kurztext 
+                  FROM QpCT INTO @DATA(lv_text5) WHERE katalogart  = '1'                        "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                AND    codegruppe = @sample_results-code_grp1
+                                                AND    code       = @lv_code
+                                                AND    sprache    = 'E'.
                   ls_item_data-obsrval5_t = |-{ lv_text5 }|.
                 ENDIF.
               ENDIF.
