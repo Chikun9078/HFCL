@@ -1,0 +1,551 @@
+Created IGI Smartform for Incoming GoodS Recipt Inspection.
+
+here in this report we have to check the goods quality which was recived in the warehouse based on lot number by taking some random product from the inspection lot. 
+
+TR AND Program
+---------------
+
+Package    : ZQM
+TR         : DFHK908830    
+             DFHK908970
+             DFHK909003       AIRDITDEBI   QM:Incoming Goods Insp. Report
+             DFHK909017       AIRDITDEBI   QM:Incoming Goods Insp. Report
+
+SMARTFORM  : ZQMSF_IGI_FORM                             (QM:SRFM:Incoming Good Rec Insp)
+D.Progrm   : ZQM_IGI_FORM_REPORT                        (QM:PRNT:Incoming GoodS Recipt Inspection)
+tcode      : zqm0007
+
+
+code
+---------------------------------------------
+
+IGI : Header Structure  : ZQM_IGI_HEADER_STRUCTURE
+IGI : item Structure    : ZQM_IGI_HEADER_STRUCTURE
+isi : supplier_batch    : ZQM_IGI_SUPPLIER_BATCH_DATA
+igi : footer_structure  : ZQM_IGI_FOOTER_DATA
+igi : formart_structure : ZQM_IGI_FORMART_DATA
+----------------------------------------------------------------------------------------------------------------------------------
+*&---------------------------------------------------------------------*
+*& Report ZQM_IGI_FORM_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zqm_igi_form_report.
+
+"--> Data object Declaration............
+TYPES : BEGIN OF ty_inspection_lot,
+          prueflos   LIKE qals-prueflos,
+          werk       LIKE qals-werk,
+          name1      LIKE t001w-name1,
+          matnr      LIKE qals-matnr,
+          ktextmat   LIKE qals-ktextmat,
+          charg      LIKE qals-charg,
+          losmenge   LIKE qals-losmenge,
+          lmenge01   LIKE qals-lmenge01,
+          lmenge02   LIKE qals-lmenge02,
+          lmenge03   LIKE qals-lmenge03,
+          lmenge04   LIKE qals-lmenge04,
+          lmenge06   LIKE qals-lmenge06,
+          mengeneinh LIKE qals-mengeneinh,
+          mblnr      LIKE qals-mblnr,
+          mjahr      LIKE qals-mjahr,
+          ebeln      LIKE qals-ebeln,
+          ebelp      LIKE qals-ebelp,
+          lifnr      LIKE qals-lifnr,
+          name_org1  LIKE but000-name_org1,
+          frbnr      LIKE mkpf-frbnr,
+          budat      LIKE mkpf-budat,
+          ktextlos   LIKE qals-ktextlos,
+        END OF ty_inspection_lot.
+
+TYPES : BEGIN OF ty_format,
+          werks  TYPE werks_d,
+          tcode  TYPE ztecode,
+          docno  TYPE char20,
+          revno  TYPE char20,
+          classf TYPE char20,
+        END OF ty_format.
+
+
+
+DATA: lv_PRUEFLOS TYPE qplos,            "Inspection Lot Number
+      lv_matnr    TYPE matnr,            "Material Number
+      lv_charg    TYPE qals-charg,       "Batch no
+      lv_date     TYPE budat ,           "date of recipt
+      lv_serial   TYPE int2,
+      lv_code     TYPE qcode,
+      lv_sgtxt    TYPE sgtxt.
+
+DATA: it_igi_header_data TYPE TABLE OF ty_inspection_lot,
+      it_header_data     TYPE TABLE OF zqm_igi_header_structure,
+      es_header_data     TYPE zqm_igi_header_structure,
+      ls_item_data       TYPE zqm_igi_item_structure,
+      et_item_data       TYPE TABLE OF zqm_igi_item_structure,
+      es_supplier_batch  TYPE zqm_igi_supplier_batch_data,
+      es_footer_data     TYPE zqm_igi_footer_data,
+      es_address_data    TYPE zqm_igi_address_data,
+      ls_format_data     TYPE ty_format.
+
+DATA : insppoints        TYPE  bapi2045l4   OCCURS 0 WITH HEADER LINE,
+       char_requirements TYPE  bapi2045d1   OCCURS 0 WITH HEADER LINE,
+       char_results      TYPE  bapi2045d2   OCCURS 0 WITH HEADER LINE,
+       sample_results    TYPE  bapi2045d3   OCCURS 0 WITH HEADER LINE,
+       single_results    TYPE  bapi2045d4   OCCURS 0 WITH HEADER LINE,
+       return            TYPE  bapiret2.
+
+DATA : lv_formname           TYPE  tdsfname,
+       lv_fm_name            TYPE  rs38l_fnam,
+       ls_output_options     TYPE  ssfcompop,
+       ls_control_parameters TYPE  ssfctrlop,
+       ls_job_output_info    TYPE  ssfcrescl,
+       ls_FNL_output_info    TYPE  ssfcrescl.
+
+"--> selection screen...................
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+
+  SELECT-OPTIONS: prueflos FOR lv_prueflos,
+                  matnr    FOR lv_matnr,
+                  charg    FOR lv_charg,
+                  date     FOR lv_date.
+  PARAMETERS : p_plant  TYPE werks_d OBLIGATORY,
+               inspoper LIKE  bapi2045l2-inspoper DEFAULT '0010' OBLIGATORY.
+
+SELECTION-SCREEN END OF BLOCK b1.
+
+*"-->Fatching Data from database.........
+START-OF-SELECTION.
+  CLEAR: it_igi_header_data,it_header_data.
+  PERFORM get_data .
+  PERFORM process_data.
+  PERFORM Display_data.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*!
+FORM get_data.
+  PERFORM get_insp_lot_herder_data.
+  PERFORM get_format_data.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_insp_lot_herder_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*!
+FORM get_insp_lot_herder_data.
+
+  matnr-low = |{ matnr-low ALPHA = IN }|.
+  matnr-high = |{ matnr-high ALPHA = IN }|.
+
+  SELECT a~prueflos a~werk b~name1 a~matnr a~ktextmat
+  a~charg a~losmenge a~lmenge01 a~lmenge02  a~lmenge03
+  a~lmenge04 a~lmenge06 a~mengeneinh a~mblnr a~mjahr a~ebeln a~ebelp
+  a~lifnr c~name_org1 d~frbnr d~budat a~ktextlos
+  INTO TABLE it_igi_header_data
+  FROM qals AS a
+  LEFT OUTER JOIN t001w AS b ON a~werk = b~werks
+  LEFT OUTER JOIN but000 AS c ON a~lifnr = c~partner
+  LEFT OUTER JOIN mkpf AS d ON a~mblnr = d~mblnr AND a~mjahr = d~mjahr
+  WHERE a~prueflos  IN prueflos AND
+        a~matnr     IN matnr    AND
+        a~charg     IN charg    AND
+        a~budat     IN date     AND
+        a~werk      =  p_plant.        "#EC CI_NOFIRST "#EC CI_NOFIELD
+
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_format_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*!
+FORM get_format_data.
+  CLEAR ls_format_data.
+  SELECT * FROM zqm_format_codif INTO TABLE @DATA(lt_format) WHERE werks = @p_plant AND
+                                                            tcode = 'ZQM0007'.                  "#EC CI_NOFIELD "#EC CI_NOFIRST
+
+  ls_format_data-werks = p_plant .
+  ls_format_data-tcode = 'ZQM0007'.
+  LOOP AT lt_format INTO DATA(ls_format_temp) .
+    IF ls_format_temp-Variables  = 'DOCNO'.
+      ls_format_data-docno = ls_format_temp-zresult.
+
+    ELSEIF ls_format_temp-Variables  = 'REVNO'.
+      ls_format_data-revno = ls_format_temp-zresult.
+
+    ELSEIF ls_format_temp-Variables  = 'CLASSF'.
+      ls_format_data-classf = ls_format_temp-zresult.
+
+    ENDIF.
+  ENDLOOP.
+
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+
+  IF it_igi_header_data IS NOT INITIAL.
+    it_header_data = CORRESPONDING #( it_igi_header_data ).
+    SORT it_header_data ASCENDING BY prueflos.
+
+    IF it_header_data IS NOT INITIAL.
+
+      LOOP AT it_header_data ASSIGNING FIELD-SYMBOL(<fs_header>).
+        es_header_data = CORRESPONDING #( <fs_header> ).
+        es_header_data-docno = ls_format_data-docno.
+        es_header_data-revno = ls_format_data-revno.
+        es_header_data-classf = ls_format_data-classf.
+
+        SELECT SINGLE cuobj_bm FROM mch1 INTO @DATA(lv_cuobj) WHERE matnr = @<fs_header>-matnr
+                                                AND  charg = @<fs_header>-charg.                             "#EC CI_NOFIRST "#EC CI_NOFIELD
+
+        SELECT SINGLE atwrt FROM  ausp INTO @es_header_data-atwrt WHERE objek = @lv_cuobj.                   "#EC CI_NOFIRST "#EC CI_NOFIELD                                  "  es_header_data exporting Header structure to smartform
+
+        "--> Fetching Reason of rejection...........
+        SELECT mblnr,mjahr FROM qamb INTO TABLE @DATA(lt_qamb) WHERE prueflos = @es_header_data-prueflos.   "#EC CI_NOFIRST "#EC CI_NOFIELD
+
+        SELECT mblnr,mjahr,bwart,sgtxt FROM mseg FOR ALL ENTRIES IN @lt_qamb  WHERE mblnr = @lt_qamb-mblnr AND
+                                                                                  mjahr = @lt_qamb-mjahr AND
+                                                                                  bwart = '122' INTO TABLE @DATA(lt_mseg).  "#EC CI_NOFIRST "#EC CI_NOFIELD
+        CLEAR :lv_sgtxt.
+        LOOP AT lt_mseg INTO DATA(ls_mseg) WHERE sgtxt IS NOT INITIAL.
+
+          IF lv_sgtxt IS INITIAL.
+            lv_sgtxt = ls_mseg-sgtxt .
+          ELSE.
+            lv_sgtxt = |{ lv_sgtxt },{ ls_mseg-sgtxt }|.
+          ENDIF.
+        ENDLOOP.
+        es_header_data-sgtxt = lv_sgtxt.
+
+
+        "--> Fetching Material Specification formart no..........
+        SELECT  SINGLE prueflos,plnty,plnnr,zaehl FROM qals INTO @DATA(ls_qals_TEMP) WHERE prueflos = @es_header_data-prueflos. "#EC CI_NOFIRST "#EC CI_NOFIELD
+        SELECT SINGLE plnty,plnnr,zaehl,ltxa1 FROM plpo INTO @DATA(ls_plpo) WHERE plnty = @ls_qals_temp-plnty AND
+                                                                                  plnnr = @ls_qals_temp-plnnr AND
+                                                                                  zaehl = @ls_qals_temp-zaehl.                   "#EC CI_NOFIRST "#EC CI_NOFIELD
+        es_header_data-ltxa1 = ls_plpo-ltxa1.
+
+        "--> Company code name and address............
+        SELECT SINGLE werks,name2,stras,ort01,pstlz FROM t001w  INTO @DATA(ls_toolw) WHERE werks = @p_plant.                     "#EC CI_NOFIRST "#EC CI_NOFIELD
+
+        SELECT SINGLE Bukrs FROM mseg INTO  @DATA(lv_COMPANY_CODE)  WHERE mblnr = @es_header_data-mblnr
+                                                                      AND mjahr = @es_header_data-mjahr.                         "#EC CI_NOFIRST "#EC CI_NOFIELD
+
+        IF lv_COMPANY_CODE = '1100'.
+          es_address_data-company_code_name = 'HFCL Limited'.
+          es_address_data-company_code = lv_COMPANY_CODE.
+
+        ELSEIF lv_COMPANY_CODE = '1200'.
+          es_address_data-company_code_name = 'HTL Limited'.
+          es_address_data-company_code = lv_COMPANY_CODE.
+        ENDIF.
+        es_address_data-plant_address = |{ ls_toolw-name2 },{ ls_toolw-stras },{ ls_toolw-ort01 },{ ls_toolw-pstlz }|.
+
+        "fatching the item detail........
+        CLEAR : insppoints[],char_requirements[],char_results[],sample_results[],single_results[].
+        CALL FUNCTION 'BAPI_INSPOPER_GETDETAIL'
+          EXPORTING
+            insplot                = es_header_data-prueflos
+            inspoper               = inspoper
+            read_insppoints        = 'X'
+            read_char_requirements = 'X'
+            read_char_results      = 'X'
+            read_sample_results    = 'X'
+            read_single_results    = 'X'
+*           READ_CHARS_WITH_CLASSES            = ' '
+*           READ_CHARS_WITHOUT_RECORDING       = ' '
+*           RES_ORG                = ' '
+*           CHAR_FILTER_NO         = '1   '
+*           CHAR_FILTER_TCODE      = 'QE11'
+*           MAX_INSPPOINTS         = 100
+*           INSPPOINT_FROM         = 0
+*           HANDHELD_APPLICATION   = ' '
+*           RESULT_COPY            = ' '
+          IMPORTING
+*           OPERATION              =
+*           INSPPOINT_REQUIREMENTS =
+            return                 = return
+          TABLES
+            insppoints             = insppoints[]
+            char_requirements      = char_requirements[]
+            char_results           = char_results[]
+            sample_results         = sample_results[]
+            single_results         = single_results[].
+
+        IF insppoints[] IS NOT INITIAL.
+
+          LOOP AT insppoints ASSIGNING FIELD-SYMBOL(<fs_supplier_batch>).
+
+            IF <fs_supplier_batch>-insppoint = '000001'.
+              es_supplier_batch-supplier_batch1 = <fs_supplier_batch>-userc1.
+              es_header_data-sample_no = es_header_data-sample_no + 1.
+
+            ELSEIF <fs_supplier_batch>-insppoint = '000002'.
+              es_supplier_batch-supplier_batch2 = <fs_supplier_batch>-userc1.
+              es_header_data-sample_no = es_header_data-sample_no + 1.
+
+            ELSEIF <fs_supplier_batch>-insppoint = '000003'.
+              es_supplier_batch-supplier_batch3 = <fs_supplier_batch>-userc1.
+              es_header_data-sample_no = es_header_data-sample_no + 1.
+
+            ELSEIF <fs_supplier_batch>-insppoint = '000004'.
+              es_supplier_batch-supplier_batch4 = <fs_supplier_batch>-userc1.
+              es_header_data-sample_no = es_header_data-sample_no + 1.
+
+            ELSEIF <fs_supplier_batch>-insppoint = '000005'.
+              es_supplier_batch-supplier_batch5 = <fs_supplier_batch>-userc1.
+              es_header_data-sample_no = es_header_data-sample_no + 1.
+            ENDIF.
+
+          ENDLOOP.
+
+        ENDIF.
+
+        IF char_requirements[] IS NOT INITIAL.
+          CLEAR lv_serial.
+          LOOP AT char_requirements.
+            lv_serial = lv_serial + 1.
+            ls_item_data-serial_no  = lv_serial .
+            ls_item_data-kurxtext   = char_requirements-char_descr.
+            ls_item_data-masseinhsw = char_requirements-meas_unit.
+            ls_item_data-pmethode   = char_requirements-method.
+            ls_item_data-toleranzun = char_requirements-lw_tol_lmt.
+            ls_item_data-toleranzob = char_requirements-up_tol_lmt.
+
+            LOOP AT insppoints.
+              READ TABLE sample_results WITH  KEY insplot = insppoints-insplot
+                                           inspoper = insppoints-inspoper
+                                           inspsample = insppoints-insppoint
+                                           inspchar   =  char_requirements-inspchar.
+
+              IF ls_item_data-pruefbemkt IS INITIAL.
+                ls_item_data-pruefbemkt = sample_results-remark.
+              ENDIF.
+
+              IF ls_item_data-maschine IS INITIAL and
+                 sample_results-add_info1 is not INITIAL.
+                SELECT SINGLE equnr,eqktx FROM eqkt INTO @DATA(ls_eqkt) WHERE equnr = @sample_results-add_info1.    "#EC CI_NOFIRST "#EC CI_NOFIELD
+                ls_item_data-maschine   = sample_results-add_info1.
+                ls_item_data-eqktx = ls_eqkt-eqktx.
+
+              ENDIF.
+
+              IF ls_item_data-obsrval1 IS INITIAL AND sample_results-inspsample = '000001' .
+                ls_item_data-obsrval1 = COND char25( WHEN sample_results-code1 IS NOT INITIAL THEN sample_results-code1
+                                                     ELSE sample_results-original_input ) .
+                IF sample_results-code_grp1 IS NOT INITIAL.
+                  lv_code = CONV qcode( ls_item_data-obsrval1 ).
+                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text1) WHERE katalogart  = '1'                         "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                                                 AND    codegruppe = @sample_results-code_grp1
+                                                                                 AND    code       = @lv_code
+                                                                                 AND    sprache    = 'E'.
+
+                  ls_item_data-obsrval1_t =  |-{ lv_text1 }|.
+                ENDIF.
+
+
+              ENDIF.
+
+              IF ls_item_data-obsrval2 IS INITIAL AND sample_results-inspsample = '000002' .
+                CLEAR lv_code.
+                ls_item_data-obsrval2 = COND char25( WHEN sample_results-code1 IS NOT INITIAL THEN sample_results-code1
+                                                     ELSE sample_results-original_input ) .
+                IF sample_results-code_grp1 IS NOT INITIAL.
+                  lv_code = CONV qcode( ls_item_data-obsrval2 ).
+                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text2) WHERE katalogart = '1'                    "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                                 AND    codegruppe = @sample_results-code_grp1
+                                                                 AND    code       = @lv_code
+                                                                 AND    sprache    = 'E'.
+
+                  ls_item_data-obsrval2_t =  |-{ lv_text2 }|.
+                ENDIF.
+              ENDIF.
+
+              IF ls_item_data-obsrval3 IS INITIAL AND sample_results-inspsample = '000003'.
+                CLEAR lv_code.
+                ls_item_data-obsrval3 = COND char25( WHEN sample_results-code1 IS NOT INITIAL THEN sample_results-code1
+                                                     ELSE sample_results-original_input ) .
+
+                IF sample_results-code_grp1 IS NOT INITIAL.
+                  lv_code = CONV qcode( ls_item_data-obsrval3 ).
+                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text3) WHERE katalogart  = '1'                           "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                                 AND    codegruppe = @sample_results-code_grp1
+                                                                 AND    code       = @lv_code
+                                                                 AND    sprache    = 'E'.
+                  ls_item_data-obsrval3_t = |-{ lv_text3 }|.
+                ENDIF.
+              ENDIF.
+
+              IF ls_item_data-obsrval4 IS INITIAL AND sample_results-inspsample = '000004'.
+                CLEAR lv_code.
+                ls_item_data-obsrval4 = COND char25( WHEN sample_results-code1 IS NOT INITIAL THEN sample_results-code1
+                                                     ELSE sample_results-original_input ) .
+                IF sample_results-code_grp1 IS NOT INITIAL.
+                  lv_code = CONV qcode( ls_item_data-obsrval4 ).
+                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text4) WHERE katalogart  = '1'                           "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                                 AND    codegruppe = @sample_results-code_grp1
+                                                                 AND    code       = @lv_code
+                                                                 AND    sprache    = 'E'.
+
+                  ls_item_data-obsrval4_t = |-{ lv_text4 }|.
+                ENDIF.
+              ENDIF.
+
+              IF ls_item_data-obsrval5 IS INITIAL AND sample_results-inspsample = '000005'.
+                CLEAR lv_code.
+                ls_item_data-obsrval5 = COND char25( WHEN sample_results-code1 IS NOT INITIAL THEN sample_results-code1
+                                                     ELSE sample_results-original_input ) .
+                IF sample_results-code_grp1 IS NOT INITIAL.
+                  lv_code = CONV qcode( ls_item_data-obsrval5 ).
+                  SELECT SINGLE kurztext FROM QpCT INTO @DATA(lv_text5) WHERE katalogart  = '1'                        "#EC CI_NOFIRST "#EC CI_NOFIELD
+                                                                 AND    codegruppe = @sample_results-code_grp1
+                                                                 AND    code       = @lv_code
+                                                                 AND    sprache    = 'E'.
+                  ls_item_data-obsrval5_t = |-{ lv_text5 }|.
+                ENDIF.
+              ENDIF.
+            ENDLOOP.
+
+            APPEND ls_item_data TO et_item_data.                                                       " et_item_data exporting item data to smartform
+            CLEAR ls_item_data.
+          ENDLOOP.
+        ENDIF.
+
+        "--> fatching footer details
+        SELECT SINGLE pruefdatuv, pruefer FROM qasr INTO CORRESPONDING FIELDS OF @es_footer_data
+                                                    WHERE prueflos = @es_header_data-prueflos.         "#EC CI_NOFIRST "#EC CI_NOFIELD
+
+        SELECT SINGLE vbewertung,vname,vdatum FROM qave INTO  CORRESPONDING FIELDS OF @es_footer_data
+                                                        WHERE prueflos = @es_header_data-prueflos.
+
+        SELECT SINGLE ddtext FROM dd07t INTO @es_footer_data-vbewertung_text WHERE domname = 'QBEWERTUNG'  "--> vbewertung FIELD'S DOMAIN
+                                                                      AND   domvalue_l = @es_footer_data-vbewertung
+                                                                      AND   ddlanguage = @sy-langu.      "#EC CI_NOFIRST "#EC CI_NOFIELD
+
+        "--> Prepare form OTF formart...........
+        PERFORM process_form.
+      ENDLOOP.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_form .
+
+  CLEAR : lv_formname,lv_fm_name,ls_output_options,ls_control_parameters,ls_fnL_output_info.
+  lv_formname = 'ZQMSF_IGI_FORM'.
+
+*        ls_output_options-tdcopies = 5.
+  ls_output_options-tddest   = 'LOCL'.
+
+  ls_control_parameters-preview   = 'X'.
+  ls_control_parameters-getotf    = 'X'.
+  ls_control_parameters-no_dialog = 'X'.
+*        ls_control_parameters-no_open   = 'X'.
+*        ls_control_parameters-no_close  = 'X'.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lv_formname
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = lv_fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+
+*        CALL FUNCTION 'SSF_OPEN'
+*          EXPORTING
+*            control_parameters = ls_control_parameters
+*            output_options     = ls_output_options.
+
+
+  CALL FUNCTION lv_fm_name
+    EXPORTING
+*     ARCHIVE_INDEX      =
+*     ARCHIVE_INDEX_TAB  =
+*     ARCHIVE_PARAMETERS =
+      control_parameters = ls_control_parameters
+*     MAIL_APPL_OBJ      =
+*     MAIL_RECIPIENT     =
+*     MAIL_SENDER        =
+      output_options     = ls_output_options
+      user_settings      = ' '
+      is_header_data     = es_header_data
+      is_supplier_batch  = es_supplier_batch
+      is_footer_data     = es_footer_data
+      it_item_data       = et_item_data
+      is_address_data    = es_address_data
+    IMPORTING
+*     DOCUMENT_OUTPUT_INFO       =
+      job_output_info    = ls_job_output_info
+*     JOB_OUTPUT_OPTIONS =
+    EXCEPTIONS
+      formatting_error   = 1
+      internal_error     = 2
+      send_error         = 3
+      user_canceled      = 4
+      OTHERS             = 5.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+  CALL FUNCTION 'SSF_CLOSE'
+    IMPORTING
+      job_output_info  = ls_job_output_info
+    EXCEPTIONS
+      formatting_error = 1
+      internal_error   = 2
+      send_error       = 3
+      OTHERS           = 4.
+
+  APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form Display Data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*!
+FORM Display_data.
+
+  CALL FUNCTION 'HR_IT_DISPLAY_WITH_PDF'
+    TABLES
+      otf_table = ls_fnL_output_info-otfdata.
+
+ENDFORM.
