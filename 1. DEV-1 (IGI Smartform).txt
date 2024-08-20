@@ -14,16 +14,14 @@ TR         : DFHK908830
 SMARTFORM  : ZQMSF_IGI_FORM                             (QM:SRFM:Incoming Good Rec Insp)
 D.Progrm   : ZQM_IGI_FORM_REPORT                        (QM:PRNT:Incoming GoodS Recipt Inspection)
 tcode      : zqm0007
-
-
-code
 ---------------------------------------------
-
 IGI : Header Structure  : ZQM_IGI_HEADER_STRUCTURE
 IGI : item Structure    : ZQM_IGI_HEADER_STRUCTURE
 isi : supplier_batch    : ZQM_IGI_SUPPLIER_BATCH_DATA
 igi : footer_structure  : ZQM_IGI_FOOTER_DATA
 igi : formart_structure : ZQM_IGI_FORMART_DATA
+---------------------------------------------------------------------------------------------------------------------------------
+code
 ----------------------------------------------------------------------------------------------------------------------------------
 *&---------------------------------------------------------------------*
 *& Report ZQM_IGI_FORM_REPORT
