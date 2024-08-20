@@ -10,7 +10,6 @@ tr         :DFHK909025                  FI:Asset Master                         
 program    :ZFI_ASSET_MASTER_REPORT     FI:REPT:Asset Master Report
 Tcode      :ZFI0045                     FI:Asset Master Standard Detail
 
---------------------------------------------------------------------------------------------------------------------------------version1
 *&---------------------------------------------------------------------*
 *& Report ZFI_ASSET_MASTER_REPORT
 *&---------------------------------------------------------------------*
@@ -55,6 +54,7 @@ TYPES : BEGIN OF ty_asset,
           end_book   LIKE anlc-answl,        "End book value
           msfak      LIKE anlz-msfak,        "Shift Factor
           aprop      LIKE anlb-aprop,        "Variable depreceation Portion
+          dep_method LIKE zfi_dep_method-dep_method,   " Depreciation Method
         END OF ty_asset.
 
 
@@ -101,7 +101,7 @@ TYPES: BEGIN OF ty_anlb,
          afabe LIKE anlb-afabe,
          bdatu LIKE anlb-bdatu,
          aprop LIKE anlb-aprop,
-         afabg like anlb-afabg,
+         afabg LIKE anlb-afabg,
          afasl LIKE anlb-afasl,
          ndjar LIKE anlb-ndjar,
        END OF ty_anlb.
@@ -121,6 +121,12 @@ TYPES: BEGIN OF ty_anlc,
          nafap LIKE anlc-nafap,
        END OF ty_anlc.
 
+"--> structure type : ZFI_DEP_METHOD.
+TYPES:BEGIN OF ty_dep_method,
+        dep_key	   TYPE zdep_key,
+        dep_method TYPE   zdep_method,
+      END OF ty_dep_method.
+
 DATA : lv_bukrs TYPE anla-bukrs,
        lv_anln1 TYPE anla-anln1,
        lv_anln2 TYPE anla-anln2,
@@ -135,10 +141,11 @@ DATA: ls_asset_result TYPE ty_asset,
 
 DATA: fcat TYPE slis_fieldcat_alv  OCCURS 0 WITH HEADER LINE.
 
-DATA: lt_anla TYPE TABLE OF ty_anla,
-      lt_anlz TYPE TABLE OF ty_anlz,
-      lt_anlb TYPE TABLE OF ty_anlb,
-      lt_anlc TYPE TABLE OF ty_anlc.
+DATA: lt_anla       TYPE TABLE OF ty_anla,
+      lt_anlz       TYPE TABLE OF ty_anlz,
+      lt_anlb       TYPE TABLE OF ty_anlb,
+      lt_anlc       TYPE TABLE OF ty_anlc,
+      lt_dep_method TYPE TABLE OF ty_dep_method.
 
 SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE  TEXT-001.
   SELECT-OPTIONS : s_bukrs FOR lv_bukrs,
@@ -168,6 +175,7 @@ FORM get_data .
   PERFORM get_anlz_data.
   PERFORM get_anlb_data.
   PERFORM get_anlc_data.
+  PERFORM get_dep_method_data.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
@@ -207,17 +215,18 @@ ENDFORM.
 *&---------------------------------------------------------------------*
 FORM get_anlz_data .
 
-  SELECT bukrs,anln1,anln2,bdatu,prctr,kostl,werks,gsber,raumn,stort,msfak
-         FROM anlz FOR ALL ENTRIES IN @lt_anla     "#EC CI_NO_TRANSFORM
-         WHERE bukrs = @lt_anla-bukrs AND               "#EC CI_NOFIELD
-               anln1 = @lt_anla-anln1 AND
-               anln2 = @lt_anla-anln2 AND
-               gsber IN @s_gsber      AND
-               prctr IN @s_prctr
-         INTO TABLE @lt_anlz.
+  IF lt_anla IS NOT INITIAL.
+    SELECT bukrs,anln1,anln2,bdatu,prctr,kostl,werks,gsber,raumn,stort,msfak
+           FROM anlz FOR ALL ENTRIES IN @lt_anla   "#EC CI_NO_TRANSFORM
+           WHERE bukrs = @lt_anla-bukrs AND             "#EC CI_NOFIELD
+                 anln1 = @lt_anla-anln1 AND
+                 anln2 = @lt_anla-anln2 AND
+                 gsber IN @s_gsber      AND
+                 prctr IN @s_prctr
+           INTO TABLE @lt_anlz.
 
-  SORT lt_anlz DESCENDING BY bdatu.
-
+    SORT lt_anlz BY bukrs anln1 anln2 bdatu DESCENDING.
+  ENDIF.
 ENDFORM.
 
 *&---------------------------------------------------------------------*
@@ -229,15 +238,18 @@ ENDFORM.
 *& <--  p2        text
 *&---------------------------------------------------------------------*
 FORM get_anlb_data .
+  IF lt_anla IS NOT INITIAL.
+    SELECT bukrs,anln1,anln2,afabe,bdatu,aprop,afabg,
+           afasl AS afas1_01,ndjar AS ndjar_01
+           FROM anlb  FOR ALL ENTRIES IN @lt_anla  "#EC CI_NO_TRANSFORM
+           WHERE bukrs = @lt_anla-bukrs AND             "#EC CI_NOFIELD
+                 anln1 = @lt_anla-anln1 AND
+                 anln2 = @lt_anla-anln2 AND
+                 afabe IN ('01','31')
+           INTO TABLE @lt_anlb.
 
-  SELECT bukrs,anln1,anln2,afabe,bdatu,aprop,afabg,
-         afasl AS afas1_01,ndjar AS ndjar_01
-         FROM anlb  FOR ALL ENTRIES IN @lt_anla    "#EC CI_NO_TRANSFORM
-         WHERE bukrs = @lt_anla-bukrs AND               "#EC CI_NOFIELD
-               anln1 = @lt_anla-anln1 AND
-               anln2 = @lt_anla-anln2 AND
-               afabe IN ('01','31')
-         INTO TABLE @lt_anlb.
+    SORT lt_anlb BY bukrs anln1 anln2 afabe.
+  ENDIF.
 
 ENDFORM.
 
@@ -250,16 +262,35 @@ ENDFORM.
 *& <--  p2        text
 *&---------------------------------------------------------------------*
 FORM get_anlc_data .
+  IF lt_anla IS NOT INITIAL.
+    SELECT bukrs,anln1,anln2,gjahr,afabe,
+           zujhr,zucod,kansw ,knafa,answl,nafap
+           FROM anlc FOR ALL ENTRIES IN @lt_anla   "#EC CI_NO_TRANSFORM
+           WHERE bukrs = @lt_anla-bukrs AND             "#EC CI_NOFIELD
+                 anln1 = @lt_anla-anln1 AND
+                 anln2 = @lt_anla-anln2 AND
+                 gjahr = @p_gjahr AND
+                 afabe = '01'
+                 INTO TABLE @lt_anlc.
 
-  SELECT bukrs,anln1,anln2,gjahr,afabe,
-         zujhr,zucod,kansw ,knafa,answl,nafap
-         FROM anlc FOR ALL ENTRIES IN @lt_anla     "#EC CI_NO_TRANSFORM
-         WHERE bukrs = @lt_anla-bukrs AND               "#EC CI_NOFIELD
-               anln1 = @lt_anla-anln1 AND
-               anln2 = @lt_anla-anln2 AND
-               gjahr = @p_gjahr AND
-               afabe = '01'
-               INTO TABLE @lt_anlc.
+    SORT lt_anlc BY bukrs anln1 anln2.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_dep_method_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_dep_method_data .
+
+  SELECT dep_key,dep_method
+         FROM zfi_dep_method
+         INTO TABLE @lt_dep_method.  "#EC CI_NOWHERE.
+
 ENDFORM.
 
 
@@ -276,7 +307,9 @@ FORM process_data .
   IF s_gsber IS NOT INITIAL OR s_prctr IS NOT INITIAL.
     LOOP AT lt_anla INTO DATA(ls_anla).
 
-      READ TABLE lt_anlz INTO DATA(ls_anlz) WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2.
+      READ TABLE lt_anlz INTO DATA(ls_anlz) WITH KEY bukrs = ls_anla-bukrs
+                                                     anln1 = ls_anla-anln1
+                                                     anln2 = ls_anla-anln2 BINARY SEARCH.
       IF sy-subrc EQ 0.
         ls_asset_result = CORRESPONDING #( ls_anla ).
         ls_asset_result = VALUE #( BASE ls_asset_result   prctr    = ls_anlz-prctr
@@ -287,32 +320,42 @@ FORM process_data .
                                                           stort    = ls_anlz-stort
                                                           msfak    = ls_anlz-msfak
                                                           ).
-        READ TABLE lt_anlb INTO DATA(ls_anlb01) WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2 afabe = '01'.
+        READ TABLE lt_anlb INTO DATA(ls_anlb01) WITH KEY bukrs = ls_anla-bukrs
+                                                         anln1 = ls_anla-anln1
+                                                         anln2 = ls_anla-anln2
+                                                         afabe = '01' BINARY SEARCH.
         IF sy-subrc = 0.
-          ls_asset_result = VALUE #( BASE ls_asset_result   afasl_01 = ls_anlb01-afasl
-                                                            ndjar_01 = ls_anlb01-ndjar
-                                                            aprop    = ls_anlb01-aprop
-                                                            afabg    = ls_anlb01-afabg
+          READ TABLE lt_dep_method WITH KEY dep_key = ls_anlb01-afasl INTO DATA(ls_dept_method).
+          ls_asset_result = VALUE #( BASE ls_asset_result   afasl_01   = ls_anlb01-afasl
+                                                            ndjar_01   = ls_anlb01-ndjar
+                                                            aprop      = ls_anlb01-aprop
+                                                            afabg      = ls_anlb01-afabg
+                                                            dep_method = ls_dept_method-dep_method
                                                             ).
 
         ENDIF.
 
-        READ TABLE lt_anlb INTO DATA(ls_anlb31) WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2 afabe = '31'.
+        READ TABLE lt_anlb INTO DATA(ls_anlb31) WITH KEY bukrs = ls_anla-bukrs
+                                                         anln1 = ls_anla-anln1
+                                                         anln2 = ls_anla-anln2
+                                                         afabe = '31' BINARY SEARCH.
         IF sy-subrc = 0.
           ls_asset_result = VALUE #( BASE ls_asset_result   afasl_31 = ls_anlb31-afasl
                                                             ndjar_31 = ls_anlb31-ndjar
                                                             ).
         ENDIF.
 
-        READ TABLE lt_anlc   INTO DATA(ls_anlc)   WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2.
+        READ TABLE lt_anlc   INTO DATA(ls_anlc)   WITH KEY bukrs = ls_anla-bukrs
+                                                           anln1 = ls_anla-anln1
+                                                           anln2 = ls_anla-anln2 BINARY SEARCH.
         IF sy-subrc = 0 .
           ls_asset_result = VALUE #( BASE ls_asset_result   kansw    = ls_anlc-kansw
                                                             knafa    = ls_anlc-knafa
                                                             answl    = ls_anlc-answl
                                                             nafap    = ls_anlc-nafap
-                                                            start_book  = ls_anlc-kansw + ls_anlc-knafa
-                                                            end_book    = ( ( ls_anlc-kansw + ls_anlc-knafa ) + ls_anlc-nafap )
                                                             ).
+          ls_asset_result-start_book  = ls_anlc-kansw + ls_anlc-knafa.
+          ls_asset_result-end_book    = ( ( ls_anlc-kansw + ls_anlc-knafa ) + ls_anlc-nafap + ls_anlc-answl ).
         ENDIF.
 
         APPEND ls_asset_result TO lt_asset_result.
@@ -326,7 +369,9 @@ FORM process_data .
     LOOP AT lt_anla INTO ls_anla.
 
       ls_asset_result = CORRESPONDING #( ls_anla ).
-      READ TABLE lt_anlz INTO ls_anlz WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2.
+      READ TABLE lt_anlz INTO ls_anlz WITH KEY bukrs = ls_anla-bukrs
+                                               anln1 = ls_anla-anln1
+                                               anln2 = ls_anla-anln2 BINARY SEARCH.
       IF sy-subrc EQ 0.
         ls_asset_result = VALUE #( BASE ls_asset_result   prctr    = ls_anlz-prctr
                                                           werks    = ls_anlz-werks
@@ -337,32 +382,42 @@ FORM process_data .
                                                           msfak    = ls_anlz-msfak
                                                           ).
       ENDIF.
-      READ TABLE lt_anlb INTO ls_anlb01 WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2 afabe = '01'.
+      READ TABLE lt_anlb INTO ls_anlb01 WITH KEY bukrs = ls_anla-bukrs
+                                                 anln1 = ls_anla-anln1
+                                                 anln2 = ls_anla-anln2
+                                                 afabe = '01' BINARY SEARCH.
       IF sy-subrc = 0.
-        ls_asset_result = VALUE #( BASE ls_asset_result   afasl_01 = ls_anlb01-afasl
-                                                          ndjar_01 = ls_anlb01-ndjar
-                                                          aprop    = ls_anlb01-aprop
-                                                          afabg    = ls_anlb01-afabg
+        READ TABLE lt_dep_method WITH KEY dep_key = ls_anlb01-afasl INTO ls_dept_method.
+        ls_asset_result = VALUE #( BASE ls_asset_result   afasl_01   = ls_anlb01-afasl
+                                                          ndjar_01   = ls_anlb01-ndjar
+                                                          aprop      = ls_anlb01-aprop
+                                                          afabg      = ls_anlb01-afabg
+                                                          dep_method = ls_dept_method-dep_method
                                                           ).
 
       ENDIF.
 
-      READ TABLE lt_anlb INTO ls_anlb31 WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2 afabe = '31'.
+      READ TABLE lt_anlb INTO ls_anlb31 WITH KEY bukrs = ls_anla-bukrs
+                                                 anln1 = ls_anla-anln1
+                                                 anln2 = ls_anla-anln2
+                                                 afabe = '31' BINARY SEARCH.
       IF sy-subrc = 0.
         ls_asset_result = VALUE #( BASE ls_asset_result   afasl_31 = ls_anlb31-afasl
                                                           ndjar_31 = ls_anlb31-ndjar
                                                           ).
       ENDIF.
 
-      READ TABLE lt_anlc   INTO ls_anlc   WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2.
+      READ TABLE lt_anlc   INTO ls_anlc   WITH KEY bukrs = ls_anla-bukrs
+                                                   anln1 = ls_anla-anln1
+                                                   anln2 = ls_anla-anln2 BINARY SEARCH.
       IF sy-subrc = 0 .
         ls_asset_result = VALUE #( BASE ls_asset_result   kansw    = ls_anlc-kansw
                                                           knafa    = ls_anlc-knafa
                                                           answl    = ls_anlc-answl
                                                           nafap    = ls_anlc-nafap
-                                                          start_book  = ls_anlc-kansw + ls_anlc-knafa
-                                                          end_book    = ( ( ls_anlc-kansw + ls_anlc-knafa ) + ls_anlc-nafap )
                                                           ).
+        ls_asset_result-start_book  = ls_anlc-kansw + ls_anlc-knafa.
+        ls_asset_result-end_book    = ( ( ls_anlc-kansw + ls_anlc-knafa ) + ls_anlc-nafap + ls_anlc-answl ).
       ENDIF.
 
       APPEND ls_asset_result TO lt_asset_result.
@@ -371,7 +426,7 @@ FORM process_data .
     ENDLOOP.
   ENDIF.
 
-  SORT lt_asset_result BY anln1.
+  SORT lt_asset_result BY bukrs anln1 anln2.
 
 ENDFORM.
 
@@ -406,7 +461,7 @@ FORM get_all_catalogs .
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANLN1'        'Asset no.'                                 '15'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANLN2'        'Asset sub no.'                             '10'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANLKL'        'Asset Class'                               '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'TXK50'        'Asset Class Descrption'                    '50'.
+  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'TXK50'        'Asset Class Description'                    '50'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'PRCTR'        'Profit Center'                             '15'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'KOSTL'        'Cost Center'                               '15'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'WERKS'        'Plant'                                     '10'.
@@ -415,7 +470,7 @@ FORM get_all_catalogs .
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'TXA50'        'Description 2'                             '50'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANLHTXT'      'Asset Main no. Text'                       '50'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'AKTIV'        'Date of Capitalization'                    '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'AFABG'        'Depriciation Start Date'                   '10'.
+  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'AFABG'        'Depreciation Start Date'                   '10'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ZUGDT'        'First Acquiestion On (Posting Date)'       '10'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'SERNR'        'Serial No.'                                '20'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'INVNR'        'Inventory note'                            '30'.
@@ -423,7 +478,7 @@ FORM get_all_catalogs .
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'MENGE'        'Quantity'                                  '15'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'MEINS'        'Base Unit of Mesure(Unit)'                 '5'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'STORT'        'Location'                                  '15'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ORD41'        'Evaluation Group 1'                        '10'.
+  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ORD41'        'Evaluation group 1'                        '10'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'DEAKT'        'Deactivation Date'                         '10'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'AFASL_01'     'Depreciation Key(01)'                      '10'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'NDJAR_01'     'Useful life(01)'                           '5'.
@@ -433,460 +488,11 @@ FORM get_all_catalogs .
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'KNAFA'        'Accum. dep.'                               '30'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'START_BOOK'   'Start Book Value'                          '30'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANSWL'        'Trans. acq. Val'                           '30'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'NAFAP'        'Depreciation (For a Year)'                 '30'.
+  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'NAFAP'        'Depreciation(For a Year)'                 '30'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'END_BOOK'     'End Book Value'                            '30'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'MSFAK'        'Shift Factor'                              '10'.
   PERFORM get_catalog USING 'LT_ASSET_RESULT'   'APROP'        'Variable Depreciation Portion'             '15'.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form  get_catalog
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM get_catalog  USING    VALUE(p1)
-                           VALUE(p2)
-                           VALUE(p3)
-                           VALUE(p4).
-
-  CLEAR :fcat.
-
-  fcat-tabname    = p1.
-  fcat-fieldname  = p2.
-  fcat-seltext_l  = p3.
-  fcat-outputlen  = p4.
-
-  APPEND fcat.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form display_alv_grid_display
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM display_alv_grid_display .
-  DATA: ls_layout TYPE slis_layout_alv.
-
-  CLEAR : ls_layout.
-  ls_layout-colwidth_optimize = 'X'.
-
-  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
-    EXPORTING
-      i_callback_program = sy-repid
-      is_layout          = ls_layout
-      it_fieldcat        = fcat[]
-      i_save             = 'A'
-    TABLES
-      t_outtab           = lt_asset_result.
-ENDFORM.
-
---------------------------------------------------------------------------------------------------------------------------------version2
-*&---------------------------------------------------------------------*
-*& Report ZFI_ASSET_MASTER_REPORT
-*&---------------------------------------------------------------------*
-*&
-*&---------------------------------------------------------------------*
-REPORT zfi_asset_master_report.
-
-"--> final asset master structure type.............................
-TYPES : BEGIN OF ty_asset,
-          bukrs      LIKE anla-bukrs,        "Company Code
-          anln1      LIKE anla-anln1,        "Asset No
-          anln2      LIKE anla-anln2,        "Asset Sub No.
-          anlkl      LIKE anla-anlkl,        "Asset Class
-          txk50      LIKE ankt-txa50,        "Asset Class Description
-          prctr      LIKE anlz-prctr,        "PrOFIT Center
-          kostl      LIKE anlz-kostl,        "Cost Center
-          werks      LIKE anlz-werks,        "Plant
-          gsber      LIKE anlz-gsber,        "Business Area
-          txt50      LIKE anla-txt50,        "Description1
-          txa50      LIKE anla-txa50,        "Description2
-          anlhtxt    LIKE anlh-anlhtxt,      "Asset Main No. Text
-          aktiv      LIKE anla-aktiv,        "Date of Capitalization
-          afabg      LIKE anlb-afabg,        "Depreciation Start Date
-          zugdt      LIKE anla-zugdt,        "First Acquiestion On (Posting Date)
-          sernr      LIKE anla-sernr,        "Serial No.
-          invnr      LIKE anla-invnr,        "Inventory note
-          raumn      LIKE anlz-raumn,        "Room
-          menge      LIKE anla-menge,        "Quantity
-          meins      LIKE anla-meins,        "Base Unit of Measure (Unit)
-          stort      LIKE anlz-stort,        "Location
-          ord41      LIKE anla-ord41,        "Evaluation group 1
-          deakt      LIKE anla-deakt,        "Deactivation Date
-          afasl_01   LIKE anlb-afasl,        "Depreciation Key (01)
-          ndjar_01   LIKE anlb-ndjar,        "Useful life (01)
-          afasl_31   LIKE anlb-afasl,        "Depreciation Key (31)
-          ndjar_31   LIKE anlb-ndjar,        "Useful life (31)
-          kansw      LIKE anlc-kansw,        "Cum.acq.value
-          knafa      LIKE anlc-knafa,        "Accum.dep.
-          start_book LIKE anlc-kansw,        "Start book value
-          answl      LIKE anlc-answl,        "Trans.acq.val
-          nafap      LIKE anlc-nafap,        "Depreceation (For a year)
-          end_book   LIKE anlc-answl,        "End book value
-          msfak      LIKE anlz-msfak,        "Shift Factor
-          aprop      LIKE anlb-aprop,        "Variable depreceation Portion
-        END OF ty_asset.
-
-
-"--> structure type : anla
-TYPES: BEGIN OF ty_anla,
-         bukrs   LIKE anla-bukrs,
-         anln1   LIKE anla-anln1,
-         anln2   LIKE anla-anln2,
-         anlkl   LIKE anla-anlkl,
-         txt50   LIKE anla-txt50,
-         txa50   LIKE anla-txa50,
-         aktiv   LIKE anla-aktiv,
-         zugdt   LIKE anla-zugdt,
-         sernr   LIKE anla-sernr,
-         invnr   LIKE anla-invnr,
-         menge   LIKE anla-menge,
-         meins   LIKE anla-meins,
-         ord41   LIKE anla-ord41,
-         deakt   LIKE anla-deakt,
-         txk50   LIKE ankt-txk50,
-         anlhtxt LIKE anlh-anlhtxt,
-       END OF ty_anla.
-
-"--> structure type : anlz
-TYPES: BEGIN OF ty_anlz,
-         bukrs LIKE anlz-bukrs,
-         anln1 LIKE anlz-anln1,
-         anln2 LIKE anlz-anln2,
-         bdatu LIKE anlz-bdatu,
-         prctr LIKE anlz-prctr,
-         kostl LIKE anlz-kostl,
-         werks LIKE anlz-werks,
-         gsber LIKE anlz-gsber,
-         raumn LIKE anlz-raumn,
-         stort LIKE anlz-stort,
-         msfak LIKE anlz-msfak,
-       END OF ty_anlz.
-
-"--> structure type : anlb01
-TYPES: BEGIN OF ty_anlb01,
-         bukrs    LIKE anlb-bukrs,
-         anln1    LIKE anlb-anln1,
-         anln2    LIKE anlb-anln2,
-         afabe    LIKE anlb-afabe,
-         bdatu    LIKE anlb-bdatu,
-         aprop    LIKE anlb-aprop,
-         afasl_01 LIKE anlb-afasl,
-         ndjar_01 LIKE anlb-ndjar,
-       END OF ty_anlb01.
-
-"--> structure type : anlb31
-TYPES: BEGIN OF ty_anlb31,
-         bukrs    LIKE anlb-bukrs,
-         anln1    LIKE anlb-anln1,
-         anln2    LIKE anlb-anln2,
-         afabe    LIKE anlb-afabe,
-         bdatu    LIKE anlb-bdatu,
-         afasl_31 LIKE anlb-afasl,
-         ndjar_31 LIKE anlb-ndjar,
-       END OF ty_anlb31.
-
-"--> structure type : anlb31
-TYPES: BEGIN OF ty_anlc,
-         bukrs LIKE anlc-bukrs,
-         anln1 LIKE anlc-anln1,
-         anln2 LIKE anlc-anln2,
-         gjahr LIKE anlc-gjahr,
-         afabe LIKE anlc-afabe,
-         zujhr LIKE anlc-zujhr,
-         zucod LIKE anlc-zucod,
-         kansw LIKE anlc-kansw,
-         knafa LIKE anlc-knafa,
-         answl LIKE anlc-answl,
-         nafap LIKE anlc-nafap,
-       END OF ty_anlc.
-
-DATA : lv_bukrs TYPE anla-bukrs,
-       lv_anln1 TYPE anla-anln1,
-       lv_anln2 TYPE anla-anln2,
-       lv_anlkl TYPE anla-anlkl,
-       lv_gsber TYPE anlz-gsber,
-       lv_prctr TYPE anlz-prctr,
-       lv_GJAHR TYPE anlc-gjahr,
-       lv_data  TYPE sy-index.
-
-DATA: ls_asset_result TYPE ty_asset,
-      lt_asset_result TYPE TABLE OF ty_asset.
-
-DATA: fcat TYPE slis_fieldcat_alv  OCCURS 0 WITH HEADER LINE.
-
-DATA: lt_anla   TYPE TABLE OF ty_anla,
-      lt_anlz   TYPE TABLE OF ty_anlz,
-      lt_anlb01 TYPE TABLE OF ty_anlb01,
-      lt_anlb31 TYPE TABLE OF ty_anlb31,
-      lt_anlc   TYPE TABLE OF ty_anlc.
-
-SELECT-OPTIONS : s_bukrs FOR lv_bukrs,
-                 s_anln1 FOR lv_anln1,
-                 s_anln2  FOR lv_anln2,
-                 s_anlkl FOR lv_anlkl,
-                 s_gsber FOR lv_gsber,
-                 s_prctr FOR lv_prctr.
-PARAMETERS    : p_gjahr TYPE anlc-gjahr DEFAULT '2024'.
-
-START-OF-SELECTION.
-  PERFORM get_data.
-  PERFORM process_data.
-  PERFORM display_data.
-
-*&---------------------------------------------------------------------*
-*& Form get_data
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM get_data .
-  PERFORM get_anla_data.
-  PERFORM get_anlz_data.
-  PERFORM get_anlb01_data.
-  PERFORM get_anlb31_data.
-  PERFORM get_anlc_data.
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form get_anla_data
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM get_anla_data .
-
-  SELECT a~bukrs,a~anln1,a~anln2,a~anlkl,a~txt50,a~txa50,
-         a~aktiv,a~zugdt,a~sernr,a~invnr,a~menge,a~meins,
-         a~ord41,a~deakt,
-         b~txk50,
-         c~anlhtxt
-         FROM anla AS a INNER JOIN ankt AS b ON a~anlkl = b~anlkl AND
-                                                b~spras = @sy-langu
-                        INNER JOIN anlh AS c ON a~bukrs = c~bukrs AND
-                                                a~anln1 = c~anln1
-         INTO TABLE @lt_anla
-         WHERE a~bukrs IN @s_bukrs AND                         "#EC CI_NOFIELD
-               a~anln1 IN @s_anln1 AND
-               a~anln2 IN @s_anln2 AND
-               a~anlkl IN @s_anlkl.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form get_anlz_data
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM get_anlz_data .
-
-  SELECT bukrs,anln1,anln2,bdatu,prctr,kostl,werks,gsber,raumn,stort,msfak
-         FROM anlz FOR ALL ENTRIES IN @lt_anla
-         WHERE bukrs = @lt_anla-bukrs AND                     "#EC CI_NOFIELD
-               anln1 = @lt_anla-anln1 AND
-               anln2 = @lt_anla-anln2 AND
-               gsber IN @s_gsber      AND
-               prctr IN @s_prctr
-         INTO TABLE @lt_anlz.
-
-  SORT lt_anlz DESCENDING BY bdatu.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form get_anlb01_data
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM get_anlb01_data .
-
-  SELECT bukrs,anln1,anln2,afabe,bdatu,aprop,
-         afasl AS afas1_01,ndjar AS ndjar_01
-         FROM anlb  FOR ALL ENTRIES IN @lt_anla
-         WHERE bukrs = @lt_anla-bukrs AND                       "#EC CI_NOFIELD
-               anln1 = @lt_anla-anln1 AND
-               anln2 = @lt_anla-anln2 AND
-               afabe = '01'
-         INTO TABLE @lt_anlb01.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form get_anlb31_data
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM get_anlb31_data .
-
-
-  SELECT bukrs,anln1,anln2,afabe,bdatu,
-         afasl AS afas1_31,ndjar AS ndjar_31
-         FROM anlb  FOR ALL ENTRIES IN @lt_anla
-         WHERE bukrs = @lt_anla-bukrs AND                          "#EC CI_NOFIELD
-               anln1 = @lt_anla-anln1 AND
-               anln2 = @lt_anla-anln2 AND
-               afabe = '31'
-         INTO TABLE @lt_anlb31.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form get_anlc_data
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM get_anlc_data .
-
-  SELECT bukrs,anln1,anln2,gjahr,afabe,
-         zujhr,zucod,kansw ,knafa,answl,nafap
-         FROM anlc FOR ALL ENTRIES IN @lt_anla
-         WHERE bukrs = @lt_anla-bukrs AND                        "#EC CI_NOFIELD
-               anln1 = @lt_anla-anln1 AND
-               anln2 = @lt_anla-anln2 AND
-               gjahr = @p_gjahr AND
-               afabe = '01'
-               INTO TABLE @lt_anlc.
-ENDFORM.
-
-
-*&---------------------------------------------------------------------*
-*& Form process_data
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM process_data .
-
-  LOOP AT lt_anla INTO DATA(ls_anla).
-
-    READ TABLE lt_anlz INTO DATA(ls_anlz) WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2.
-    IF sy-subrc EQ 0.
-      READ TABLE lt_anlb01 INTO DATA(ls_anlb01) WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2.
-      READ TABLE lt_anlb31 INTO DATA(ls_anlb31) WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2.
-      READ TABLE lt_anlc   INTO DATA(ls_anlc)   WITH KEY bukrs = ls_anla-bukrs anln1 = ls_anla-anln1 anln2 = ls_anla-anln2.
-
-      ls_asset_result = CORRESPONDING #( ls_anla ).
-      ls_asset_result = VALUE #( BASE ls_asset_result   prctr    = ls_anlz-prctr
-                                                        werks    = ls_anlz-werks
-                                                        kostl    = ls_anlz-kostl
-                                                        gsber    = ls_anlz-gsber
-                                                        raumn    = ls_anlz-raumn
-                                                        stort    = ls_anlz-stort
-                                                        msfak    = ls_anlz-msfak
-                                                        afasl_01 = ls_anlb01-afasl_01
-                                                        ndjar_01 = ls_anlb01-ndjar_01
-                                                        aprop    = ls_anlb01-aprop
-                                                        afasl_31 = ls_anlb31-afasl_31
-                                                        ndjar_31 = ls_anlb31-ndjar_31
-                                                        kansw    = ls_anlc-kansw
-                                                        knafa    = ls_anlc-knafa
-                                                        answl    = ls_anlc-answl
-                                                        nafap    = ls_anlc-nafap
-                                                        start_book  = ls_anlc-kansw - ls_anlc-knafa
-                                                        end_book    = ls_anlc-answl - ls_anlc-nafap
-                                                        ).
-
-*      ls_asset_result-start_book  = ls_anlc-kansw - ls_anlc-knafa.
-*      ls_asset_result-end_book    = ls_anlc-answl - ls_anlc-nafap.
-
-      APPEND ls_asset_result TO lt_asset_result.
-    ENDIF.
-
-    CLEAR : ls_anla,ls_anlz,ls_anlb01,ls_anlb31,ls_anlc.
-  ENDLOOP.
-
-  sort lt_asset_result by anln1.
-
-ENDFORM.
-
-
-*&---------------------------------------------------------------------*
-*& Form display_data
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM display_data.
-
-  PERFORM get_all_catalogs.
-  PERFORM display_alv_grid_display.
-
-ENDFORM.
-
-*&---------------------------------------------------------------------*
-*& Form get_all_catalogs
-*&---------------------------------------------------------------------*
-*& text
-*&---------------------------------------------------------------------*
-*& -->  p1        text
-*& <--  p2        text
-*&---------------------------------------------------------------------*
-FORM get_all_catalogs .
-
-  CLEAR : fcat[].
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'BUKRS'        'Company Code'                              '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANLN1'        'Asset no.'                                 '15'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANLN2'        'Asset sub no.'                             '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANLKL'        'Asset Class'                               '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'TXK50'        'Asset Class Descrption'                    '50'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'PRCTR'        'Profit Center'                             '15'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'KOSTL'        'Cost Center'                               '15'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'WERKS'        'Plant'                                     '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'GSBER'        'Business Area'                             '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'TXT50'        'Description 1'                             '50'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'TXA50'        'Description 2'                             '50'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANLHTXT'      'Asset Main no. Text'                       '50'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'AKTIV'        'Date of Capitalization'                    '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'AFABG'        'Depriciation Start Date'                   '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ZUGDT'        'First Acquiestion On (Posting Date)'       '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'SERNR'        'Serial No.'                                '20'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'INVNR'        'Inventory note'                            '30'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'RAUMN'        'Room'                                      '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'MENGE'        'Quantity'                                  '15'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'MEINS'        'Base Unit of Mesure(Unit)'                 '5'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'STORT'        'Location'                                  '15'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ORD41'        'Evaluation Group 1'                        '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'DEAKT'        'Deactivation Date'                         '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'AFASL_01'     'Depreciation Key(01)'                      '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'NDJAR_01'     'Useful life(01)'                           '5'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'AFASL_31'     'Depreciation Key(31)'                      '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'NDJAR_31'     'Useful life(31)'                           '5'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'KANSW'        'Cum. acq. Value'                           '30'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'KNAFA'        'Accum. dep.'                               '30'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'START_BOOK'   'Start Book Value'                          '30'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'ANSWL'        'Trans. acq. Val'                           '30'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'NAFAP'        'Depreciation (For a Year)'                 '30'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'END_BOOK'     'End Book Value'                            '30'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'MSFAK'        'Shift Factor'                              '10'.
-  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'APROP'        'Variable Depreciation Portion'             '15'.
+  PERFORM get_catalog USING 'LT_ASSET_RESULT'   'DEP_METHOD'   'Depreciation Method'                       '100'.
 
 ENDFORM.
 
