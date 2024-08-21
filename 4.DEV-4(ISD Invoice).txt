@@ -73,7 +73,7 @@ TYPES: BEGIN OF ty_srv_desc,
          tdname   TYPE tdobname,
          tdid     TYPE tdid,
          tdspras  TYPE spras,
-         tdline   TYPE tdline,
+         tdline   TYPE char300,
        END OF ty_srv_desc.
 
 TYPES: BEGIN OF ty_get_item,
@@ -543,9 +543,10 @@ FORM get_Service_description .
           " Implement suitable error handling here
         ENDIF.
 
-        READ TABLE lt_tab INTO DATA(ls_tab) INDEX 1.
-        IF sy-subrc EQ 0.
-          ls_srv_desc-tdline = ls_tab-tdline.
+        IF lt_tab IS NOT INITIAL.
+          LOOP AT lt_tab INTO DATA(ls_tab).
+            ls_srv_desc-tdline = |{ ls_srv_desc-tdline } { ls_tab-tdline }|.
+          ENDLOOP.
         ENDIF.
       ENDIF.
       APPEND ls_srv_desc TO lt_srv_desc.
