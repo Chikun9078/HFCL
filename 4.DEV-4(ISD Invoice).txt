@@ -23,8 +23,54 @@ D. program                     : ZFI_ISD_INVOICE_REPORT   FI:PRNT:Input Service 
 smartform                      : ZFISF_ISD_IVOICE_FORM    FI:SMFM: ISD Invoice
 smartstyle                     : ZFISF_ISD_INVOICE_STYLE  FI:SF:STYLE: ISD Invoice 
 TCode                          : ZFI0047
+____________________________________________________________________________________________________________________________________
+ZFI_ISD_INVC_HEADER_S: FI: ISD Invoice Header structure
+---------------------------------------------------------
+BUKRS            	1 Types	BUKRS
+GJAHR            	1 Types	GJAHR
+WEBSITE          	1 Types	CHAR30
+EMAIL             1 Types	CHAR30
+CIN              	1 Types	CHAR30
+PAN	              1 Types	CHAR30
+GSTIN	            1 Types	J_1IGSTCD3
+PLANT_NAME	       1 Types	CHAR30
+PLANT_NAME_F	     1 Types	CHAR100
+PLANT_STREET	     1 Types	CHAR60
+PLANT_STR_SUPPL3	 1 Types	CHAR40
+PLANT_CITY1	      1 Types	AD_CITY1
+PLANT_POST_CODE1	 1 Types	CHAR10
+PLANT_PHONENO    	1 Types	AD_TLNMBR1
+PLANT_FAXNO	      1 Types	AD_FXNMBR1
+INVOICE_NO       	1 Types	BELNR_D
+INVOICE_DATE	     1 Types	BUDAT
+DR_GSTIN	         1 Types	J_1IGSTCD3
+DR_STREET	        1 Types	CHAR60
+DR_STR_SUPPL3	    1 Types	CHAR40
+DR_CITY1	         1 Types	AD_CITY1
+DR_POST_CODE1    	1 Types	CHAR10
+HEAD_OFFICE_ADRC	 1 Types	CHAR200
+WAER	             1 Types	WAERS
+TOTAL_CGST	       1 Types	DMBRT
+TOTAL_SGST       	1 Types	DMBRT
+TOTAL_IGST       	1 Types	DMBRT
+TOTAL_GST_AMONT  	1 Types	DMBRT
+TOTAL_GST_AMOUNT_WORD	1 Types	CHAR300
 
-------------------------------------------------------------------------------------------------------------------------------------
+ZFI_ISD_INVC_ITEM_S:- FI: ISD Invoice Item Structure
+----------------------------------------------------
+BELNR	       1 Types	BELNR_D
+SERIAL_NO	   1 Types	INT2
+SRV_DESC    	1 Types	CHAR300
+WAER	        1 Types	WAERS
+CGST_RATE   	1 Types	DZUONR
+CGST_AMOUNT 	1 Types	DMBTR
+SGST_RATE   	1 Types	DZUONR
+SGST_AMOUNT	 1 Types	DMBTR
+IGST_RATE	   1 Types	DZUONR
+IGST_AMOUNT	 1 Types	DMBTR
+_________________________________________________________________________________________________________________________________
+Coding
+------------
 *&---------------------------------------------------------------------*
 *& Report ZFI_ISD_INVOICE_REPORT
 *&---------------------------------------------------------------------*
