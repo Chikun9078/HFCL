@@ -1,0 +1,2076 @@
+*----------------------------------------------------------------------*
+* DESCIPTION: This Report is to print credit and debit note      print *
+*             tax invoice from alv for corporate                       *
+* PROGRAM NAME  : ZSDEP_INV_CRED_DEBIT_CORP                            *
+* AUTHOR        : Dharmendra Singh Dangi (WIPROABAP03)                 *
+* CREATED DATE  : 06/06/2024                                           *
+* Taskid        :                                                      *
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*----------------------------------------------------------------------*
+* Changed Date : 24/01/2025
+* Changed By   : AIRDITDEBI
+* Ticket no    : 31197
+* Description  : Bulk Credit Debit not Print                          *
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+REPORT zsdep_inv_cred_debit_corp.
+
+TABLES: vbrk.
+
+TYPES: BEGIN OF ty_vbrp,
+         vbeln TYPE vbeln_vf,
+         posnr TYPE posnr,
+         fkimg TYPE fkimg,
+         meins TYPE meins,
+         mwsbp TYPE mwsbp,
+         netwr TYPE netwr,
+         matnr TYPE matnr,
+         werks TYPE werks_d,
+       END OF ty_vbrp.
+
+DATA: lt_vbrp TYPE STANDARD TABLE OF ty_vbrp ##NEEDED.
+
+TYPES: BEGIN OF ty_prcdelements,
+         knumv TYPE prcd_elements-knumv,
+         kschl TYPE prcd_elements-kschl,
+         kbetr TYPE prcd_elements-kbetr,
+         kwert TYPE prcd_elements-kwert,
+         krech TYPE prcd_elements-krech,
+         kposn TYPE prcd_elements-kposn,
+       END OF ty_prcdelements.
+
+TYPES: BEGIN OF ty_final1 ##NEEDED,
+         posnr                 TYPE posnr_vf,
+         description           TYPE maktx,
+         hsc_sac_code          TYPE steuc,
+         fkimg(7)              TYPE c,
+         meins                 TYPE meins,
+         vbeln                 TYPE vbeln_vf,
+         werks                 TYPE werks_d,
+         matnr                 TYPE matnr,
+         xblnr                 TYPE xblnr_v1,
+         basic_unit_price      TYPE zde_charges,
+         freight_charges       TYPE zde_charges,
+         packing_charges       TYPE zde_charges,
+         insurance_charges     TYPE zde_charges,
+         tax_unit_rate         TYPE zde_charges,
+         discount              TYPE zde_charges,
+         total_taxable_amount  TYPE zde_charges,
+         cgst_rate             TYPE zde_charges,
+         cgst_amount           TYPE zde_charges,
+         sgst_rate             TYPE zde_charges,
+         sgst_amount           TYPE zde_charges,
+         igst_rate             TYPE zde_charges,
+         igst_amount           TYPE zde_charges,
+         tcs                   TYPE zde_charges,
+         tax_sub_to_rev        TYPE zde_charges,
+         total_tax_amount      TYPE zde_charges,
+         total_amount_incl_tax TYPE zde_charges,
+         total_taxable_value   TYPE zde_charges,
+         incoterm              TYPE inco1,
+         zterm                 TYPE dzterm,
+         materialtyp           TYPE mtart,
+         total_invoice_value   TYPE zde_charges,
+       END OF ty_final1.
+
+DATA: lt_final  TYPE STANDARD TABLE OF zst_sd_credit_debit_sf_items ##NEEDED,
+      ls_final  TYPE zst_sd_credit_debit_sf_items ##NEEDED,
+      ls_final1 TYPE zst_sd_credit_debit_sf_items ##NEEDED,
+      lv_totqty TYPE c ##NEEDED.
+
+TYPES: BEGIN OF ty_vbrk,
+         vbeln     TYPE vbrk-vbeln,
+         fkart     TYPE vbrk-fkart,
+         vkorg     TYPE vbrk-vkorg,
+         vbtyp     TYPE vbrk-vbtyp,
+         vtweg     TYPE vbrk-vtweg,
+         netwr     TYPE vbrk-netwr,
+         ernam     TYPE vbrk-ernam,
+         erdat     TYPE vbrk-erdat,
+         waerk     TYPE vbrk-waerk,
+         land1     TYPE vbrk-land1,
+         kunrg     TYPE vbrk-kunrg,
+         fkdat     TYPE vbrk-fkdat,
+         gjahr     TYPE vbrk-gjahr,
+         belnr     TYPE vbrk-belnr,
+         werks     TYPE vbrp-werks,
+         fkimg     TYPE vbrp-fkimg,
+         vrkme     TYPE vbrp-vrkme,
+         parvw     TYPE parvw,
+         kunnr     TYPE kunnr,
+         adrnr     TYPE vbpa-adrnr,
+         name1     TYPE ad_name1,
+         name2     TYPE ad_name2,
+         vkbur     TYPE vkbur,
+         vkgrp     TYPE vkgrp,
+         vkorg_ana TYPE vkorg,
+       END OF ty_vbrk.
+
+TYPES: BEGIN OF ty_final,
+         check(1) TYPE c,
+         vbeln    TYPE vbrk-vbeln,
+         werks    TYPE vbrp-werks,
+         fkdat    TYPE vbrk-fkdat,
+         ernam    TYPE vbrk-ernam,
+         erdat    TYPE vbrk-erdat,
+         fkart    TYPE vbrk-fkart,
+         netwr    TYPE vbrk-netwr,
+         waerk    TYPE vbrk-waerk,
+         vkorg    TYPE vbrk-vkorg,
+         vtweg    TYPE vbrk-vtweg,
+         land1    TYPE vbrk-land1,
+         kunrg    TYPE vbrk-kunrg,
+         adrnr    TYPE ad_addrnum,
+         name1    TYPE ad_name1,
+         name2    TYPE ad_name2,
+         fkimg    TYPE vbrp-fkimg,
+         gjahr    TYPE vbrk-gjahr,
+         vrkme    TYPE vbrp-vrkme,
+         belnr    TYPE vbrk-belnr,
+       END OF ty_final.
+
+"FOR SMARTFORM
+TYPES: BEGIN OF ty_vbrk1,
+         vbeln TYPE vbeln_vf,
+         fkart TYPE fkart,
+         vbtyp TYPE vbrk-vbtyp,
+         knumv TYPE vbrk-knumv,
+         bukrs TYPE vbrk-bukrs,
+         netwr TYPE vbrk-netwr,
+         zuonr TYPE ordnr_v,
+         mwsbk TYPE vbrk-mwsbk,
+         vkorg TYPE vbrk-vkorg,
+         vtweg TYPE vbrk-vtweg,
+         xblnr TYPE vbrk-xblnr,
+         inco1 TYPE inco1,
+         zterm TYPE dzterm,
+         bupla TYPE bupla,
+         fkdat TYPE fkdat,
+         waerk TYPE waerk,
+       END OF ty_vbrk1.
+
+DATA: lt_vbrk1             TYPE STANDARD TABLE OF ty_vbrk ##NEEDED,
+      lt_vbrk              TYPE STANDARD TABLE OF ty_vbrk ##NEEDED,
+      ls_vbrk              TYPE vbrk  ##NEEDED,
+      mtext                TYPE string  ##NEEDED,
+      lt_prcd_elements     TYPE STANDARD TABLE OF ty_prcdelements ##NEEDED,
+      ls_prcd_elements     TYPE ty_prcdelements ##NEEDED,
+      lt_head              TYPE STANDARD TABLE OF zst_sd_credit_debit_sf_header ##NEEDED,
+      ls_head              TYPE zst_sd_credit_debit_sf_header ##NEEDED,
+      fm_name              TYPE rs38l_fnam ##NEEDED,
+      lv_lines             TYPE i ##NEEDED,
+      lv_lines1            TYPE i ##NEEDED,
+      r_vbeln              TYPE RANGE OF vbak-vbeln ##NEEDED,
+      wr_vbeln             LIKE LINE OF r_vbeln ##NEEDED,
+      idx                  TYPE i ##NEEDED,
+      lt_data              TYPE STANDARD TABLE OF ty_final ##NEEDED,
+      ls_data              TYPE ty_final ##NEEDED,
+      lv_vbeln             TYPE vbeln ##NEEDED,
+      lv_column            TYPE i ##NEEDED,
+      it_fieldcatalog      TYPE STANDARD TABLE OF slis_fieldcat_alv ##NEEDED,
+      wa_fieldcatalog      TYPE slis_fieldcat_alv ##NEEDED,
+      gd_layout            TYPE slis_layout_alv ##NEEDED,
+      lt_finaltmp          TYPE TABLE OF ty_final ##NEEDED,
+      lv_index             TYPE sy-tabix ##NEEDED,
+      lv_lines2            TYPE i ##NEEDED,
+      ls_invno             TYPE xblnr ##NEEDED,
+      ls_invdate           TYPE fkdat ##NEEDED,
+      ls_companycode       TYPE vkorg ##NEEDED,
+      ls_vbtyp             TYPE vbtyp ##NEEDED,
+      lt_vbrk2             TYPE STANDARD TABLE OF ty_vbrk1 ##NEEDED,
+      ls_vbrk2             TYPE ty_vbrk1 ##NEEDED,
+      lt_lines             TYPE STANDARD TABLE OF tline ##NEEDED,
+      lt_ship              TYPE TABLE OF tline ##NEEDED,
+      lt_paying            TYPE TABLE OF tline ##NEEDED,
+      lt_bill              TYPE TABLE OF tline ##NEEDED,
+      lv_werks1            TYPE werks_d ##NEEDED,
+      lv_aubel             TYPE vbeln_va ##NEEDED,
+      lv_vbeln1            TYPE vbeln_vf ##NEEDED,
+      lv_thirdparty        TYPE string ##NEEDED,
+      amount_in_words      TYPE char100 ##NEEDED,
+      lv_discount          TYPE zde_charges ##NEEDED,
+      lv_readoffice        TYPE char50 ##NEEDED,
+      ls_website           TYPE char50 ##NEEDED,
+      ls_email             TYPE char50 ##NEEDED,
+      ls_cin               TYPE char50 ##NEEDED,
+      ls_pan               TYPE char50 ##NEEDED,
+      ls_tan               TYPE char50 ##NEEDED,
+      lv_gstin             TYPE j_1igstcd3 ##NEEDED,
+      ls_title             TYPE char30 ##NEEDED,
+      ls_adrnr             TYPE ad_addrnum ##NEEDED,
+      ls_region            TYPE regio ##NEEDED,
+      ls_state             TYPE bezei20 ##NEEDED,
+      lv_address           TYPE char70 ##NEEDED,
+      lv_address_city      TYPE char50 ##NEEDED,
+      lv_telphoneno        TYPE char50 ##NEEDED,
+      lv_faxno             TYPE char50 ##NEEDED,
+      lv_notification      TYPE string ##NEEDED,
+      lv_transportername   TYPE string ##NEEDED,
+      lv_vehicleno         TYPE string ##NEEDED,
+      lv_lrno              TYPE string ##NEEDED,
+      lv_lrdate            TYPE string ##NEEDED,
+      lv_packageno         TYPE string ##NEEDED,
+      lv_mode              TYPE string ##NEEDED,
+      lv_packingnote       TYPE string ##NEEDED,
+      lv_voucherno         TYPE string ##NEEDED,
+      lv_grno              TYPE string ##NEEDED,
+      lv_grdate            TYPE string ##NEEDED,
+      lv_icno              TYPE string ##NEEDED,
+      lv_ewayno            TYPE j_1ig_ebillno ##NEEDED,
+      ls_name              TYPE char70 ##NEEDED,
+      lc_no                TYPE /aplx/lochdr-baanr ##NEEDED,
+      ls_aubel             TYPE vbeln_va ##NEEDED,
+      ls_pono              TYPE bstnk ##NEEDED,
+      ls_podate            TYPE bstdk ##NEEDED,
+      lv_irn               TYPE j_1ig_invrefnum ##NEEDED,
+      ls_amount_in_words   TYPE string ##NEEDED,
+      lv_flag3             TYPE flag ##NEEDED,
+      lv_dcno              TYPE string ##NEEDED,
+      lv_tot_tax_unit_rate TYPE zde_charges ##NEEDED,
+      lv_taxable_amount    TYPE zde_charges ##NEEDED,
+      lv_cgst_amount       TYPE zde_charges ##NEEDED,
+      lv_sgst_amount       TYPE zde_charges ##NEEDED,
+      lv_igst_amount       TYPE zde_charges ##NEEDED,
+      lv_tot_tax_amount    TYPE zde_charges ##NEEDED,
+      lv_tot_incl_tax      TYPE zde_charges ##NEEDED,
+      ls_tot_tcs           TYPE zde_charges ##NEEDED,
+      ls_tax_sub_to_rev    TYPE zde_charges ##NEEDED,
+      lv_flag              TYPE flag ##NEEDED,
+      lv_flag1             TYPE flag ##NEEDED,
+      lv_flag2             TYPE flag ##NEEDED,
+      lt_hdrtxt            TYPE TABLE OF tline,
+      lv_sign              TYPE c..
+
+FIELD-SYMBOLS:<ls_vbrk1> LIKE LINE OF lt_vbrk1  ##NEEDED,
+              <ls_vbrk>  LIKE LINE OF lt_vbrk  ##NEEDED.
+
+"FOR COMPANY CODE 1100.
+CONSTANTS : gc_regd_office_11 TYPE char200 VALUE 'Electronics Complex,Chambaghat,Solan -173213 (H.P)' ##NO_TEXT,
+            gc_website_11     TYPE char50 VALUE 'www.hfcl.com' ##NO_TEXT,
+            gc_email_11       TYPE char50 VALUE 'sales.hfcl@hfcl.com' ##NO_TEXT,
+            gc_cin_11         TYPE char50 VALUE 'L64200HP1987PLC007466',
+            gc_pan_11         TYPE char25 VALUE 'AAACH4041D',
+            gc_tan_11         TYPE char25 VALUE 'DELH04057E'.
+*FOR COMPANY CODE '1200' ONLY.
+CONSTANTS : gc_regd_office_12 TYPE char200 VALUE '57,G.S.T.Road,Guindy,Chennai-600032(Tamil Nadu)' ##NO_TEXT,
+            gc_website_12     TYPE char30 VALUE 'www.htlchennai.com' ##NO_TEXT,
+            gc_email_12       TYPE char30 VALUE 'coo@htlchennai.com' ##NO_TEXT,
+            gc_pan_12         TYPE char25 VALUE 'AAACH5516P',
+            gc_cin_12         TYPE char30 VALUE 'U93090TN1960PLC004355'.
+**for company code : 1300
+CONSTANTS : gc_email_13  TYPE char30 VALUE 'sales.hfcl@hfcl.com'  ##NO_TEXT,
+            gc_cin_13    TYPE char30 VALUE 'U29309DL2021PTC382794' ##NO_TEXT,
+            gc_pan_13    TYPE char30 VALUE 'AAFCH8312N' ##NO_TEXT,
+            gc_tan_13    TYPE char30 VALUE 'DELH15643F' ##NO_TEXT,
+            lv_vkorg1100 TYPE vkorg VALUE '1100',
+            lv_vkorg1200 TYPE vkorg VALUE '1200',
+            lv_vkorg1300 TYPE vkorg VALUE '1300',
+            lc_vbtyp     TYPE vbtypl_n VALUE 'C' ##NEEDED,
+            lv_vbtyp     TYPE vbtypl_n VALUE 'V' ##NEEDED,
+            lj_vbtyp     TYPE vbtypl_n VALUE 'J' ##NEEDED,
+            lm_vbtyp     TYPE vbtypl_n VALUE 'M' ##NEEDED,
+            parvw_we     TYPE parvw VALUE 'WE',
+            lv_land2     TYPE land1 VALUE 'IN',
+            lv_zbps      TYPE kscha VALUE 'ZBPS',
+            lv_zbas      TYPE kscha VALUE 'ZBAS',
+            lv_zfrp      TYPE kscha VALUE 'ZFRP',
+            lv_zfrq      TYPE kscha VALUE 'ZFRQ',
+            lv_zfrv      TYPE kscha VALUE 'ZFRV',
+            lv_zpkp      TYPE kscha VALUE 'ZPKP',
+            lv_zpkv      TYPE kscha VALUE 'ZPKV',
+            lv_zpkq      TYPE kscha VALUE 'ZPKQ',
+            lv_zinp      TYPE kscha VALUE 'ZINP',
+            lv_zinv      TYPE kscha VALUE 'ZINV',
+            lv_zinq      TYPE kscha VALUE 'ZINQ',
+            lv_zdsp      TYPE kscha VALUE 'ZDSP',
+            lv_zdsv      TYPE kscha VALUE 'ZDSV',
+            lv_zdsq      TYPE kscha VALUE 'ZDSQ',
+            lv_joug      TYPE kscha VALUE 'JOUG',
+            lv_josg      TYPE kscha VALUE 'JOSG',
+            lv_jocg      TYPE kscha VALUE 'JOCG',
+            lv_joig      TYPE kscha VALUE 'JOIG',
+            lv_ztcs      TYPE kscha VALUE 'ZTCS',
+            lv_rjoi      TYPE kscha VALUE 'RJOI',
+            lv_vbbk      TYPE tdobject VALUE 'VBBK',
+            lv_ztps      TYPE fkart VALUE 'ZTPS',
+            lv_zhss      TYPE fkart VALUE 'ZHSS',
+            lv_zmex      TYPE fkart VALUE 'ZMEX',
+            id_z130      TYPE tdid VALUE 'Z130',
+            id_z090      TYPE tdid VALUE 'Z090',
+            id_z250      TYPE tdid VALUE 'Z250',
+            id_z270      TYPE tdid VALUE 'Z270',
+            id_z110      TYPE tdid VALUE 'Z110',
+            id_z115      TYPE tdid VALUE 'Z115',
+            id_z160      TYPE tdid VALUE 'Z160',
+            id_z150      TYPE tdid VALUE 'Z150',
+            id_z170      TYPE tdid VALUE 'Z170',
+            id_z210      TYPE tdid VALUE 'Z210',
+            id_z310      TYPE tdid VALUE 'Z310',
+            id_z320      TYPE tdid VALUE 'Z320',
+            id_z100      TYPE tdid VALUE 'Z100',
+            id_z135      TYPE tdid VALUE 'Z135',
+            parvw_re     TYPE parvw VALUE 'RE',
+            vbtyp_c      TYPE vbtypl_n VALUE 'C' ##NEEDED,
+            lv_tel       TYPE string VALUE 'Tel:' ##NO_TEXT,
+            lv_fax       TYPE string VALUE 'Fax:'  ##NO_TEXT,
+            lv_meins     TYPE meins  VALUE 'NOS',
+            lv_only      TYPE string VALUE 'Only' ##NO_TEXT.
+
+DATA: lv_xbln           TYPE xblnr_v1,
+      lv_fkdt           TYPE fkdat,
+      lv_print_flag     TYPE char1,
+      lv_print_pdf_flag TYPE char1.
+
+DATA:ls_output_options     TYPE  ssfcompop,
+     ls_control_parameters TYPE  ssfctrlop,
+     ls_job_output_info    TYPE  ssfcrescl,
+     ls_FNL_output_info    TYPE  ssfcrescl,
+     lt_pdf_lines          TYPE TABLE OF tline.
+
+TABLES: sscrfields  ##NEEDED.
+
+SELECTION-SCREEN: BEGIN OF BLOCK b1 WITH FRAME.
+  SELECT-OPTIONS: s_vbeln FOR vbrk-vbeln ."Invoice Number
+SELECTION-SCREEN: END OF BLOCK b1.
+
+AT SELECTION-SCREEN.
+  SELECT vbeln                                          "#EC CI_NOORDER
+  FROM vbrk
+       INTO @DATA(ls_sel_data)
+    UP TO 1 ROWS
+  WHERE vbeln IN @s_vbeln
+    AND vbtyp IN ('O','P').
+  ENDSELECT.
+  IF ls_sel_data IS INITIAL.
+    MESSAGE e009(zsd).
+  ENDIF.
+
+START-OF-SELECTION.
+  PERFORM get_data.
+  PERFORM process_data.
+
+*&---------------------------------------------------------------------*
+*& Form GET_DATA
+*&---------------------------------------------------------------------*
+FORM get_data.
+  CLEAR: lv_lines.
+  lv_lines = lines( s_vbeln ).
+  IF lv_lines GT 1.
+    CLEAR r_vbeln.
+    LOOP AT s_vbeln INTO DATA(wa_vbeln).
+      wr_vbeln-sign = 'I'.
+      wr_vbeln-option = 'EQ'.
+      wr_vbeln-low = wa_vbeln-low.
+      APPEND wr_vbeln TO r_vbeln.
+      CLEAR:wa_vbeln,
+      wr_vbeln.
+    ENDLOOP.
+  ENDIF.
+  IF NOT r_vbeln[] IS INITIAL.
+    CLEAR: lv_lines1.
+    lv_lines1 = lines( r_vbeln ).
+  ENDIF.
+  IF lv_lines1 GT 1.
+    CLEAR lt_final.
+    SELECT a~vbeln, a~fkart, a~vbtyp, a~vkorg, a~vtweg, a~netwr, a~ernam, a~erdat,
+           a~waerk, a~land1, a~kunrg, a~fkdat, a~gjahr, a~belnr, b~werks,b~fkimg,
+           b~vrkme, c~parvw, c~kunnr,c~adrnr, d~name1, d~name2, b~vkbur, b~vkgrp,
+           b~vkorg_ana
+    FROM vbrk AS a INNER JOIN vbrp AS b ON a~vbeln = b~vbeln
+                   INNER JOIN vbpa AS c ON b~vbeln = c~vbeln
+                   INNER JOIN adrc AS d ON c~adrnr = d~addrnumber
+         INTO TABLE @lt_vbrk1
+    WHERE a~vbeln IN @r_vbeln
+      AND a~vbtyp IN ('O','P')
+      AND c~parvw = 'RG'.
+  ELSE.
+    "IF INVOICE N0 RANGE IS GIVEN IN SELECTION SCREEN
+    IF s_vbeln-high IS NOT INITIAL.
+      CLEAR lt_final.
+      SELECT a~vbeln, a~fkart, a~vkorg, a~vbtyp, a~vtweg, a~netwr, a~ernam, a~erdat,
+             a~waerk, a~land1, a~kunrg, a~fkdat, a~gjahr, a~belnr, b~werks ,b~fkimg,
+             b~vrkme, c~parvw, c~kunnr, c~adrnr, d~name1, d~name2, b~vkbur, b~vkgrp,
+             b~vkorg_ana
+      FROM vbrk AS a INNER JOIN vbrp AS b ON a~vbeln = b~vbeln
+                     INNER JOIN vbpa AS c ON b~vbeln = c~vbeln
+                     INNER JOIN adrc AS d ON c~adrnr = d~addrnumber
+           INTO TABLE @lt_vbrk
+      WHERE a~vbeln IN @s_vbeln
+        AND a~vbtyp IN ('O','P')
+        AND c~parvw = 'RG'.
+    ELSE.
+      "IF ONLY SINGLE INVOICE ENTERED IN SELECTION SCREEN
+      lv_print_flag = 'X'.
+      CLEAR: lv_vbeln.
+      lv_vbeln = s_vbeln-low.
+      PERFORM call_sf USING lv_vbeln.
+      IF lv_sign IS INITIAL.
+        PERFORM display_print_privew.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+  "commented as authorization object need to be tested in dev and qa
+*-- Removing the records which are not authorized for the user
+*  LOOP AT lt_vbrk ASSIGNING FIELD-SYMBOL(<lfs_vbrk>).
+*    AUTHORITY-CHECK OBJECT 'ZSDA_CDEV'
+*      ID 'VKBUR' FIELD <lfs_vbrk>-vkbur
+*      ID 'VKGRP' FIELD <lfs_vbrk>-vkgrp
+*      ID 'VKORG' FIELD <lfs_vbrk>-vkorg_ana
+*      ID 'WERKS' FIELD <lfs_vbrk>-werks
+*      ID 'TCODE' FIELD 'ZSD_INV_DCM'.
+*    IF sy-subrc <> 0.
+*      CLEAR: <lfs_vbrk>-vbeln.
+*    ENDIF.
+*  ENDLOOP.
+*  DELETE lt_vbrk WHERE vbeln IS INITIAL. "Removing unauthorized records for the user
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form PROCESS_DATA
+*&---------------------------------------------------------------------*
+FORM process_data.
+  IF lt_vbrk1[] IS NOT INITIAL.
+    LOOP AT lt_vbrk1  ASSIGNING <ls_vbrk1>.
+      IF   <ls_vbrk1> IS ASSIGNED.
+        MOVE-CORRESPONDING <ls_vbrk1> TO ls_data.
+        CONCATENATE <ls_vbrk1>-name1  <ls_vbrk1>-name2 INTO ls_data-name1 SEPARATED BY ' '.
+        APPEND ls_data TO lt_data.
+        CLEAR ls_data.
+      ENDIF.
+    ENDLOOP.
+    SORT lt_data BY vbeln belnr.
+    DELETE ADJACENT DUPLICATES FROM lt_data COMPARING vbeln belnr.
+    PERFORM field_catlog.
+    PERFORM display.
+  ENDIF.
+  IF lt_vbrk[] IS NOT INITIAL.
+    LOOP AT lt_vbrk ASSIGNING <ls_vbrk>.
+      IF <ls_vbrk> IS ASSIGNED.
+        MOVE-CORRESPONDING <ls_vbrk> TO ls_data.
+        CONCATENATE <ls_vbrk>-name1  <ls_vbrk>-name2 INTO ls_data-name1 SEPARATED BY ' '.
+        APPEND ls_data TO lt_data.
+        CLEAR ls_data.
+      ENDIF.
+    ENDLOOP.
+    SORT lt_data BY vbeln belnr.
+    DELETE ADJACENT DUPLICATES FROM lt_data COMPARING vbeln belnr.
+    PERFORM field_catlog.
+    PERFORM display.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form FIELD_CATLOG
+*&---------------------------------------------------------------------*
+FORM field_catlog.
+  DATA: lv_final(8) TYPE c VALUE 'LT_FINAL',
+        lv_check(5) TYPE c VALUE  'CHECK',
+        lv_vbeln(5) TYPE c VALUE  'VBELN',
+        lv_ernam(5) TYPE c VALUE  'ERNAM',
+        lv_erdat(5) TYPE c VALUE  'ERDAT',
+        lv_fkart(5) TYPE c VALUE  'FKART',
+        lv_netwr(5) TYPE c VALUE  'NETWR',
+        lv_waerk(5) TYPE c VALUE  'WAERK',
+        lv_vkorg(5) TYPE c VALUE  'VKORG',
+        lv_vtweg(5) TYPE c VALUE  'VTWEG',
+        lv_land1(5) TYPE c VALUE  'LAND1',
+        lv_kunrg(5) TYPE c VALUE  'KUNRG',
+        lv_name1(5) TYPE c VALUE  'NAME1',
+        lv_werks(5) TYPE c VALUE  'WERKS',
+        lv_fkimg(5) TYPE c VALUE  'FKIMG',
+        lv_vrkme(5) TYPE c VALUE  'VRKME',
+        lv_fkdat(5) TYPE c VALUE  'FKDAT',
+        lv_gjahr(5) TYPE c VALUE  'GJAHR',
+        lv_belnr(5) TYPE c VALUE  'BELNR'.
+  CLEAR it_fieldcatalog[].
+  IF NOT lt_data[] IS INITIAL.
+    PERFORM append_fldcat USING lv_check lv_final TEXT-002 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_vbeln lv_final TEXT-003 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_ernam lv_final TEXT-004 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_erdat lv_final TEXT-005 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_fkart lv_final TEXT-006 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_netwr lv_final TEXT-007 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_waerk lv_final TEXT-008 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_vkorg lv_final TEXT-009 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_vtweg lv_final TEXT-010 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_land1 lv_final TEXT-011 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_kunrg lv_final TEXT-012 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_name1 lv_final TEXT-013 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_werks lv_final TEXT-014 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_fkimg lv_final TEXT-015 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_vrkme lv_final TEXT-016 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_fkdat lv_final TEXT-017 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_gjahr lv_final TEXT-018 CHANGING it_fieldcatalog.
+    PERFORM append_fldcat USING lv_belnr lv_final TEXT-019 CHANGING it_fieldcatalog.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form APPEND_FLDCAT
+*&---------------------------------------------------------------------*
+FORM append_fldcat  USING  p_fld ##PERF_NO_TYPE
+                           p_log
+                           p_text
+                    CHANGING p_lt_fldct TYPE slis_t_fieldcat_alv.
+  DATA: lv_chk(5) TYPE c VALUE 'CHECK'.
+  wa_fieldcatalog-fieldname = p_fld.
+  IF p_fld EQ lv_chk.
+    wa_fieldcatalog-checkbox = 'X'.
+    wa_fieldcatalog-edit = 'X'.
+    wa_fieldcatalog-input = 'X'.
+  ENDIF.
+  wa_fieldcatalog-tabname = p_log.
+  wa_fieldcatalog-seltext_m =  p_text.
+  APPEND wa_fieldcatalog TO p_lt_fldct.
+  CLEAR : wa_fieldcatalog.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form DISPLAY
+*&---------------------------------------------------------------------*
+FORM display.
+  CLEAR gd_layout.
+  gd_layout-colwidth_optimize = 'X'.
+  gd_layout-zebra = 'X'.
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = sy-repid
+      i_callback_pf_status_set = 'PF_STATUS'
+      i_callback_user_command  = 'USER_COMMAND'
+      is_layout                = gd_layout
+      it_fieldcat              = it_fieldcatalog[]
+    TABLES
+      t_outtab                 = lt_data
+    EXCEPTIONS
+      program_error            = 1
+      OTHERS                   = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form PF_STATUS
+*&---------------------------------------------------------------------*
+FORM pf_status USING rt_extab TYPE slis_t_extab  ##CALLED ##NEEDED.
+  SET PF-STATUS 'ZPRINT'  ##NEEDED.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form USER_COMMAND
+*&---------------------------------------------------------------------*
+FORM user_command USING r_ucomm TYPE sy-ucomm
+                        rs_selfield TYPE slis_selfield  ##CALLED ##NEEDED.
+  DATA: o_grid TYPE REF TO cl_gui_alv_grid.
+  "to update selected data
+  CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+    IMPORTING
+      e_grid = o_grid.
+  CALL METHOD o_grid->check_changed_data.
+  "TO CALL SMARTFORM
+*Start-----code addeded on 28-1-2025.......By AIRDITDEBI for the change request for Print Bulk Credit debit note
+  CLEAR :lv_print_flag,lv_print_pdf_flag.
+  CASE r_ucomm.
+      "--> For Print Bulk SMart form in a single Document.
+    WHEN 'PRT'.
+      lv_print_flag = 'X'.
+      CLEAR : lv_vbeln,ls_fnL_output_info-otfdata.
+      REFRESH: lt_finaltmp[].
+      lt_finaltmp[] = lt_data[].
+      DELETE lt_finaltmp WHERE NOT check EQ 'X'.
+      IF lt_finaltmp[] IS NOT INITIAL.
+        LOOP AT lt_finaltmp INTO DATA(ls_finaltmp).
+          lv_vbeln = ls_finaltmp-vbeln.
+          PERFORM call_sf USING lv_vbeln.
+          CLEAR :lv_vbeln,ls_finaltmp.
+        ENDLOOP.
+      ELSE.
+        MESSAGE 'Choose atleast one Document.' TYPE 'E'.
+      ENDIF.
+      PERFORM display_print_privew.
+
+      "-->For Download Separate PDF for Each Document Number.
+    WHEN 'PRT_SINGLE'.
+      DATA: lv_path     TYPE c LENGTH 200,
+            lv_filename TYPE string,
+            lc_symbol   TYPE char1 VALUE '\'.
+
+      lv_print_pdf_flag = 'X'.
+      CLEAR : lv_vbeln.
+      REFRESH: lt_finaltmp[].
+      lt_finaltmp[] = lt_data[].
+      DELETE lt_finaltmp WHERE NOT check EQ 'X'.
+
+      IF lt_finaltmp[] IS NOT INITIAL.
+        CALL FUNCTION 'TMP_GUI_BROWSE_FOR_FOLDER'
+          EXPORTING
+            window_title    = 'Provide Path/Location for Download File.'
+          IMPORTING
+            selected_folder = lv_path
+          EXCEPTIONS
+            cntl_error      = 1
+            OTHERS          = 2.
+        IF sy-subrc <> 0.
+          " Implement suitable error handling here
+        ENDIF.
+
+        IF lv_path IS INITIAL .
+          MESSAGE 'Provide location/Path for Download File.' TYPE 'E'.
+        ENDIF.
+
+        LOOP AT lt_finaltmp INTO ls_finaltmp.
+          lv_vbeln = ls_finaltmp-vbeln.
+          PERFORM call_sf USING lv_vbeln.
+          CONDENSE lv_path.
+          DATA(lv_name) = |{ lc_symbol }{ ls_finaltmp-vbeln }.PDF|.
+          lv_filename = |{ lv_path }{ lv_name }|.
+          CONDENSE lv_filename.
+
+          PERFORM Download_pdf USING lv_filename.
+          CLEAR :lv_vbeln,ls_finaltmp,lv_filename.
+        ENDLOOP.
+      ELSE.
+        MESSAGE 'Choose atleast one Document.' TYPE 'E'.
+      ENDIF.
+
+
+  ENDCASE.
+*End---- code addeded on 28-1-2025.......By AIRDITDEBI for the change request for Print Bulk Credit debit note
+
+
+*Start------Previous code Coomented on 28-1-2025.......By AIRDITDEBI for the change request for Print Bulk Credit debit note
+  " to check more than one check box selected and throw error
+*        CASE r_ucomm.
+*        WHEN 'PRT'.
+*      CLEAR : lv_index.
+*      CLEAR lt_finaltmp[].
+*      lt_finaltmp[] = lt_data[].
+*      DELETE lt_finaltmp WHERE NOT check EQ 'X'.
+*      CLEAR lv_lines2 .
+*      lv_lines2 = lines( lt_finaltmp ).
+*      IF lv_lines2 GT 1.
+*        MESSAGE  e010(zsd).
+*      ENDIF.
+*      IF lt_data[] IS NOT INITIAL.
+*        READ TABLE lt_data INTO ls_data WITH KEY check = 'X'.
+*        IF sy-subrc = 0.
+*          IF ls_data-vbeln IS NOT INITIAL.
+*            CLEAR :lv_vbeln.
+*            lv_vbeln = ls_data-vbeln.
+*            PERFORM call_sf USING lv_vbeln.
+*          ENDIF.
+*        ENDIF.
+*        CLEAR ls_data .
+*      ENDIF.
+*endcase.
+*END"-----------------------------------------------------------------------------------------------------------------------------
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form CALL_SF
+*&---------------------------------------------------------------------*
+FORM call_sf USING vbeln TYPE vbeln.
+  CONSTANTS : lc_formname TYPE tdsfname VALUE 'ZSDSF_CREDIT_DEB_CRED_CORP'.
+  DATA: v_e_devtype    TYPE rspoptype,
+        icntrlparam    TYPE ssfctrlop,
+        output_options TYPE ssfcompop,
+        it_otf         TYPE STANDARD TABLE OF itcoo,
+        ls_job_output  TYPE ssfcrescl.
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lc_formname
+    IMPORTING
+      fm_name            = fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+  IF vbeln IS NOT INITIAL.
+    CLEAR lt_vbrk.
+    SELECT  vbeln, fkart, vbtyp, knumv, bukrs, netwr, zuonr,
+            mwsbk, vkorg,vtweg, xblnr, inco1, zterm, bupla, fkdat, waerk
+    FROM vbrk
+         INTO TABLE @lt_vbrk2
+    WHERE vbeln = @vbeln.
+  ENDIF.
+
+  "to fetch email/website/pan/tan/cin  details
+  READ TABLE lt_vbrk2 INTO ls_vbrk2 INDEX 1.            "#EC CI_NOORDER
+
+  CONCATENATE ls_vbrk2-vkorg ls_vbrk2-vtweg  INTO ls_head-mvke_obj. "Added by Adarsh Thakur for mvke_obj for material description 11/06/2024.
+  CONDENSE ls_head-mvke_obj NO-GAPS.
+  ls_vbtyp = ls_vbrk2-vbtyp.
+  ls_name = ls_vbrk2-vbeln.
+  IF ( ls_vbrk2-fkart = 'ZRET' OR ls_vbrk2-fkart = 'ZCRR' OR ls_vbrk2-fkart = 'ZBDR' ) AND
+     ls_vbrk2-bukrs = '1103'.
+    ls_head-invno = ls_vbrk2-vbeln.
+  ELSE.
+    ls_head-invno = ls_vbrk2-xblnr.
+  ENDIF.
+  ls_head-inv_refno = ls_vbrk2-vbeln.
+  ls_head-invdate = ls_vbrk2-fkdat.
+  IF sy-subrc = 0.
+    IF ls_vbrk2-vkorg = lv_vkorg1100.       "for 110 company code
+      ls_head-lv_readoffice = gc_regd_office_11.
+      ls_head-website   = gc_website_11.
+      ls_head-email     = gc_email_11.
+      ls_head-cin       = gc_cin_11.
+      ls_head-pan       = gc_pan_11.
+      ls_head-tan       = gc_tan_11.
+    ENDIF.
+    IF ls_vbrk2-vkorg = lv_vkorg1200.     " for 1200 company code
+      ls_head-lv_readoffice = gc_regd_office_12.
+      ls_head-website   = gc_website_12.
+      ls_head-email     = gc_email_12.
+      ls_head-cin       = gc_cin_12.
+      ls_head-pan       = gc_pan_12.
+    ENDIF.
+    IF ls_vbrk2-vkorg = lv_vkorg1300.     " for 1300 company code
+      ls_head-website   = gc_website_11.
+      ls_head-email     = gc_email_13.
+      ls_head-cin       = gc_cin_13.
+      ls_head-pan       = gc_pan_13.
+      ls_head-tan       = gc_tan_13.
+    ENDIF.
+    "to get payment term
+    SELECT vtext
+    FROM tvzbt
+         INTO ls_head-zterm
+       UP TO 1 ROWS
+     WHERE zterm = ls_vbrk2-zterm
+       AND spras = sy-langu.
+    ENDSELECT.
+    " to get incoterm
+    SELECT bezei
+    FROM tinct
+         INTO ls_head-incoterm
+      UP TO 1 ROWS
+    WHERE inco1 = ls_vbrk2-inco1
+      AND spras = sy-langu.
+    ENDSELECT.
+    "to get gstin number
+    SELECT gstin                                        "#EC CI_NOORDER
+    FROM j_1bbranch
+         INTO ls_head-gstin
+      UP TO 1 ROWS
+    WHERE branch = ls_vbrk2-bupla.
+    ENDSELECT.
+    "to fetch hfcl/htl title
+    SELECT SINGLE  butxt
+           INTO ls_head-title
+    FROM t001
+    WHERE bukrs EQ ls_vbrk2-bukrs.
+    "to fetch address number based on invoice type c
+    SELECT vbelv                                        "#EC CI_NOFIELD
+    FROM vbfa
+         INTO  @DATA(ls_vbelv)
+      UP TO 1 ROWS
+    WHERE vbeln = @ls_vbrk2-vbeln.                      "#EC CI_NOORDER
+    ENDSELECT.
+    CLEAR ls_adrnr.
+    IF ls_vbelv IS NOT INITIAL.
+      SELECT adrnr                                      "#EC CI_NOORDER
+      FROM vbpa
+           INTO @ls_adrnr
+        UP TO 1 ROWS
+      WHERE vbeln = @ls_vbelv
+        AND parvw = @parvw_we.
+      ENDSELECT.
+    ENDIF.
+    " to fetch place of supply code
+    IF ls_adrnr IS NOT INITIAL.
+      CLEAR ls_region.
+      SELECT region                                     "#EC CI_NOORDER
+      FROM adrc
+      INTO  ls_head-region
+      UP TO 1 ROWS
+      WHERE addrnumber = ls_adrnr.
+      ENDSELECT.
+    ENDIF.
+    " to fetch place of supply state
+    CLEAR ls_state.
+    SELECT SINGLE bezei
+    FROM t005u
+         INTO  ls_head-state
+    WHERE bland = ls_head-region
+      AND spras = sy-langu
+      AND land1 = lv_land2.
+    CLEAR  ls_vbrk2.
+    CONSTANTS: id_z030 TYPE tdid VALUE 'Z030'.
+    CONSTANTS: id_z020 TYPE tdid VALUE 'Z020'.
+    CONSTANTS: id_z010 TYPE tdid VALUE 'Z010'.
+    CONSTANTS: vbtyp_c TYPE vbtypl_n VALUE 'C' ##NEEDED.
+    "logic to fetch bill / ship / paying authority address with state code ,state name, pan , gstin ,tax no
+    SELECT a~vbeln , b~parvw, b~kunnr, b~assigned_bp, c~str_suppl1, c~str_suppl2 , c~str_suppl3,
+           c~street, c~location , c~city2 , c~post_code1 ,c~city1 , c~addrnumber,
+           c~tel_number, c~fax_number, c~region, c~name_co, c~name1, c~name2, c~house_num1, c~country
+    FROM vbfa AS a INNER JOIN vbpa AS b ON a~vbelv = b~vbeln
+                   INNER JOIN adrc AS c ON b~adrnr = c~addrnumber
+         INTO TABLE @DATA(lt_address)
+    WHERE a~vbeln = @vbeln.
+    SORT lt_address BY vbeln.
+    "ship to
+    CLEAR: lt_ship.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        client                  = sy-mandt
+        id                      = id_z020
+        language                = sy-langu
+        name                    = ls_name
+        object                  = 'VBBK'
+      TABLES
+        lines                   = lt_ship
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8 ##FM_SUBRC_OK.
+    IF sy-subrc <> 0 ##NEEDED.
+      READ TABLE lt_address INTO DATA(ls_address3) WITH KEY parvw = parvw_we.
+      IF sy-subrc = 0.
+        CONCATENATE ls_address3-name1 ls_address3-name2 ls_address3-name_co ls_address3-str_suppl1
+                    ls_address3-str_suppl2  ls_address3-house_num1 ls_address3-str_suppl3
+                    ls_address3-location ls_address3-city2 ls_address3-post_code1 '-'
+                    ls_address3-city1 ls_address3-country INTO ls_head-ship_to_address SEPARATED BY ' '.
+        "SHIP TO PARTY STATE CODE
+        ls_head-ship_to_region = ls_address3-region.
+        "SHIP TO PARTY STATE NAME
+        SELECT SINGLE bezei
+        FROM t005u
+             INTO ls_head-ship_to_state
+        WHERE bland = ls_address3-region
+          AND spras = sy-langu
+          AND land1 = lv_land2.
+        "SHIP TO PARTY PAN NO
+        SELECT SINGLE j_1ipanno
+        FROM kna1
+             INTO ls_head-ship_to_panno
+        WHERE kunnr = ls_address3-kunnr.
+        "SHIP TO PARTY TAXNO
+        SELECT  taxnum                                  "#EC CI_NOORDER
+        FROM dfkkbptaxnum
+             INTO ls_head-ship_to_taxno
+          UP TO 1 ROWS
+        WHERE partner = ls_address3-assigned_bp.
+        ENDSELECT.
+      ENDIF.
+    ENDIF.
+    CLEAR ls_address3.
+    "paying authority to
+    CLEAR lt_paying.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        client                  = sy-mandt
+        id                      = id_z030
+        language                = sy-langu
+        name                    = ls_name
+        object                  = 'VBBK'
+      TABLES
+        lines                   = lt_paying
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8 ##FM_SUBRC_OK.
+    IF sy-subrc <> 0 ##NEEDED.
+      READ TABLE lt_address INTO DATA(ls_address2) WITH KEY parvw = 'RG'.
+      IF sy-subrc = 0.
+        "Paying Authority ADDRESS if text id doest have data
+        CONCATENATE ls_address2-name1 ls_address2-name2 ls_address2-name_co ls_address2-str_suppl1
+                    ls_address2-str_suppl2  ls_address2-house_num1 ls_address2-str_suppl3
+                    ls_address2-location ls_address2-city2 ls_address2-post_code1 '-'
+                    ls_address2-city1 ls_address2-country INTO ls_head-paying_address SEPARATED BY ' '.
+        "Paying Authority STATE CODE
+        ls_head-paying_region = ls_address2-region.
+        "Paying Authority  STATE NAME
+        SELECT SINGLE bezei
+        FROM t005u
+             INTO ls_head-paying_state
+        WHERE bland = ls_address2-region
+          AND spras = sy-langu
+          AND land1 = lv_land2.
+        "Paying Authority PAN NO
+        SELECT SINGLE j_1ipanno
+        FROM kna1
+             INTO ls_head-paying_panno
+        WHERE kunnr = ls_address2-kunnr.
+        "PAY TO AUTHORITY TAXNO
+        SELECT  taxnum                                  "#EC CI_NOORDER
+        FROM dfkkbptaxnum
+             INTO ls_head-paying_taxno
+          UP TO 1 ROWS
+        WHERE partner = ls_address2-assigned_bp.
+        ENDSELECT.
+      ENDIF.
+    ENDIF.
+    CLEAR ls_address2.
+    "billing to
+    CLEAR lt_bill.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+        client                  = sy-mandt
+        id                      = id_z010
+        language                = sy-langu
+        name                    = ls_name
+        object                  = 'VBBK'
+      TABLES
+        lines                   = lt_bill
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0 ##NEEDED.
+      READ TABLE lt_address INTO DATA(ls_address) WITH KEY parvw = 'RE'.
+      IF sy-subrc = 0.
+        CONCATENATE  ls_address-name1 ls_address-name2 ls_address-name_co
+                     ls_address-str_suppl1  ls_address-str_suppl2  ls_address-house_num1 ls_address-str_suppl3
+                      ls_address-location ls_address-city2 ls_address-post_code1 '-' ls_address-city1 ls_address-country
+                    INTO ls_head-bill_to_address SEPARATED BY ' ' .
+        "BIIL TO PARTY STATE CODE
+        ls_head-bill_to_region = ls_address-region.
+        "BIIL TO PARTY STATE NAME
+        SELECT SINGLE bezei
+        FROM t005u
+             INTO @ls_head-bill_to_state
+        WHERE bland = @ls_address-region
+          AND spras = @sy-langu
+         AND land1 = @lv_land2.
+        "BIIL TO PARTY PAN NO
+        SELECT SINGLE j_1ipanno
+        FROM kna1
+             INTO @ls_head-bill_to_panno
+        WHERE kunnr = @ls_address-kunnr.
+        "BIIL TO PARTY TAXNO
+        SELECT taxnum                                   "#EC CI_NOORDER
+        FROM dfkkbptaxnum
+             INTO @ls_head-bill_to_taxno
+          UP TO 1 ROWS
+        WHERE partner = @ls_address-assigned_bp.
+        ENDSELECT.
+      ENDIF.
+    ENDIF.
+    CLEAR ls_address.
+    "IRN NUMBER AND QR CODE
+    CLEAR lv_irn.
+    SELECT irn, signed_qrcode                           "#EC CI_NOORDER
+    FROM j_1ig_invrefnum
+         INTO CORRESPONDING FIELDS OF @lv_irn
+      UP TO 1 ROWS
+    WHERE docno = @vbeln.
+    ENDSELECT.
+    "to fetch po no and po date
+    CLEAR ls_aubel.
+    SELECT aubel                                        "#EC CI_NOORDER
+    FROM vbrp
+         INTO ls_aubel
+      UP TO 1 ROWS
+    WHERE vbeln EQ vbeln.
+    ENDSELECT.
+    SELECT bstkd                                        "#EC CI_NOORDER
+    FROM vbkd
+         INTO ls_head-pono
+      UP TO 1 ROWS
+    WHERE vbeln EQ ls_aubel ##WARN_OK.
+    ENDSELECT.
+    SELECT bstdk                                        "#EC CI_NOORDER
+    FROM vbak
+         INTO ls_head-podate
+      UP TO 1 ROWS
+    WHERE vbeln EQ ls_aubel ##WARN_OK.
+    ENDSELECT.
+    "to fetch lc no
+    SELECT SINGLE b~baanr
+    FROM vbpa AS a INNER JOIN /aplx/lochdr AS b ON a~kunnr = b~kunnr
+         INTO @lc_no
+    WHERE a~vbeln = @vbeln
+      AND a~parvw = @parvw_re ##WARN_OK.
+*  TO FETCH QUANTITY,UOM
+    IF lt_vbrk2 IS NOT INITIAL.
+      SELECT vbeln,  posnr, fkimg, meins, mwsbp, netwr, matnr, werks "#EC CI_FAE_NO_LINES_OK
+      FROM vbrp
+           INTO TABLE @lt_vbrp
+        FOR ALL ENTRIES IN @lt_vbrk2
+      WHERE vbeln EQ @lt_vbrk2-vbeln.
+    ENDIF.
+    SORT lt_vbrp BY vbeln.
+    "for adRNR NUMBER FOR PLANT ADDRESS
+    IF lt_vbrp IS NOT INITIAL.
+      SELECT werks, pstlz, adrnr, vtweg         "#EC CI_FAE_NO_LINES_OK
+      FROM t001w
+           INTO TABLE @DATA(lt_t001w)
+        FOR ALL ENTRIES IN @lt_vbrp
+      WHERE werks EQ @lt_vbrp-werks.                    "#EC CI_NOORDER
+    ENDIF.
+    SORT lt_t001w BY werks.                             "#EC CI_NOORDER
+    "fetching PLANT address details based on address no
+    READ TABLE lt_t001w INTO DATA(ls_t001w) INDEX 1 .   "#EC CI_NOORDER
+    IF sy-subrc = 0.
+      SELECT str_suppl1, str_suppl2, str_suppl3, street, location, city2,
+             post_code1, city1, addrnumber, tel_number, fax_number,
+             region, name_co, name1, name2, house_num1, country
+      FROM adrc
+           INTO  @DATA(lt_adrc)
+        UP TO 1 ROWS
+      WHERE addrnumber EQ @ls_t001w-adrnr .             "#EC CI_NOORDER
+      ENDSELECT.
+    ENDIF.
+    SELECT bezei                                        "#EC CI_NOORDER
+    FROM t005u
+         INTO @DATA(ls_bezei)
+      UP TO 1 ROWS
+    WHERE bland = @lt_adrc-region
+      AND spras = @sy-langu
+      AND land1 = @lv_land2.
+    ENDSELECT.
+    IF lt_adrc-street IS NOT INITIAL.
+      CONCATENATE  lt_adrc-name_co lt_adrc-street  lt_adrc-str_suppl1  lt_adrc-str_suppl2
+                   lt_adrc-str_suppl3  lt_adrc-location lt_adrc-city2
+                   INTO ls_head-plant_address SEPARATED BY ' '.
+    ENDIF.
+    CONCATENATE lt_adrc-city1 '-' lt_adrc-post_code1 ',' ls_bezei INTO ls_head-plant_city.
+
+    IF lt_adrc-tel_number IS NOT INITIAL.
+      CONCATENATE lv_tel lt_adrc-tel_number INTO ls_head-telphoneno.
+    ENDIF.
+    IF lt_adrc-tel_number IS NOT INITIAL.
+      CONCATENATE lv_fax lt_adrc-fax_number INTO ls_head-faxno.
+    ENDIF.
+    PERFORM lv_readtext USING vbeln id_z135 CHANGING lv_dcno.                    "DC NO
+    PERFORM lv_readtext USING vbeln id_z090 CHANGING lv_ewayno.                  "EWAY NO
+    PERFORM lv_readtext USING vbeln id_z250 CHANGING lv_transportername.         "TRANSPORTER NAME
+    PERFORM lv_readtext USING vbeln id_z270 CHANGING lv_vehicleno.               "VEHICLE NO
+    PERFORM lv_readtext USING vbeln id_z110 CHANGING lv_lrno.                    "LR NO
+    PERFORM lv_readtext USING vbeln id_z115 CHANGING lv_lrdate.                "LR DATE
+    PERFORM lv_readtext USING vbeln id_z160 CHANGING lv_packageno.               "PACKAGE NO
+    PERFORM lv_readtext USING vbeln id_z150 CHANGING lv_mode .                   "MODE
+    PERFORM lv_readtext USING vbeln id_z170 CHANGING lv_packingnote .           "PACKING NOTE NO
+    PERFORM lv_readtext USING vbeln id_z210 CHANGING lv_voucherno.              "VOUCHER NO
+    PERFORM lv_readtext USING vbeln id_z310 CHANGING lv_grno.                    "GR NO
+    PERFORM lv_readtext USING vbeln id_z320 CHANGING lv_grdate.                  "GR DATE
+    PERFORM lv_readtext USING vbeln id_z100 CHANGING lv_notification.            "NOTIFICATION
+    ls_head-dcno            =  lv_dcno.
+    ls_head-vehicleno       = lv_vehicleno.
+    ls_head-lrno            = lv_lrno.
+    ls_head-lrdate          = lv_lrdate.
+    ls_head-packageno       = lv_packageno.
+    ls_head-mode1            = lv_mode.
+    ls_head-packingnote     = lv_packingnote.
+    ls_head-voucherno       = lv_voucherno.
+    ls_head-grno            = lv_grno.
+    ls_head-grdate          = lv_grdate.
+    ls_head-notification    =  lv_notification.
+    ls_head-transportername = lv_transportername.
+    "EWAY BILL NUMBER IF TEXT ID DOES NOT HAVE DATA.
+    IF  lv_ewayno IS INITIAL.
+      SELECT  ebillno                                   "#EC CI_NOORDER
+        FROM j_1ig_ewaybill
+        INTO lv_ewayno
+        UP TO 1 ROWS
+        WHERE docno = vbeln .
+      ENDSELECT.
+    ENDIF.
+    SHIFT lv_ewayno LEFT DELETING LEADING '0'.
+    "  TO FETCH THIRD PARTY ADDRESS
+    SELECT vbeln
+    FROM vbrk
+         INTO lv_vbeln1
+      UP TO 1 ROWS
+    WHERE fkart IN ( lv_ztps, lv_zhss, lv_zmex )
+    AND vbeln = vbeln .
+    ENDSELECT.
+    CLEAR: lv_werks1, lv_aubel.
+    SELECT werks aubel                                  "#EC CI_NOORDER
+    FROM vbrp
+         INTO (lv_werks1 , lv_aubel )
+      UP TO 1 ROWS
+    WHERE vbeln = vbeln.
+    ENDSELECT.
+*  THRID PARTY ADDRESS  FOR PLANT STARTING WITH 6
+    PERFORM lv_readtext USING vbeln id_z130 CHANGING lv_icno.
+    ls_head-icno = lv_icno.
+    PERFORM get_lc_no USING vbeln.
+    SELECT vbelv                                        "#EC CI_NOORDER
+    FROM vbfa
+         INTO @DATA(lv_vbelv)
+      UP TO 1 ROWS
+    WHERE vbeln = @vbeln                                "#EC CI_NOFIELD
+      AND vbtyp_v = @lj_vbtyp.
+    ENDSELECT.
+    DATA: ls_werks TYPE lips-werks,
+          ls_lgort TYPE lips-werks.
+
+
+    SELECT vbelv                                        "#EC CI_NOORDER
+   FROM vbfa
+        INTO @DATA(lv_vbelv1)
+   WHERE vbeln = @vbeln                                 "#EC CI_NOFIELD
+     AND vbtyp_v = @lm_vbtyp.
+    ENDSELECT.
+    IF lv_vbelv1 IS NOT INITIAL.
+      SELECT fkdat xblnr                                "#EC CI_NOORDER
+       FROM vbrk
+            INTO ( lv_fkdt,lv_xbln )
+       WHERE vbeln = lv_vbelv1 .
+      ENDSELECT.
+    ENDIF.
+
+    PERFORM read_text_inv USING vbeln 'Z470'.
+    PERFORM read_text_inv USING vbeln 'Z480'.
+
+
+
+    SELECT  werks  lgort                                "#EC CI_NOORDER
+    FROM lips
+         INTO (ls_werks , ls_lgort)
+      UP TO 1 ROWS
+    WHERE vbeln = lv_vbelv.
+    ENDSELECT.
+    SELECT  adrnr
+    FROM twlad
+        INTO @DATA(lv_adrnr)
+      UP TO 1 ROWS
+    WHERE werks = @ls_werks
+      AND lgort = @ls_lgort.                            "#EC CI_NOORDER
+    ENDSELECT.
+    IF lv_adrnr IS NOT INITIAL.
+      SELECT str_suppl1, str_suppl2, str_suppl3, street, location, city2, post_code1,
+             city1, addrnumber, tel_number, fax_number, region, name_co, name1, name2,
+             house_num1, country
+      FROM adrc
+           INTO @DATA(lt_adrc1)
+        UP TO 1 ROWS
+      WHERE addrnumber EQ @lv_adrnr.                    "#EC CI_NOORDER
+      ENDSELECT.
+    ENDIF.
+    IF lt_adrc1 IS NOT INITIAL.
+      CLEAR lv_thirdparty.
+      CONCATENATE lt_adrc1-name1 lt_adrc1-name2 lt_adrc1-name_co  lt_adrc1-street','
+                  lt_adrc1-str_suppl1  lt_adrc1-str_suppl2 lt_adrc1-house_num1
+                  lt_adrc1-str_suppl3 lt_adrc1-location lt_adrc1-city2 lt_adrc1-city1
+                  '-' lt_adrc1-post_code1',' lt_adrc1-country INTO ls_head-thirdparty_address . "#EC CI_NOORDER
+    ENDIF.
+    APPEND ls_head TO lt_head.
+    CLEAR: ls_head.
+  ELSE.
+    MESSAGE TEXT-001 TYPE 'E'.
+  ENDIF.
+  IF lt_vbrk2[] IS NOT INITIAL.
+    " TO FETCH ALL CHARGES AND DISCOUNT
+    CLEAR lt_prcd_elements.
+    SELECT knumv, kschl, kbetr, kwert, krech, kposn
+    FROM prcd_elements
+         INTO TABLE @lt_prcd_elements
+      FOR ALL ENTRIES IN @lt_vbrk2
+    WHERE knumv EQ @lt_vbrk2-knumv.
+  ENDIF.
+  SORT lt_prcd_elements BY knumv.  "for material description
+  IF lt_vbrp[] IS NOT INITIAL.
+    SELECT matnr, maktx, spras
+    FROM makt
+         INTO TABLE @DATA(lt_makt)
+      FOR ALL ENTRIES IN @lt_vbrp
+    WHERE matnr EQ @lt_vbrp-matnr
+      AND spras EQ @sy-langu.
+  ENDIF.
+  SORT lt_makt BY matnr.  "fetching hsc/sac code AND Material type
+  IF lt_vbrp IS NOT INITIAL.
+    SELECT a~matnr, a~werks, a~steuc, b~mtart
+    FROM marc AS a INNER JOIN mara AS b ON a~matnr = b~matnr
+         INTO TABLE @DATA(lt_marc)
+      FOR ALL ENTRIES IN @lt_vbrp
+    WHERE a~matnr EQ @lt_vbrp-matnr.
+  ENDIF.
+  SORT lt_marc BY matnr.
+  DATA : lt_vbrp_temp TYPE STANDARD TABLE OF ty_vbrp.
+  lt_vbrp_temp[] = lt_vbrp[].
+  DATA : fkimg1 TYPE c ##NEEDED.
+  " Final table loop
+  LOOP AT lt_vbrp INTO DATA(ls_vbrp) ##INTO_OK.
+    ls_final-vbeln = ls_vbrp-vbeln.                     "invoice no
+    ls_final-posnr = ls_vbrp-posnr.                     "srno
+    ls_final-matnr = ls_vbrp-matnr.                     "material no
+    ls_final-fkimg = ls_vbrp-fkimg.
+    ls_final-meins  = ls_vbrp-meins.                    "meins
+    IF ls_final-meins = lv_meins.
+      SPLIT ls_final-fkimg AT '.' INTO ls_final-fkimg  fkimg1.
+    ENDIF.
+*    ls_final-total_tax_amount = ls_vbrp-mwsbp .     "total_taxable_amount
+    ls_final-total_amount_incl_tax = ls_vbrp-mwsbp + ls_vbrp-netwr. "total amt incl tax
+*    ls_final-total_taxable_amount = ls_vbrp-netwr.
+*    PERFORM get_sales_item_text USING ls_vbrp-vbeln ls_vbrp-posnr.    ADDED BY ADARSH 10/06/2024 FOR PREFERENCE OF MATERIAL TEXT FROM SALES ORDER LINE ITEM
+*    IF lt_hdrtxt[] IS NOT INITIAL.
+*      LOOP AT lt_hdrtxt INTO DATA(ls_hdrtxt).
+*        ls_final-description = | { ls_final-description } { ls_hdrtxt-tdline } |.
+*        CLEAR: ls_hdrtxt.
+*      ENDLOOP.
+*      CLEAR: lt_hdrtxt[].
+*    ENDIF.
+
+*    IF ls_final-description IS NOT INITIAL.
+    READ TABLE lt_makt INTO DATA(ls_makt) WITH KEY matnr = ls_final-matnr .
+    IF sy-subrc = 0.
+      ls_final-description = ls_makt-maktx.         "material description
+    ENDIF.
+*    ENDIF.
+
+    READ TABLE lt_marc INTO DATA(ls_marc) WITH KEY matnr = ls_final-matnr
+                                                   werks = ls_vbrp-werks.
+    IF sy-subrc = 0.
+      ls_final-hsc_sac_code = ls_marc-steuc.     "hsn/sac code
+      ls_final-materialtyp  = ls_marc-mtart.
+    ENDIF.
+    READ TABLE lt_vbrk2 INTO ls_vbrk2 WITH KEY vbeln = ls_final-vbeln.
+    IF sy-subrc = 0.
+      ls_companycode    = ls_vbrk2-vkorg.                 "Company code
+
+      ls_final-total_invoice_value = ls_vbrk2-netwr + ls_vbrk2-mwsbk.         "total invoice value
+      IF ls_final-total_invoice_value IS NOT INITIAL AND ls_final-total_invoice_value NE 0.  " Total invoice value in words
+        "amount in words
+        CALL FUNCTION '/APLX/FM_SPELL_AMOUNT'
+          EXPORTING
+            amount             = ls_final-total_invoice_value
+            currency           = ls_vbrk2-waerk
+*           FILLER             = ' '
+            language           = sy-langu
+          IMPORTING
+            in_words           = ls_amount_in_words
+          EXCEPTIONS
+            spell_amount_error = 1
+            OTHERS             = 2.
+        IF sy-subrc <> 0 ##NEEDED.
+* Implement suitable error handling here
+        ENDIF.
+      ENDIF.
+      "to get amount spell in small letters
+      amount_in_words = ls_amount_in_words.
+      CALL FUNCTION 'FI_CONVERT_FIRSTCHARS_TOUPPER'
+        EXPORTING
+          input_string  = amount_in_words
+*         SEPARATORS    = ' -.,;:'
+        IMPORTING
+          output_string = ls_final-amount_in_words.
+      CONCATENATE ls_final-amount_in_words lv_only INTO ls_final-amount_in_words SEPARATED BY ' '.
+      "base unit price
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zbps.
+      IF sy-subrc = 0.
+        ls_final-basic_unit_price = ls_prcd_elements-kbetr.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zbas.
+      IF sy-subrc = 0.
+        ls_final-basic_unit_price = ls_prcd_elements-kbetr.
+      ENDIF.
+      "freight charges
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zfrp.
+      IF sy-subrc = 0.
+        ls_final-freight_charges = ls_prcd_elements-kwert.
+      ENDIF.
+
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zfrq.
+      IF sy-subrc = 0.
+        ls_final-freight_charges = ls_prcd_elements-kwert.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zfrv.
+      IF sy-subrc = 0.
+        ls_final-freight_charges = ls_prcd_elements-kwert.
+      ENDIF.
+      "packing charges
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zpkp.
+      IF sy-subrc = 0.
+        ls_final-packing_charges = ls_prcd_elements-kwert.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zpkv.
+      IF sy-subrc = 0.
+        ls_final-packing_charges = ls_prcd_elements-kwert.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl  = lv_zpkq.
+      IF sy-subrc = 0.
+        ls_final-packing_charges = ls_prcd_elements-kwert.
+      ENDIF.
+      "insurance charges
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zinp.
+      IF sy-subrc = 0.
+        ls_final-insurance_charges = ls_prcd_elements-kwert.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zinv.
+
+      IF sy-subrc = 0.
+        ls_final-insurance_charges = ls_prcd_elements-kwert.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zinq.
+      IF sy-subrc = 0.
+        ls_final-insurance_charges = ls_prcd_elements-kwert.
+      ENDIF.
+      "tax unit rate
+      ls_final-tax_unit_rate = ls_final-basic_unit_price + ls_final-freight_charges +
+                               ls_final-packing_charges + ls_final-insurance_charges.
+      "discount
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zdsp.
+      IF sy-subrc = 0.
+        ls_final-discount = ls_prcd_elements-kwert.
+        IF ls_final-discount < 0.
+          ls_final-discount = ls_final-discount * -1.
+        ENDIF.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zdsv.
+      IF sy-subrc = 0.
+        ls_final-discount = ls_prcd_elements-kwert.
+        IF ls_final-discount < 0.
+          ls_final-discount = ls_final-discount * -1.
+        ENDIF.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_zdsq.
+      IF sy-subrc = 0.
+        ls_final-discount = ls_prcd_elements-kwert.
+        IF ls_final-discount < 0.
+          ls_final-discount = ls_final-discount * -1.
+        ENDIF.
+      ENDIF.
+      "cgst rate/cgst amount
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_jocg.
+      IF sy-subrc = 0.
+        ls_final-cgst_rate   = ls_prcd_elements-kbetr.
+        ls_final-cgst_amount = ls_prcd_elements-kwert.
+      ENDIF.
+      "sgst rate /sgst amount
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_joug.
+      IF sy-subrc = 0.
+        ls_final-sgst_rate   = ls_prcd_elements-kbetr.
+        ls_final-sgst_amount = ls_prcd_elements-kwert.
+        lv_flag3 = 'U'.
+      ELSE.
+        lv_flag3 = 'S'.
+      ENDIF.
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_josg.
+      IF sy-subrc = 0.
+        ls_final-sgst_rate   = ls_prcd_elements-kbetr.
+        ls_final-sgst_amount = ls_prcd_elements-kwert.
+      ENDIF.
+*      igst rate/igst amount
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_joig.
+      IF sy-subrc = 0.
+        ls_final-igst_rate   = ls_prcd_elements-kbetr.
+        ls_final-igst_amount = ls_prcd_elements-kwert.
+      ENDIF.
+      "tcs
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl = lv_ztcs.
+      IF sy-subrc = 0.
+        ls_final-tcs = ls_prcd_elements-kwert.
+      ENDIF.
+      "tax sub to rev
+      READ TABLE lt_prcd_elements INTO ls_prcd_elements WITH KEY knumv = ls_vbrk2-knumv
+                                                                 kposn = ls_vbrp-posnr
+                                                                 kschl  = lv_rjoi.
+      IF sy-subrc = 0.
+        ls_final-tax_sub_to_rev = ls_prcd_elements-kwert.
+      ENDIF.
+      ls_final-total_taxable_amount = ls_vbrp-netwr .
+      ls_final-total_tax_amount = ls_vbrp-mwsbp.     "total_taxable_amount
+    ENDIF.
+    "removing leading zeros in srno.
+    SHIFT ls_final-posnr LEFT DELETING LEADING '0'.
+    SORT lt_vbrp_temp BY matnr.
+    IF ( ls_vbrk2-fkart = 'ZECR' OR ls_vbrk2-fkart = 'ZEDB' ) AND ls_vbrk2-waerk <> 'INR'.
+      PERFORM currency_conversion USING ls_final-basic_unit_price      ls_vbrk2-waerk CHANGING ls_final-basic_unit_price.
+      PERFORM currency_conversion USING ls_final-cgst_amount           ls_vbrk2-waerk CHANGING ls_final-cgst_amount.
+      PERFORM currency_conversion USING ls_final-discount              ls_vbrk2-waerk CHANGING ls_final-discount.
+      PERFORM currency_conversion USING ls_final-freight_charges       ls_vbrk2-waerk CHANGING ls_final-freight_charges.
+      PERFORM currency_conversion USING ls_final-packing_charges       ls_vbrk2-waerk CHANGING ls_final-packing_charges.
+      PERFORM currency_conversion USING ls_final-igst_amount           ls_vbrk2-waerk CHANGING ls_final-igst_amount.
+      PERFORM currency_conversion USING ls_final-insurance_charges     ls_vbrk2-waerk CHANGING ls_final-insurance_charges.
+      PERFORM currency_conversion USING ls_final-sgst_amount           ls_vbrk2-waerk CHANGING ls_final-sgst_amount.
+      PERFORM currency_conversion USING ls_final-tax_sub_to_rev        ls_vbrk2-waerk CHANGING ls_final-sgst_amount.
+      PERFORM currency_conversion USING ls_final-total_taxable_amount  ls_vbrk2-waerk CHANGING ls_final-total_taxable_amount.
+      PERFORM currency_conversion USING ls_final-total_tax_amount      ls_vbrk2-waerk CHANGING ls_final-total_tax_amount.
+      PERFORM currency_conversion USING ls_final-total_invoice_value   ls_vbrk2-waerk CHANGING ls_final-total_invoice_value.
+      PERFORM currency_conversion USING ls_final-total_amount_incl_tax ls_vbrk2-waerk CHANGING ls_final-total_amount_incl_tax.
+      PERFORM currency_conversion USING ls_final-tcs                   ls_vbrk2-waerk CHANGING ls_final-tax_unit_rate.
+      PERFORM currency_conversion USING ls_final-tax_unit_rate         ls_vbrk2-waerk CHANGING ls_final-tax_unit_rate.
+      IF ls_final-total_invoice_value IS NOT INITIAL AND ls_final-total_invoice_value NE 0.  " Total invoice value in words
+        "amount in words
+        CALL FUNCTION '/APLX/FM_SPELL_AMOUNT'
+          EXPORTING
+            amount             = ls_final-total_invoice_value
+            currency           = 'INR'
+*           FILLER             = ' '
+            language           = sy-langu
+          IMPORTING
+            in_words           = ls_amount_in_words
+          EXCEPTIONS
+            spell_amount_error = 1
+            OTHERS             = 2.
+        IF sy-subrc <> 0 ##NEEDED.
+* Implement suitable error handling here
+        ENDIF.
+      ENDIF.
+      "to get amount spell in small letters
+      amount_in_words = ls_amount_in_words.
+      CALL FUNCTION 'FI_CONVERT_FIRSTCHARS_TOUPPER'
+        EXPORTING
+          input_string  = amount_in_words
+*         SEPARATORS    = ' -.,;:'
+        IMPORTING
+          output_string = ls_final-amount_in_words.
+      CONCATENATE ls_final-amount_in_words lv_only INTO ls_final-amount_in_words SEPARATED BY ' '.
+    ENDIF.
+    APPEND ls_final TO lt_final.
+    CLEAR ls_final.
+  ENDLOOP.
+  SORT lt_final BY vbeln.
+  CLEAR:ls_final1.
+  LOOP AT lt_final INTO ls_final ##INTO_OK.
+    ls_final1-lv_totqty                = ls_final1-lv_totqty            + ls_final-fkimg.
+    ls_final1-lv_tot_freight           = ls_final1-lv_tot_freight       + ls_final-freight_charges.
+    ls_final1-lv_tot_packing           = ls_final1-lv_tot_packing       + ls_final-packing_charges.
+    ls_final1-lv_tot_insurance         = ls_final1-lv_tot_insurance     + ls_final-insurance_charges.
+    ls_final1-lv_tot_tax_unit_rate     = ls_final1-lv_tot_tax_unit_rate + ls_final-tax_unit_rate.
+    ls_final1-lv_taxable_amount        = ls_final1-lv_taxable_amount    + ls_final-total_taxable_amount.
+    ls_final1-lv_cgst_amount           = ls_final1-lv_cgst_amount       + ls_final-cgst_amount.
+    ls_final1-lv_sgst_amount           = ls_final1-lv_sgst_amount       + ls_final-sgst_amount.
+    ls_final1-lv_igst_amount           = ls_final1-lv_igst_amount       + ls_final-igst_amount.
+    ls_final1-lv_tot_tax_amount        = ls_final1-lv_tot_tax_amount    + ls_final-total_tax_amount.
+    ls_final1-lv_tot_incl_tax          = ls_final1-lv_tot_incl_tax      + ls_final-total_amount_incl_tax.
+    ls_final1-ls_tot_tcs               = ls_final1-ls_tot_tcs           + ls_final-tcs.
+    ls_final1-ls_tax_sub_to_rev        = ls_final1-ls_tax_sub_to_rev    + ls_final-tax_sub_to_rev.
+    lv_discount                        = lv_discount                    + ls_final-discount.
+    ls_final1-lv_dis_total             = ls_final1-lv_dis_total         + ls_final-discount.
+    ls_final1-lv_basic_total           = ls_final1-lv_basic_total       + ls_final-basic_unit_price.
+    MODIFY lt_final FROM ls_final1 TRANSPORTING lv_totqty  lv_tot_freight lv_tot_packing lv_tot_insurance
+                                                lv_dis_total lv_basic_total
+                                                lv_tot_tax_unit_rate lv_taxable_amount lv_cgst_amount
+                                                lv_sgst_amount lv_igst_amount lv_igst_amount lv_tot_tax_amount
+                                                lv_tot_incl_tax ls_tot_tcs ls_tax_sub_to_rev.
+
+**    CGST/SGST/TCS/TAX
+    IF ls_final1-lv_cgst_amount IS NOT INITIAL AND ls_final1-lv_sgst_amount IS NOT INITIAL AND
+       ls_final1-ls_tot_tcs IS NOT INITIAL AND ls_final1-ls_tax_sub_to_rev  IS NOT INITIAL.
+      lv_flag = 'X'.
+    ENDIF.
+*    "CGST/TCS OR TAX
+    IF  ls_final1-lv_cgst_amount IS NOT INITIAL AND
+        ( ls_final1-ls_tot_tcs IS  INITIAL OR ls_final1-ls_tax_sub_to_rev IS INITIAL ).
+      lv_flag = 'Y'.
+    ENDIF.
+    "ONLY CGST/SGST
+    IF ls_final1-lv_cgst_amount IS NOT INITIAL AND ls_final1-ls_tot_tcs IS INITIAL AND
+       ls_final1-ls_tax_sub_to_rev IS  INITIAL.
+      lv_flag = 'Z'.
+    ENDIF.
+    "IGST/TCS/TAX
+    IF ls_final1-lv_igst_amount IS NOT INITIAL AND
+       ( ls_final1-ls_tot_tcs IS NOT INITIAL AND  ls_final1-ls_tax_sub_to_rev IS NOT INITIAL ).
+      lv_flag = 'A'.
+    ENDIF.
+    "IGST/TCS OR TAX
+    IF ls_final1-lv_igst_amount IS NOT INITIAL AND
+       ( ls_final1-ls_tot_tcs IS INITIAL OR ls_final1-ls_tax_sub_to_rev IS INITIAL ).
+      lv_flag = 'B'.
+    ENDIF.
+    "ONLY IGST
+    IF ls_final1-lv_igst_amount IS NOT INITIAL
+      AND ls_final1-ls_tot_tcs IS  INITIAL
+      AND ls_final1-ls_tax_sub_to_rev IS  INITIAL.
+      lv_flag = 'C'.
+    ENDIF.
+    IF ls_final1-ls_tot_tcs IS NOT INITIAL.
+      lv_flag1 = 'T'.
+    ENDIF.
+    IF ls_final1-ls_tax_sub_to_rev IS NOT INITIAL.
+      lv_flag1 = 'S'.
+    ENDIF.
+    "FOR EXPORT CASES
+    IF  ls_final1-lv_cgst_amount IS INITIAL AND  ls_final1-lv_sgst_amount IS INITIAL
+      AND ls_final1-lv_igst_amount IS INITIAL.
+      lv_flag = 'N'.
+    ENDIF.
+  ENDLOOP.
+  IF lv_discount IS INITIAL.
+    lv_flag2 = 'D'.
+  ENDIF.
+  READ TABLE lt_head INTO ls_head INDEX 1.
+  IF sy-subrc = 0.
+    EXPORT ptst = ls_head TO MEMORY ID 'LT_HEAD' .
+  ENDIF.
+
+  CLEAR: lv_sign.
+  IMPORT lv_sign FROM MEMORY ID 'ZDSIGN'. "Export to Memory is Done by Master India Team, So not able to clear the Extended check Warning
+  IF lv_sign = 'X'.
+    CALL FUNCTION 'SSF_GET_DEVICE_TYPE'
+      EXPORTING
+        i_language             = 'E'
+        i_application          = 'SAPDEFAULT'
+      IMPORTING
+        e_devtype              = v_e_devtype
+      EXCEPTIONS
+        no_language            = 1
+        language_not_installed = 2
+        no_devtype_found       = 3
+        system_error           = 4
+        OTHERS                 = 5.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+    icntrlparam-preview = ''.
+    output_options-tdprinter = v_e_devtype.
+    icntrlparam-no_dialog = 'X'.
+    icntrlparam-getotf = 'X'.
+    CALL FUNCTION fm_name
+      EXPORTING
+        control_parameters = icntrlparam
+        output_options     = output_options
+        s_vbeln            = vbeln
+        lv_ewayno          = lv_ewayno
+        lv_irn             = lv_irn
+        lt_final           = lt_final
+        ls_vbtyp           = ls_vbtyp
+        ls_companycode     = ls_companycode
+        lv_flag            = lv_flag
+        lv_flag1           = lv_flag1
+        lv_flag3           = lv_flag3
+        lv_flag2           = lv_flag2
+        lv_xbln            = lv_xbln
+        lv_fkdt            = lv_fkdt
+      IMPORTING
+        job_output_info    = ls_job_output
+      TABLES
+        lt_ship            = lt_ship
+        lt_bill            = lt_bill
+        lt_paying          = lt_paying
+      EXCEPTIONS
+        formatting_error   = 1
+        internal_error     = 2
+        send_error         = 3
+        user_canceled      = 4
+        OTHERS             = 5.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+    it_otf[] = ls_job_output-otfdata[].
+    EXPORT it_otf = it_otf TO MEMORY ID 'DS_OTF' .
+  ELSE.
+*/->Strat----------------------------------------------------------Code added in Else part by AIRDITDebi for Bulk Print Preview on 28-01-2025
+
+    "--> Predefind Paramter passed to Smartform.
+    ls_output_options-tddest   = 'LOCL'.
+    ls_control_parameters-preview   = 'X'.
+    ls_control_parameters-getotf    = 'X'.
+    ls_control_parameters-no_dialog = 'X'.
+
+    CALL FUNCTION fm_name
+      EXPORTING
+        control_parameters = ls_control_parameters
+        output_options     = ls_output_options
+        user_settings      = ' '
+        s_vbeln            = vbeln
+        lv_ewayno          = lv_ewayno
+        lv_irn             = lv_irn
+        lt_final           = lt_final
+        ls_vbtyp           = ls_vbtyp
+        ls_companycode     = ls_companycode
+        lv_flag            = lv_flag
+        lv_flag1           = lv_flag1
+        lv_flag3           = lv_flag3
+        lv_flag2           = lv_flag2
+        lv_xbln            = lv_xbln
+        lv_fkdt            = lv_fkdt
+      IMPORTING
+        job_output_info    = ls_job_output_info
+      TABLES
+        lt_ship            = lt_ship
+        lt_bill            = lt_bill
+        lt_paying          = lt_paying
+      EXCEPTIONS
+        formatting_error   = 1
+        internal_error     = 2
+        send_error         = 3
+        user_canceled      = 4
+        OTHERS             = 5.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+    CALL FUNCTION 'SSF_CLOSE'
+      IMPORTING
+        job_output_info  = ls_job_output_info
+      EXCEPTIONS
+        formatting_error = 1
+        internal_error   = 2
+        send_error       = 3
+        OTHERS           = 4.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+    IF lv_print_flag EQ 'X'.
+      APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+
+    ELSEIF lv_print_pdf_flag EQ 'X'.
+      CLEAR : lt_pdf_lines.
+      "--> Convert the OTF INTO PDF.
+      CALL FUNCTION 'CONVERT_OTF'
+        EXPORTING
+          format                = 'PDF'
+        TABLES
+          otf                   = ls_job_output_info-otfdata
+          lines                 = lt_pdf_lines
+        EXCEPTIONS
+          err_max_linewidth     = 1
+          err_format            = 2
+          err_conv_not_possible = 3
+          err_bad_otf           = 4
+          OTHERS                = 5.
+      IF sy-subrc <> 0.
+        " Implement suitable error handling here
+      ENDIF.
+    ENDIF.
+
+    CLEAR:ls_job_output_info-otfdata,vbeln,lv_irn,ls_vbtyp,lt_final,ls_vbtyp,
+          ls_companycode,lv_flag,lv_flag1,lv_flag2,lv_flag3,lv_xbln,lv_fkdt,
+          lt_ship,lt_bill,lt_paying,ls_head,lt_head.
+*/->End------------------------------------------------------------code added by AirditDebi for Bulk Print Preview on 28-01-2025
+
+*/->Strat----------------------------------------------------------Previous code commented by Debi for Bulk Print Preview on 28-01-2025
+*    CALL FUNCTION fm_name
+*      EXPORTING
+*        s_vbeln          = vbeln
+*        lv_ewayno        = lv_ewayno
+*        lv_irn           = lv_irn
+*        lt_final         = lt_final
+*        ls_vbtyp         = ls_vbtyp
+*        ls_companycode   = ls_companycode
+*        lv_flag          = lv_flag
+*        lv_flag1         = lv_flag1
+*        lv_flag3         = lv_flag3
+*        lv_flag2         = lv_flag2
+*        lv_xbln          = lv_xbln
+*        lv_fkdt          = lv_fkdt
+*      TABLES
+*        lt_ship          = lt_ship
+*        lt_bill          = lt_bill
+*        lt_paying        = lt_paying
+*      EXCEPTIONS
+*        formatting_error = 1
+*        internal_error   = 2
+*        send_error       = 3
+*        user_canceled    = 4
+*        OTHERS           = 5.
+*    IF sy-subrc <> 0 ##NEEDED.
+*      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+*                  WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+*    ENDIF.
+*/->End----------------------------------------------------------Previous code commented by Debi for Bulk Print Preview on 28-01-2025
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_print_privew
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_print_privew .
+  IF ls_fnL_output_info-otfdata IS NOT INITIAL.
+    CALL FUNCTION 'HR_IT_DISPLAY_WITH_PDF'
+      TABLES
+        otf_table = ls_fnL_output_info-otfdata.
+  ELSE.
+    MESSAGE 'Probelm in Display Smartform.Please check with Technical Team.' TYPE 'E' DISPLAY LIKE 'I'.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form LV_READTEXT
+*&---------------------------------------------------------------------*
+FORM lv_readtext USING    vbeln
+                          p_id
+                 CHANGING p_text ##PERF_NO_TYPE.
+
+  DATA: read_text_name TYPE thead-tdname,
+        lines          TYPE TABLE OF tline.
+  CLEAR: lines.
+  read_text_name = vbeln.
+  CALL FUNCTION 'READ_TEXT'
+    EXPORTING
+      client                  = sy-mandt
+      id                      = p_id
+      language                = sy-langu
+      name                    = read_text_name
+      object                  = lv_vbbk
+    TABLES
+      lines                   = lines
+    EXCEPTIONS
+      id                      = 1
+      language                = 2
+      name                    = 3
+      not_found               = 4
+      object                  = 5
+      reference_check         = 6
+      wrong_access_to_archive = 7
+      OTHERS                  = 8.
+  IF sy-subrc <> 0 ##NEEDED.
+* Implement suitable error handling here
+  ENDIF.
+
+  IF lines IS NOT INITIAL.
+    READ TABLE lines INTO DATA(text) INDEX 1.
+    IF sy-subrc = 0.
+      p_text = TEXT-tdline.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form BATCH_CACULATION
+*&---------------------------------------------------------------------*
+FORM batch_caculation ##CALLED.
+**" Here parallel cursor is used to calculate the informations from the batch items and update the same in main item column.
+**" LT_FINAL is final iternal table after calculations . LT_FINAL_TEMP is sub ordinate final table.
+  DATA(lt_final_temp) = lt_final[].
+  LOOP AT lt_final INTO ls_final.
+    IF ls_final-posnr = ls_final-uecha.                                                 " Check for if it's main line item or item having no batch split
+      LOOP AT lt_final_temp INTO DATA(ls_final_temp) WHERE uecha = ls_final-posnr ##INTO_OK.      " Will iterate only the batchsplit items
+        IF ls_final_temp-posnr NE ls_final_temp-uecha.                                  " Checking if iteration is batch item or main item .
+          " If batch item then will do calculations
+          ls_final-fkimg += ls_final_temp-fkimg.
+
+          ls_final-basic_unit_price         += ls_final_temp-basic_unit_price.
+          ls_final-freight_charges          += ls_final_temp-freight_charges.
+          ls_final-packing_charges          += ls_final_temp-packing_charges.
+          ls_final-insurance_charges        += ls_final_temp-insurance_charges.
+          ls_final-tax_unit_rate            += ls_final_temp-tax_unit_rate.
+          ls_final-total_taxable_amount     += ls_final_temp-total_taxable_amount.
+          ls_final-cgst_amount              += ls_final_temp-cgst_amount.
+          ls_final-total_tax_amount         += ls_final_temp-total_tax_amount.
+          ls_final-total_amount_incl_tax    += ls_final_temp-total_amount_incl_tax.
+          ls_final-tcs                      += ls_final_temp-tcs.
+          ls_final-tax_sub_to_rev           += ls_final_temp-tax_sub_to_rev.
+          ls_final-discount                 += ls_final_temp-discount.
+          ls_final-igst_amount              += ls_final_temp-igst_amount.
+        ENDIF.
+      ENDLOOP.
+    ELSE.
+      CONTINUE.  " Skipping the iteration as it might a non batchsplit material or might be a main line item
+    ENDIF.
+    READ TABLE lt_final ASSIGNING FIELD-SYMBOL(<fs_final>) WITH KEY posnr = ls_final-posnr.
+    IF sy-subrc = 0.                                                                    " Updating calculations in the final table
+      <fs_final>-fkimg                    = ls_final-fkimg.
+      <fs_final>-tax_unit_rate            = ls_final-tax_unit_rate.
+      <fs_final>-igst_amount              = ls_final-igst_amount.
+      <fs_final>-basic_unit_price         = ls_final-basic_unit_price.
+      <fs_final>-freight_charges          = ls_final-freight_charges.
+      <fs_final>-packing_charges          = ls_final-packing_charges.
+      <fs_final>-insurance_charges        = ls_final-insurance_charges.
+      <fs_final>-total_taxable_amount     = ls_final-total_taxable_amount.
+      <fs_final>-cgst_amount              = ls_final-cgst_amount.
+      <fs_final>-total_tax_amount         = ls_final-total_tax_amount.
+      <fs_final>-total_amount_incl_tax    = ls_final-total_amount_incl_tax.
+      <fs_final>-tcs                      = ls_final-tcs.
+      <fs_final>-tax_sub_to_rev           = ls_final-tax_sub_to_rev.
+      <fs_final>-discount                 = ls_final-discount.
+      <fs_final>-del_flag = abap_true.                                                  " Marking batch items to be deleted
+    ENDIF.
+  ENDLOOP.
+  DELETE lt_final WHERE del_flag IS INITIAL.                                            " Deleting batch items from final table
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_sales_item_text
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> LS_VBRP_VBELN
+*&      --> LS_VBRP_POSNR
+*&---------------------------------------------------------------------*
+FORM get_sales_item_text  USING    p_ls_vbrp_vbeln
+                                   p_ls_vbrp_posnr.
+
+  DATA: lv_name TYPE thead-tdname.
+  CONCATENATE  p_ls_vbrp_vbeln p_ls_vbrp_posnr INTO lv_name.
+
+  CALL FUNCTION 'READ_TEXT'
+    EXPORTING
+      client                  = sy-mandt
+      id                      = 'Z320'
+      language                = 'E'
+      name                    = lv_name
+      object                  = 'VBBP'
+*     ARCHIVE_HANDLE          = 0
+*     LOCAL_CAT               = ' '
+*     USE_OLD_PERSISTENCE     = ABAP_FALSE
+* IMPORTING
+*     HEADER                  =
+*     OLD_LINE_COUNTER        =
+    TABLES
+      lines                   = lt_hdrtxt
+    EXCEPTIONS
+      id                      = 1
+      language                = 2
+      name                    = 3
+      not_found               = 4
+      object                  = 5
+      reference_check         = 6
+      wrong_access_to_archive = 7
+      OTHERS                  = 8.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_lc_no
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_lc_no USING vbeln.
+  DATA: lt_lines TYPE STANDARD TABLE OF tline,
+        lv_name  TYPE thead-tdname.
+  CLEAR: lv_name.
+  lv_name = vbeln.
+  CALL FUNCTION 'READ_TEXT'
+    EXPORTING
+      client                  = sy-mandt
+      id                      = 'Z370'
+      language                = 'E'
+      name                    = lv_name
+      object                  = 'VBBK'
+*     ARCHIVE_HANDLE          = 0
+*     LOCAL_CAT               = ' '
+*     USE_OLD_PERSISTENCE     = ABAP_FALSE
+* IMPORTING
+*     HEADER                  =
+*     OLD_LINE_COUNTER        =
+    TABLES
+      lines                   = lt_lines
+    EXCEPTIONS
+      id                      = 1
+      language                = 2
+      name                    = 3
+      not_found               = 4
+      object                  = 5
+      reference_check         = 6
+      wrong_access_to_archive = 7
+      OTHERS                  = 8.
+  IF sy-subrc <> 0.
+
+* Implement suitable error handling here
+  ENDIF.
+
+  IF lt_lines[] IS NOT INITIAL.
+    LOOP AT lt_lines[] INTO DATA(ls_lines).
+      ls_head-lc_no = | { ls_head-lc_no } { ls_lines-tdline } |.
+    ENDLOOP.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form READ_TEXT_INV
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> VBELN
+*&      --> P_
+*&---------------------------------------------------------------------*
+FORM read_text_inv  USING    p_vbeln
+                             p_id.
+
+  DATA: lt_lines TYPE TABLE OF tline,
+        lv_id    TYPE thead-tdid,
+        lv_langu TYPE thead-tdspras,
+        lv_name  TYPE thead-tdname.
+
+  CLEAR: lv_id,lv_langu,lv_name.
+
+  lv_id = p_id.
+  lv_langu = sy-langu.
+  lv_name = p_vbeln.
+
+  CALL FUNCTION 'READ_TEXT'
+    EXPORTING
+*     CLIENT                  = SY-MANDT
+      id                      = lv_id
+      language                = lv_langu
+      name                    = lv_name
+      object                  = 'VBBK'
+*     ARCHIVE_HANDLE          = 0
+*     LOCAL_CAT               = ' '
+*     USE_OLD_PERSISTENCE     = ABAP_FALSE
+*   IMPORTING
+*     HEADER                  =
+*     OLD_LINE_COUNTER        =
+    TABLES
+      lines                   = lt_lines
+    EXCEPTIONS
+      id                      = 1
+      language                = 2
+      name                    = 3
+      not_found               = 4
+      object                  = 5
+      reference_check         = 6
+      wrong_access_to_archive = 7
+      OTHERS                  = 8.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+  IF lt_lines[] IS NOT INITIAL.
+    READ TABLE lt_lines INTO DATA(ls_lines) INDEX 1.
+    IF p_id = 'Z470'.
+      CLEAR: lv_xbln.
+      lv_xbln = ls_lines-tdline.
+    ELSE.
+      CLEAR: lv_fkdt.
+      DATA(lv_len) = strlen( ls_lines-tdline ).
+      CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+        EXPORTING
+          date_external            = ls_lines-tdline
+*         ACCEPT_INITIAL_DATE      =
+        IMPORTING
+          date_internal            = ls_lines-tdline
+        EXCEPTIONS
+          date_external_is_invalid = 1
+          OTHERS                   = 2.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      lv_fkdt = ls_lines-tdline.
+    ENDIF.
+    CLEAR: lt_lines[].
+  ENDIF.
+
+
+
+ENDFORM.
+
+FORM currency_conversion USING p_amount TYPE any
+                               p_fcurr  TYPE any
+                        CHANGING p_Lamount TYPE any.
+
+  CALL FUNCTION 'CONVERT_TO_LOCAL_CURRENCY'
+    EXPORTING
+      client           = sy-mandt
+      date             = sy-datum
+      foreign_amount   = p_amount
+      foreign_currency = p_fcurr
+      local_currency   = 'INR'
+*     RATE             = 0
+*     TYPE_OF_RATE     = 'M'
+*     READ_TCURR       = 'X'
+    IMPORTING
+*     EXCHANGE_RATE    =
+*     FOREIGN_FACTOR   =
+      local_amount     = p_Lamount
+*     LOCAL_FACTOR     =
+*     EXCHANGE_RATEX   =
+*     FIXED_RATE       =
+*     DERIVED_RATE_TYPE       =
+    EXCEPTIONS
+      no_rate_found    = 1
+      overflow         = 2
+      no_factors_found = 3
+      no_spread_found  = 4
+      derived_2_times  = 5
+      OTHERS           = 6.
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form Download_pdf
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> LV_FILENAME
+*&---------------------------------------------------------------------*
+FORM Download_pdf  USING    p_lv_filename.
+  IF lt_pdf_lines IS NOT INITIAL.
+
+    CALL FUNCTION 'GUI_DOWNLOAD'
+      EXPORTING
+        filename                = p_lv_filename
+        filetype                = 'BIN'
+      TABLES
+        data_tab                = lt_pdf_lines
+      EXCEPTIONS
+        file_write_error        = 1
+        no_batch                = 2
+        gui_refuse_filetransfer = 3
+        invalid_type            = 4
+        no_authority            = 5
+        unknown_error           = 6
+        header_not_allowed      = 7
+        separator_not_allowed   = 8
+        filesize_not_allowed    = 9
+        header_too_long         = 10
+        dp_error_create         = 11
+        dp_error_send           = 12
+        dp_error_write          = 13
+        unknown_dp_error        = 14
+        access_denied           = 15
+        dp_out_of_memory        = 16
+        disk_full               = 17
+        dp_timeout              = 18
+        file_not_found          = 19
+        dataprovider_exception  = 20
+        control_flush_error     = 21
+        OTHERS                  = 22.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4 .
+    ENDIF.
+  ENDIF.
+ENDFORM.

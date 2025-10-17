@@ -1,0 +1,63 @@
+*----------------------------------------------------------------------*
+*Author     : Debidutta Swain(AIRDITDEBI)
+*------------------------------------------------------------------*
+FUNCTION zmmfm_po_plant_address.
+*"----------------------------------------------------------------------
+*"*"Local Interface:
+*"  IMPORTING
+*"     REFERENCE(IV_WERKS) TYPE  WERKS_D
+*"     REFERENCE(IV_DATE) TYPE  ERDAT
+*"     REFERENCE(IV_TIME) TYPE  ERZET
+*"  EXPORTING
+*"     REFERENCE(ES_ADRC) TYPE  ADRC
+*"----------------------------------------------------------------------
+*--> Local object declaration .
+  TYPES:BEGIN OF ty_field,
+          field TYPE char15,
+        END OF ty_field.
+
+  DATA: lv_objectid TYPE cdobjectv,
+        lt_field    TYPE TABLE OF ty_field WITH HEADER LINE,
+        ls_adrc     TYPE adrc.
+  FIELD-SYMBOLS: <fs_ADRc> LIKE ls_adrc,
+                 <fs>      TYPE any.
+
+  SELECT SINGLE werks,adrnr FROM t001w INTO @DATA(ls_t001w) WHERE werks EQ @iv_werks.
+  IF sy-subrc EQ 0.
+    lv_objectid = |CA01{ ls_t001w-adrnr }| .
+    SELECT cdhdr~objectclas,cdhdr~objectid,cdhdr~changenr,
+           cdhdr~udate,cdhdr~utime,cdhdr~username,
+           cdpos~tabname,cdpos~fname,cdpos~value_new,cdpos~value_old
+    FROM cdhdr
+    LEFT OUTER JOIN cdpos ON cdpos~objectclas = cdhdr~objectclas AND
+                             cdpos~objectid   = cdhdr~objectid   AND
+                             cdpos~changenr   = cdhdr~changenr
+    INTO TABLE @DATA(lt_cdhdr_cdpos)
+    WHERE cdhdr~objectclas = 'ADRESSE'    AND
+          cdhdr~objectid   = @lv_objectid AND
+          ( cdhdr~udate GT @iv_date OR ( cdhdr~udate = @iv_date AND cdhdr~utime >= @iv_time ) )
+    ORDER  BY  fname,udate, utime ASCENDING .
+
+    "--> Fetch the current Address Details.
+    SELECT SINGLE * FROM adrc INTO ls_adrc WHERE addrnumber EQ ls_t001w-adrnr.
+    IF sy-subrc EQ 0.
+      ASSIGN ls_adrc TO <fs_adrc>.
+    ENDIF.
+
+    "--> Update the old address.
+    DELETE ADJACENT DUPLICATES FROM lt_cdhdr_cdpos COMPARING fname.
+    LOOP AT lt_cdhdr_cdpos ASSIGNING FIELD-SYMBOL(<fs_field>) .
+      ASSIGN COMPONENT <fs_field>-fname OF STRUCTURE <fs_adrc> TO <fs>.
+      IF <fs> IS ASSIGNED.
+        <fs> = <fs_field>-value_old .
+        UNASSIGN <fs>.
+      ENDIF.
+    ENDLOOP.
+
+    "--> Assigning to Exporting Variable.
+    IF  ls_adrc IS NOT INITIAL.
+      es_adrc = ls_adrc.
+    ENDIF.
+  ENDIF.
+
+ENDFUNCTION.

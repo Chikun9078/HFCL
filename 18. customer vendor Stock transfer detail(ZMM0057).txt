@@ -1,0 +1,548 @@
+*---------------------------------------------------------------------*
+* DESCRIPTION: this report help us to track the customer inventory issued by vendor.
+* RICEFW ID :
+*
+* PROGRAM NAME: ZMMEP_CUST_STOCK_REPORT_NEW
+* T-CODE      : ZMM0057
+* AUTHOR      : Debidutta Swain
+* DATE        : 29-10-2024
+* Ticket NO   :
+*---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* CHANGE HISTORY
+* Date         Changed By     Defect/RFC    Description
+*---------------------------------------------------------------------*
+* dd/mm/yyyy   User ID         9999         xxxxxxxxxxxxxxxxxxxxxxxx
+*
+*---------------------------------------------------------------------*
+REPORT zmmep_cust_stock_report_new.
+TABLES : zmm_stk_entry, zmm_stk_transfer.
+
+TYPES : BEGIN OF ty_stk_entry_trans,
+          zstk_crt_id    TYPE zmm_stk_entry-zstk_crt_id,
+          item_no        TYPE zmm_stk_entry-item_no,
+          zstk_trf_id    TYPE zmm_stk_transfer-zstk_trf_id,
+          zstk_trf_line  TYPE zmm_stk_transfer-zstk_trf_line,
+          werks          TYPE zmm_stk_entry-werks,
+          zstrloc        TYPE zmm_stk_entry-zstrloc,
+          matnr          TYPE zmm_stk_entry-matnr,
+          mat_desc       TYPE makt-maktx,
+          zbusptr        TYPE zmm_stk_entry-zbusptr,
+          pspel          TYPE zmm_stk_entry-pspel,
+          zqty           TYPE zmm_stk_entry-zqty,
+          uom            TYPE zmm_stk_entry-uom,
+          del_no         TYPE zmm_stk_entry-del_no,
+          bill_no        TYPE zmm_stk_entry-bill_no,
+          zmode          TYPE zmm_stk_entry-zmode,
+          remarks        TYPE zmm_stk_entry-remarks,
+          upload_date    TYPE zmm_stk_entry-upload_date,
+          stock_issue_dt TYPE zmm_stk_transfer-stock_issue_dt,
+          document_date  TYPE zmm_stk_transfer-document_date,
+          vendor         TYPE zmm_stk_transfer-vendor,
+          qty            TYPE zmm_stk_transfer-qty,
+          document_no    TYPE zmm_stk_transfer-document_no,
+          site_name      TYPE zmm_stk_transfer-site_name,
+        END OF ty_stk_entry_trans.
+
+TYPES : BEGIN OF ty_stk_settle,
+          zstk_stl_id   TYPE zmm_stk_settle-zstk_stl_id,
+          zstk_stl_line TYPE zmm_stk_settle-zstk_stl_line,
+          zstk_trf_id   TYPE zmm_stk_settle-zstk_trf_id,
+          zstk_trf_line TYPE zmm_stk_settle-zstk_trf_line,
+          matnr         TYPE zmm_stk_settle-matnr,
+          consum_qty    TYPE zmm_stk_settle-consum_qty,
+          faulty_qty    TYPE zmm_stk_settle-faulty_qty,
+          return_qty    TYPE zmm_stk_settle-return_qty,
+          missing_qty   TYPE zmm_stk_settle-missing_qty,
+          sydate        TYPE zmm_stk_settle-sydate,
+          sytime        TYPE zmm_stk_settle-sytime,
+        END OF ty_stk_settle.
+
+
+TYPES : BEGIN OF ty_final,
+          zstk_crt_id       TYPE zmm_stk_entry-zstk_crt_id,
+          item_no           TYPE zmm_stk_entry-item_no,
+          zstk_trf_id       TYPE zmm_stk_transfer-zstk_trf_id,
+          zstk_trf_line     TYPE zmm_stk_transfer-zstk_trf_line,
+          zstk_stl_id       TYPE zmm_stk_settle-zstk_stl_id,
+          zstk_stl_line     TYPE zmm_stk_settle-zstk_stl_line,
+          werks             TYPE zmm_stk_entry-werks,
+          zstrloc           TYPE zmm_stk_entry-zstrloc,
+          matnr             TYPE zmm_stk_entry-matnr,
+          mat_desc          TYPE makt-maktx,
+          zbusptr           TYPE zmm_stk_entry-zbusptr,
+          cust_name         TYPE kna1-name1,
+          pspel             TYPE zmm_stk_entry-pspel,
+          zqty              TYPE zmm_stk_entry-zqty,
+          uom               TYPE zmm_stk_entry-uom,
+          del_no            TYPE zmm_stk_entry-del_no,
+          bill_no           TYPE zmm_stk_entry-bill_no,
+          zmode             TYPE zmm_stk_entry-zmode,
+          remarks           TYPE zmm_stk_entry-remarks,
+          upload_date       TYPE zmm_stk_entry-upload_date,          "Added on 31.07.2024 After discussing with Shivam
+          stock_issue_dt    TYPE zmm_stk_transfer-stock_issue_dt,    "Added on 31.07.2024 After discussing with Shivam
+          document_date     TYPE zmm_stk_transfer-document_date,     "Added on 31.07.2024 After discussing with Shivam
+          vendor            TYPE zmm_stk_transfer-vendor,
+          vendor_name       TYPE lfa1-name1,
+          document_no       TYPE zmm_stk_transfer-document_no,
+          site_name         TYPE zmm_stk_transfer-site_name,
+          qty               TYPE zmm_stk_transfer-qty,
+          consum_qty        TYPE zmm_stk_settle-consum_qty,
+          faulty_qty        TYPE zmm_stk_settle-faulty_qty,
+          return_qty        TYPE zmm_stk_settle-return_qty,
+          missing_qty       TYPE zmm_stk_settle-missing_qty,
+          sydate            TYPE zmm_stk_settle-sydate,
+          sytime            TYPE zmm_stk_settle-sytime,
+          balance_qty       TYPE zdeqty,
+          balance_qty_final TYPE zdeqty,
+        END OF ty_final.
+
+DATA: lv_balance_qty  TYPE zdeqty,
+      lv_balance_temp TYPE zdeqty.
+
+DATA :ls_entry_trans TYPE ty_stk_entry_trans          ##NEEDED,
+      ls_stk_settle  TYPE ty_stk_settle               ##NEEDED,
+      ls_final       TYPE ty_final                    ##NEEDED,
+      ls_summerized  TYPE ty_final                    ##NEEDED.
+
+
+DATA: lt_entry_trans     TYPE TABLE OF ty_stk_entry_trans        ##NEEDED,
+      lt_stk_settle      TYPE TABLE OF ty_stk_settle             ##NEEDED,
+      lt_final           TYPE TABLE OF ty_final                  ##NEEDED,
+      lt_summerized      TYPE TABLE OF ty_final                  ##NEEDED,
+      lt_stk_settle_smrz TYPE TABLE OF ty_stk_settle             ##NEEDED.
+
+DATA : it_fieldcat  TYPE STANDARD TABLE OF slis_fieldcat_alv ##NEEDED,
+       lwa_fieldcat TYPE slis_fieldcat_alv ##NEEDED.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS : s_plant  FOR zmm_stk_entry-werks,
+                   s_cust   FOR zmm_stk_entry-zbusptr,
+                   s_vendor FOR zmm_stk_transfer-vendor,
+                   s_matnr  FOR zmm_stk_transfer-matnr,
+                   s_wbs    FOR zmm_stk_transfer-pspel.
+SELECTION-SCREEN : END OF BLOCK b1.
+SELECTION-SCREEN : BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  PARAMETERS : rd1_or RADIOBUTTON GROUP rd DEFAULT 'X',
+               rd2_sr RADIOBUTTON GROUP rd.
+SELECTION-SCREEN : END OF BLOCK b2.
+
+IF s_wbs IS NOT INITIAL.
+  LOOP AT s_wbs[] ASSIGNING FIELD-SYMBOL(<fs_wbs>).
+    CALL FUNCTION 'CONVERSION_EXIT_ABPSN_OUTPUT'
+      EXPORTING
+        input  = <fs_wbs>-low
+      IMPORTING
+        output = <fs_wbs>-low.
+  ENDLOOP.
+ENDIF.
+
+
+START-OF-SELECTION.
+  IF rd1_or EQ 'X'.
+    PERFORM get_detail_data.
+    PERFORM process_detail_data.
+  ELSEIF rd2_sr EQ 'X'.
+    PERFORM get_summerized_data.
+    PERFORM process_summerized_data.
+  ENDIF.
+  PERFORM display_data.
+
+*&---------------------------------------------------------------------*
+*& FORM get_detail_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_detail_data.
+  PERFORM get_stk_entry_transfer_data.
+  PERFORM get_stk_settle_data.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& FORM get_detail_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_summerized_data.
+  PERFORM get_stk_entry_transfer_data.
+  PERFORM get_stk_settle_data_summerized.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_stk_entry_transfer_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_stk_entry_transfer_data .
+  SELECT    zmm_stk_entry~zstk_crt_id,
+            zmm_stk_entry~item_no,
+            zmm_stk_transfer~zstk_trf_id ,
+            zmm_stk_transfer~zstk_trf_line,
+            zmm_stk_entry~werks,
+            zmm_stk_entry~zstrloc,
+            zmm_stk_entry~matnr,
+            makt~maktx,
+            zmm_stk_entry~zbusptr,
+            zmm_stk_entry~pspel,
+            zmm_stk_entry~zqty,
+            zmm_stk_entry~uom,
+            zmm_stk_entry~del_no,
+            zmm_stk_entry~bill_no,
+            zmm_stk_entry~zmode,
+            zmm_stk_entry~remarks,
+            zmm_stk_entry~upload_date,
+            zmm_stk_transfer~stock_issue_dt,
+            zmm_stk_transfer~document_date,
+            zmm_stk_transfer~vendor,
+            zmm_stk_transfer~qty,
+            zmm_stk_transfer~document_no,
+            zmm_stk_transfer~site_name
+    FROM zmm_stk_entry
+     LEFT JOIN  makt ON  zmm_stk_entry~matnr = makt~matnr AND
+                         makt~spras          = @sy-langu
+    LEFT JOIN  zmm_stk_transfer ON  zmm_stk_entry~zstk_crt_id = zmm_stk_transfer~zstk_crt_id AND
+                                    zmm_stk_entry~item_no     = zmm_stk_transfer~item_no
+    INTO TABLE @lt_entry_trans                                                                              ##TOO_MANY_ITAB_FIELDS
+    WHERE zmm_stk_entry~werks     IN @s_plant  AND
+          zmm_stk_entry~matnr     IN @s_matnr  AND
+          zmm_stk_entry~zbusptr   IN @s_cust   AND
+          zmm_stk_entry~pspel     IN @s_wbs    AND
+          zmm_stk_transfer~vendor IN @s_vendor.
+
+  IF sy-subrc EQ 0.
+    LOOP AT lt_entry_trans  ASSIGNING FIELD-SYMBOL(<fs_final>).
+      AUTHORITY-CHECK OBJECT 'ZMMA_CDEV'
+      ID 'WERKS' FIELD <fs_final>-werks
+      ID 'TCODE' FIELD 'ZMM0057'.
+      IF sy-subrc <> 0.
+        CLEAR:<fs_final>-werks.
+      ENDIF.
+    ENDLOOP.
+    DELETE lt_entry_trans  WHERE werks IS INITIAL.
+    IF lt_entry_trans IS INITIAL.
+      MESSAGE e166(zmm).
+    ENDIF.
+  ENDIF.
+
+  SORT lt_entry_trans BY zstk_crt_id item_no.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_stk_settle_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_stk_settle_data .
+  IF lt_entry_trans IS NOT INITIAL.
+    SELECT zstk_stl_id,zstk_stl_line,
+           zstk_trf_id,zstk_trf_line,
+           matnr,
+           consum_qty,faulty_qty ,
+           return_qty,missing_qty,
+           sydate,sytime
+    FROM zmm_stk_settle
+    INTO TABLE @lt_stk_settle
+    FOR ALL ENTRIES IN @lt_entry_trans
+    WHERE zstk_trf_id   = @lt_entry_trans-zstk_trf_id AND
+          zstk_trf_line = @lt_entry_trans-zstk_trf_line.
+  ENDIF.
+
+  SORT lt_stk_settle BY zstk_trf_id zstk_trf_line matnr sydate sytime .
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_stk_settle_data_summerized
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_stk_settle_data_summerized .
+  IF lt_entry_trans IS NOT INITIAL.
+    SELECT zstk_trf_id,
+           zstk_trf_line,
+           matnr,
+          SUM( consum_qty )  AS consum_qty ,
+          SUM( faulty_qty )  AS faulty_qty  ,
+          SUM( return_qty )  AS return_qty,
+          SUM( missing_qty ) AS missing_qty
+    FROM zmm_stk_settle
+    INTO CORRESPONDING FIELDS OF TABLE @lt_stk_settle_smrz
+    WHERE vendor in @s_vendor and
+          pspel  in @s_wbs    and
+          matnr  in @s_matnr
+    GROUP BY zstk_trf_id, zstk_trf_line, matnr  .
+  ENDIF.
+
+  SORT lt_stk_settle_smrz BY zstk_trf_id zstk_trf_line matnr .
+ENDFORM.
+*&---------------------------------------------------------------------*
+* FORM  process_detail_data.
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM  process_detail_data.
+  CLEAR: ls_entry_trans,ls_stk_settle,lv_balance_qty.
+
+  LOOP AT lt_entry_trans INTO ls_entry_trans.
+    ls_final-zstk_crt_id   = ls_entry_trans-zstk_crt_id.
+    ls_final-item_no       = ls_entry_trans-item_no .
+    ls_final-zstk_trf_id   = ls_entry_trans-zstk_trf_id .
+    ls_final-zstk_trf_line = ls_entry_trans-zstk_trf_line .
+    ls_final-werks         = ls_entry_trans-werks .
+    ls_final-zstrloc       = ls_entry_trans-zstrloc .
+    ls_final-matnr         = ls_entry_trans-matnr .
+    ls_final-mat_desc      = ls_entry_trans-mat_desc .
+    ls_final-zbusptr       = ls_entry_trans-zbusptr .
+
+    SELECT SINGLE kunnr,name1 FROM kna1 INTO @DATA(ls_kna1) WHERE kunnr EQ @ls_entry_trans-zbusptr.
+    ls_final-cust_name = ls_kna1-name1 .
+    ls_final-pspel     = ls_entry_trans-pspel .
+    ls_final-zqty      = ls_entry_trans-zqty .
+    ls_final-uom       = ls_entry_trans-uom .
+    ls_final-del_no    = ls_entry_trans-del_no .
+    ls_final-bill_no   = ls_entry_trans-bill_no .
+    ls_final-zmode     = ls_entry_trans-zmode .
+    ls_final-remarks   = ls_entry_trans-remarks .
+
+    ls_final-upload_date    = ls_entry_trans-upload_date .
+    ls_final-stock_issue_dt = ls_entry_trans-stock_issue_dt .
+    ls_final-document_date  = ls_entry_trans-document_date .
+    ls_final-vendor         = ls_entry_trans-vendor .
+
+    SELECT SINGLE lifnr,name1 FROM lfa1 INTO @DATA(ls_lfa1) WHERE lifnr EQ @ls_entry_trans-vendor.
+    ls_final-vendor_name = ls_lfa1-name1 .
+    ls_final-document_no = ls_entry_trans-document_no .
+    ls_final-site_name   = ls_entry_trans-site_name .
+*    ls_final-qty         = ls_entry_trans-qty .
+
+    IF  line_exists( lt_stk_settle[ zstk_trf_id   = ls_entry_trans-zstk_trf_id  zstk_trf_line = ls_entry_trans-zstk_trf_line matnr = ls_entry_trans-matnr ] ).
+      LOOP AT lt_stk_settle INTO ls_stk_settle WHERE zstk_trf_id   = ls_entry_trans-zstk_trf_id   AND
+                                                     zstk_trf_line = ls_entry_trans-zstk_trf_line AND
+                                                     matnr         = ls_entry_trans-matnr.
+*        AT NEW zstk_trf_id.
+*          ls_final-qty         = ls_entry_trans-qty .
+*        ENDAT.
+
+        ls_final-consum_qty        = ls_stk_settle-consum_qty.
+        ls_final-faulty_qty        = ls_stk_settle-faulty_qty.
+        ls_final-missing_qty       = ls_stk_settle-missing_qty.
+        ls_final-return_qty        = ls_stk_settle-return_qty.
+        ls_final-sydate            = ls_stk_settle-sydate.
+        ls_final-sytime            = ls_stk_settle-sytime.
+
+        "--> calculating balance quantity..
+        IF lv_balance_qty IS INITIAL.
+          lv_balance_qty = ls_entry_trans-qty - ( ls_stk_settle-consum_qty + ls_stk_settle-faulty_qty + ls_stk_settle-missing_qty + ls_stk_settle-return_qty ).
+        ELSE.
+          lv_balance_qty = lv_balance_qty - ( ls_stk_settle-consum_qty + ls_stk_settle-faulty_qty + ls_stk_settle-missing_qty + ls_stk_settle-return_qty ).
+        ENDIF.
+        ls_final-balance_qty       = lv_balance_qty.
+
+*        AT END OF zstk_trf_id.
+*          ls_final-balance_qty_final = lv_balance_qty.
+*        ENDAT.
+
+        APPEND ls_final TO lt_final.
+        CLEAR:ls_final-consum_qty ,ls_final-faulty_qty,ls_final-missing_qty ,
+              ls_final-return_qty,ls_final-balance_qty,ls_final-balance_qty_final,
+               ls_final-qty,ls_final-sydate,ls_final-sytime,ls_stk_settle.
+      ENDLOOP.
+      CLEAR lv_balance_qty.
+
+    ELSE.
+      APPEND ls_final TO lt_final..
+    ENDIF.
+    CLEAR: ls_final,ls_entry_trans.
+  ENDLOOP.
+
+  SORT lt_final BY zstk_trf_id zstk_trf_line matnr sydate sytime.
+
+  CLEAR ls_final.
+  LOOP AT lt_final ASSIGNING FIELD-SYMBOL(<fs_final>).
+    AT NEW zstk_trf_id.
+      READ TABLE lt_entry_trans INTO DATA(ls_temp) WITH KEY  zstk_trf_id   = <fs_final>-zstk_trf_id
+                                                             zstk_trf_line = <fs_final>-zstk_trf_line
+                                                             matnr         = <fs_final>-matnr.
+      IF sy-subrc EQ 0.
+        <fs_final>-qty = ls_temp-qty.
+      ENDIF.
+    ENDAT.
+    AT END OF zstk_trf_id.
+      <fs_final>-balance_qty_final = <fs_final>-balance_qty.
+    ENDAT.
+  ENDLOOP.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_summerized_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_summerized_data .
+  CLEAR: ls_entry_trans,lv_balance_qty,lt_final.
+  LOOP AT  lt_entry_trans INTO ls_entry_trans.
+    ls_summerized-zstk_crt_id   = ls_entry_trans-zstk_crt_id.
+    ls_summerized-item_no       = ls_entry_trans-item_no .
+    ls_summerized-zstk_trf_id   = ls_entry_trans-zstk_trf_id .
+    ls_summerized-zstk_trf_line = ls_entry_trans-zstk_trf_line .
+    ls_summerized-werks         = ls_entry_trans-werks .
+    ls_summerized-zstrloc       = ls_entry_trans-zstrloc .
+    ls_summerized-matnr         = ls_entry_trans-matnr .
+    ls_summerized-mat_desc      = ls_entry_trans-mat_desc .
+    ls_summerized-zbusptr       = ls_entry_trans-zbusptr .
+
+    SELECT SINGLE kunnr,name1 FROM kna1 INTO @DATA(ls_kna1) WHERE kunnr EQ @ls_entry_trans-zbusptr.
+    ls_summerized-cust_name = ls_kna1-name1 .
+    ls_summerized-pspel     = ls_entry_trans-pspel .
+    ls_summerized-zqty      = ls_entry_trans-zqty .
+    ls_summerized-uom       = ls_entry_trans-uom .
+    ls_summerized-del_no    = ls_entry_trans-del_no .
+    ls_summerized-bill_no   = ls_entry_trans-bill_no .
+    ls_summerized-zmode     = ls_entry_trans-zmode .
+    ls_summerized-remarks   = ls_entry_trans-remarks .
+
+    ls_summerized-upload_date    = ls_entry_trans-upload_date .
+    ls_summerized-stock_issue_dt = ls_entry_trans-stock_issue_dt .
+    ls_summerized-document_date  = ls_entry_trans-document_date .
+    ls_summerized-vendor         = ls_entry_trans-vendor .
+
+    SELECT SINGLE lifnr,name1 FROM lfa1 INTO @DATA(ls_lfa1) WHERE lifnr EQ @ls_entry_trans-vendor.
+    ls_summerized-vendor_name = ls_lfa1-name1 .
+    ls_summerized-document_no = ls_entry_trans-document_no .
+    ls_summerized-site_name   = ls_entry_trans-site_name .
+    ls_summerized-qty         = ls_entry_trans-qty .
+
+    READ TABLE lt_stk_settle_smrz INTO DATA(ls_stk_settle_smrz) WITH  KEY zstk_trf_id   = ls_entry_trans-zstk_trf_id
+                                                                          zstk_trf_line = ls_entry_trans-zstk_trf_line
+                                                                          matnr         = ls_entry_trans-matnr.
+    IF sy-subrc EQ 0.
+      ls_summerized-consum_qty        = ls_stk_settle_smrz-consum_qty.
+      ls_summerized-faulty_qty        = ls_stk_settle_smrz-faulty_qty.
+      ls_summerized-missing_qty       = ls_stk_settle_smrz-missing_qty.
+      ls_summerized-return_qty        = ls_stk_settle_smrz-return_qty.
+    ENDIF.
+    lv_balance_temp = ( ls_stk_settle_smrz-consum_qty + ls_stk_settle_smrz-faulty_qty + ls_stk_settle_smrz-missing_qty + ls_stk_settle_smrz-return_qty ).
+    ls_summerized-balance_qty = ls_entry_trans-qty - lv_balance_temp .
+
+    APPEND ls_summerized TO lt_final.
+    CLEAR : ls_summerized,ls_entry_trans,ls_stk_settle_smrz.
+  ENDLOOP.
+
+  SORT lt_final BY zstk_trf_id.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+  PERFORM create_catalogs.                         "--> Prepare the Catalog for display formart.
+  PERFORM display_alv_grid_display.                 "--> Display The final Result.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_all_catalogs
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM create_catalogs .
+  PERFORM get_fieldcat USING  'WERKS'           'LT_FINAL'  'Plant'                   CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'ZSTRLOC'         'LT_FINAL'  'Storage Location'        CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'ZBUSPTR'         'LT_FINAL'  'Customer'                CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'MATNR'           'LT_FINAL'  'Material'                CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'MAT_DESC'        'LT_FINAL'  'Material Desc'           CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'PSPEL'           'LT_FINAL'  'WBS Element'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'ZQTY'            'LT_FINAL'  'Qty'                     CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'UOM'             'LT_FINAL'  'UoM'                     CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'DEL_NO'          'LT_FINAL'  'Delivery No'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'BILL_NO'         'LT_FINAL'  'Billing No'              CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'ZMODE'           'LT_FINAL'  'Mode of Transfer'        CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'REMARKS'         'LT_FINAL'  'Remarks'                 CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'UPLOAD_DATE'     'LT_FINAL'  'Upload Date'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'STOCK_ISSUE_DT'  'LT_FINAL'  'Stock Issue Date'        CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'DOCUMENT_DATE'   'LT_FINAL'  'Document Date'           CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'VENDOR'          'LT_FINAL'  'Vendor'                  CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'VENDOR_NAME'     'LT_FINAL'  'Vendor Name'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'DOCUMENT_NO'     'LT_FINAL'  'Document No'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'SITE_NAME'       'LT_FINAL'  'SITE Name'               CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'QTY'             'LT_FINAL'  'Qty Transfer To Other Vendors/Sites' CHANGING it_fieldcat  ##NO_TEXT.
+  PERFORM get_fieldcat USING  'CONSUM_QTY'      'LT_FINAL'  'Qty Consumed'            CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'FAULTY_QTY'      'LT_FINAL'  'Qty Faulty'              CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'RETURN_QTY'      'LT_FINAL'  'Qty Returned'            CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'MISSING_QTY'     'LT_FINAL'  'Qty Missing'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'BALANCE_QTY'     'LT_FINAL'  'Bal. Settle Qty'         CHANGING it_fieldcat   ##NO_TEXT.
+
+  IF rd1_or EQ 'X'.
+    PERFORM get_fieldcat USING  'BALANCE_QTY_FINAL'      'LT_FINAL'  'Bal. Settle Qty Final'   CHANGING it_fieldcat   ##NO_TEXT.
+    PERFORM get_fieldcat USING  'SYDATE'                 'LT_FINAL'  'Settel Date'             CHANGING it_fieldcat   ##NO_TEXT.
+    PERFORM get_fieldcat USING  'SYTIME'                 'LT_FINAL'  'Settel Time'             CHANGING it_fieldcat   ##NO_TEXT.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_fieldcat
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_fieldcat  USING    p_field_name ##PERF_NO_TYPE "Passing Field name
+                            p_tab_name                  "Passing Field name
+                            p_sel_name                  "Passing Field name
+                   CHANGING p_it_fieldcat TYPE slis_t_fieldcat_alv.
+  lwa_fieldcat-fieldname = p_field_name.
+  lwa_fieldcat-tabname   = p_tab_name.
+  lwa_fieldcat-seltext_m = p_sel_name.
+  APPEND lwa_fieldcat TO p_it_fieldcat.
+  CLEAR :  lwa_fieldcat.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+  DATA: ls_layout TYPE slis_layout_alv.
+  CLEAR : ls_layout.
+  ls_layout-colwidth_optimize = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      it_fieldcat        = it_fieldcat[]
+      i_callback_program = sy-repid
+      is_layout          = ls_layout
+      i_save             = 'A'
+    TABLES
+      t_outtab           = lt_final
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 .
+  ENDIF.
+ENDFORM.

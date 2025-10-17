@@ -1,0 +1,676 @@
+PRPOSE:
+BENIFIT:
+
+program name : ZMM_PR_TO_PO_AGEING_REPORT
+toce         : ZMM0097
+TR           :DFHK910154       AIRDITDEBI   DEBI:TR:MM:REPT:PR to PO Ageing report
+
+
+TOC          :DFHK910178        AIRDITDEBI                   DEBI:TOC:MM:REPT:PR to PO Ageing report:Testin
+
+--------------------------------------------------------------------------------------------------------------------------------------------------
+*&---------------------------------------------------------------------*
+*& Report ZMM_PR_TO_PO_AGEING_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmm_pr_to_po_ageing_report.
+
+*--> Required Structure type Declaration .
+"-->Structure type for final result for PR to PO aging Report.
+TYPES: BEGIN OF ty_prpo_final,
+         banfn                    LIKE eban-banfn,                                     "--> PR Number/Purchase Requisition Number
+         bnfpo                    LIKE eban-bnfpo,                                     "--> Item No./Item number of purchase requisition
+         bsart                    LIKE eban-bsart,                                     "--> Document type/Purchase Requisition Document Type
+         werks                    LIKE eban-werks,                                     "--> Plant
+         matnr                    LIKE eban-matnr,                                     "--> Material Code
+         maktx                    LIKE makt-maktx,                                     "--> Material Desc.
+         ekgrp                    LIKE eban-ekgrp,                                     "--> Purchasing Group
+         eknam                    LIKE t024-eknam,                                     "--> Purchasing Group Desc.
+         ekgrp_r                  TYPE char30,                                         "--> (Purchasing group + description) show in report.
+         menge                    LIKE eban-menge,                                     "--> Required Qty./Purchase requisition quantity
+         bumng                    LIKE eban-bumng,                                     "--> Stock/Shortage (stock undercoverage) quantity
+         meins                    LIKE eban-meins,                                     "--> UOM
+         afnam                    LIKE eban-afnam,                                     "--> PR Request by
+         badat                    LIKE eban-badat,                                     "--> Material Required Date/Delivery Date
+         creationdate             LIKE eban-creationdate,                              "--> PR Creation Date
+         approval1_date           LIKE cdhdr-udate,                                    "--> PR Approval Date L1
+         approver1_id             LIKE t16fw-objid,                                    "--> L1 Approver ID
+         approver1_name           LIKE user_addr-name_textc,                           "--> L1 Approver name
+         days_l1                  TYPE int2,                                           "--> Days taken by L1
+         approval2_date           LIKE cdhdr-udate,                                    "--> PR Approval Date L2
+         approver2_id             LIKE t16fw-objid,                                    "--> L2 Approver ID
+         approver2_name           LIKE user_addr-name_textc,                           "--> L2 Approver name
+         days_l2                  TYPE int2,                                           "--> Days taken by L2
+         approval3_date           LIKE cdhdr-udate,                                    "--> PR Approval Date L3
+         approver3_id             LIKE t16fw-objid,                                    "--> L3 Approver ID
+         approver3_name           LIKE user_addr-name_textc,                           "--> L3 Approver name
+         days_l3                  TYPE int2,                                           "--> Days taken by L3
+         approval4_date           LIKE cdhdr-udate,                                    "--> PR Approval Date L4
+         approver4_id             LIKE t16fw-objid,                                    "--> L4 Approver ID
+         approver4_name           LIKE user_addr-name_textc,                           "--> L4 Approver name
+         days_l4                  TYPE int2,                                           "--> Days taken by L4
+         approval5_date           LIKE cdhdr-udate,                                    "--> PR Approval Date L5
+         approver5_id             LIKE t16fw-objid,                                    "--> L5 Approver ID
+         approver5_name           LIKE user_addr-name_textc,                           "--> L5 Approver name
+         days_l5                  TYPE int2,                                           "--> Days taken by L5
+         approval6_date           LIKE cdhdr-udate,                                    "--> PR Approval Date L6
+         approver6_id             LIKE t16fw-objid,                                    "--> L6 Approver ID
+         approver6_name           LIKE user_addr-name_textc,                           "--> L6 Approver name
+         days_l6                  TYPE int2,                                           "--> Days taken by L6
+         frgdt                    LIKE eban-frgdt,                                     "--> PR Released Date
+         ebeln                    LIKE eban-ebeln,                                     "--> PO No.
+         ebelp                    LIKE eban-ebelp,                                     "--> PO Item
+         bedat                    LIKE eban-bedat,                                     "--> PO Date
+         days_taken_pocreation    TYPE int2,                                           "--> No of days taken for PO Creation(PO DATE - PR FINAL RELEASE DATE + 1)
+         days_pending_ponotcreate TYPE int2,                                           "--> No of days pending for PO not created((TODAY DATE - PR FINAL RELEASE DATE) + 1.)
+       END OF ty_prpo_final.
+
+"--> structure type for Valid PR.
+TYPES: BEGIN OF ty_valid,
+         banfn        LIKE eban-banfn,                                     "--> PR number
+         werks        LIKE eban-werks,                                     "--> plant
+         creationdate LIKE eban-creationdate,                              "--> PR Creation Date
+         ebeln        LIKE eban-ebeln,                                     "--> PO Number
+         frgst        LIKE eban-frgst,                                     "--> Release strategy in the purchase requisition
+         frggr        LIKE eban-frggr,                                     "--> Release group
+         objectid     LIKE cdpos-objectid,
+       END OF ty_valid.
+
+"--> Structure type for valid PR details.
+TYPES:BEGIN OF ty_eban,
+        banfn        LIKE eban-banfn,                                     "--> PR Number/Purchase Requisition Number
+        bnfpo        LIKE eban-bnfpo,                                     "--> Item No./Item number of purchase requisition
+        bsart        LIKE eban-bsart,                                     "--> Document type/Purchase Requisition Document Type
+        werks        LIKE eban-werks,                                     "--> Plant
+        matnr        LIKE eban-matnr,                                     "--> Material Code
+        ekgrp        LIKE eban-ekgrp,                                     "--> Purchasing Group
+        menge        LIKE eban-menge,                                     "--> Required Qty./Purchase requisition quantity
+        bumng        LIKE eban-bumng,                                     "--> Stock/Shortage (stock undercoverage) quantity
+        meins        LIKE eban-meins,                                     "--> UOM
+        afnam        LIKE eban-afnam,                                     "--> PR Request by
+        badat        LIKE eban-badat,                                     "--> Material Required Date/Delivery Date
+        creationdate LIKE eban-creationdate,                              "--> PR Creation Date
+        frgdt        LIKE eban-frgdt,                                     "--> PR Released Date
+        ebeln        LIKE eban-ebeln,                                     "--> PO No.
+        ebelp        LIKE eban-ebelp,                                     "--> PO Item
+        bedat        LIKE eban-bedat,                                     "--> PO Date
+        eknam        LIKE t024-eknam,                                     "--> Purchasing Group Name
+        maktx        LIKE makt-maktx,                                     "--> Mateial Desc.
+      END OF ty_eban.
+
+"--> Struture type for Release Strategies .
+TYPES: BEGIN OF ty_T16FS,
+         frggr TYPE	frggr,
+         frgsx TYPE frgsx,
+         frgc1 TYPE frgco,
+         frgc2 TYPE frgco,
+         frgc3 TYPE frgco,
+         frgc4 TYPE frgco,
+         frgc5 TYPE frgco,
+         frgc6 TYPE frgco,
+       END OF ty_t16fs.
+
+"--> Structure Type for Assignment of Role to Release Code.
+TYPES:BEGIN OF ty_T16FW,
+        frggr      LIKE t16fw-frggr,
+        frgco      LIKE t16fw-frgco,
+        objid      LIKE t16fw-objid,
+        name_textc TYPE name_text,
+      END OF ty_T16FW.
+
+"--> Structure type for Change Document Details for Approval.
+TYPES: BEGIN OF ty_change,
+         objectid  LIKE cdpos-objectid,
+         changenr  LIKE cdpos-changenr,
+         value_new LIKE cdpos-value_new,
+         udate     LIKE cdhdr-udate,
+       END OF ty_change.
+
+"--> Structure type for PO Approval Details..
+TYPES: BEGIN OF ty_approval,
+         banfn          LIKE eban-banfn,
+         frgst          LIKE eban-frgst,
+         frggr          LIKE eban-frggr,
+         frgc1          TYPE frgco,
+         approval1_ind  LIKE cdpos-value_new,
+         approver1_id   LIKE cdhdr-username,
+         approver1_name LIKE user_addr-name_textc,
+         approval1_date LIKE cdhdr-udate,
+         frgc2          TYPE frgco,
+         approval2_ind  LIKE cdpos-value_new,
+         approver2_id   LIKE cdhdr-username,
+         approver2_name LIKE user_addr-name_textc,
+         approval2_date LIKE cdhdr-udate,
+         frgc3          TYPE frgco,
+         approval3_ind  LIKE cdpos-value_new,
+         approver3_id   LIKE cdhdr-username,
+         approver3_name LIKE user_addr-name_textc,
+         approval3_date LIKE cdhdr-udate,
+         frgc4          TYPE frgco,
+         approval4_ind  LIKE cdpos-value_new,
+         approver4_id   LIKE cdhdr-username,
+         approver4_name LIKE user_addr-name_textc,
+         approval4_date LIKE cdhdr-udate,
+         frgc5          TYPE frgco,
+         approval5_ind  LIKE cdpos-value_new,
+         approver5_id   LIKE cdhdr-username,
+         approver5_name LIKE user_addr-name_textc,
+         approval5_date LIKE cdhdr-udate,
+         frgc6          TYPE frgco,
+         approval6_ind  LIKE cdpos-value_new,
+         approver6_id   LIKE cdhdr-username,
+         approver6_name LIKE user_addr-name_textc,
+         approval6_date LIKE cdhdr-udate,
+       END OF ty_approval.
+
+*--> DATA Object Declration.
+DATA: lv_BANFN        LIKE eban-banfn,                     "--> Purchase Requisation
+      lv_werks        LIKE eban-werks,                     "--> Plant
+      lv_ebeln        LIKE eban-ebeln,                     "--> Purchasing Order
+      lv_CREATIONDATE LIKE eban-creationdate.              "--> Purchasing Document Creation Date
+
+DATA: ls_approval TYPE ty_approval,
+      ls_result   TYPE ty_prpo_final.
+
+DATA:lt_valid    TYPE TABLE OF ty_valid,                   "--> IT Contain Valid PR details.
+     lt_eban     TYPE TABLE OF ty_eban,                    "--> IT contain PR Hedaer Details.
+     lt_t16fs    TYPE TABLE OF ty_t16fs,                   "--> IT Contain Release Strategies Details.
+     lt_t16fw    TYPE TABLE OF ty_t16fw,                   "--> IT Contain Assignment of Role to Release Code Details.
+     lt_change   TYPE TABLE OF ty_change,                  "--> LT contain Changes On PR(Arroval log) Details.
+     lt_approval TYPE TABLE OF ty_approval,                "--> IT contain Final Approval details with user name, time OF Valid PR'S.
+     lt_result   TYPE TABLE  OF ty_prpo_final.              "--> LT Contain Finalresult of PR to PO agging Report.
+
+DATA: fcat TYPE slis_fieldcat_alv  OCCURS 0 WITH HEADER LINE.
+
+*--> Selection screen Preparation.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS :s_banfn  FOR lv_banfn,
+                  s_ebeln  FOR lv_ebeln,
+                  s_werks  FOR lv_werks,
+                  s_crdate FOR lv_creationdate.
+SELECTION-SCREEN END OF BLOCK b1.
+
+*--> Checking input field Validation.
+AT SELECTION-SCREEN.
+  "--> Raising error message if no record found as per input screen.
+  SELECT banfn,werks,creationdate,ebeln,frgst,frggr
+  FROM eban INTO TABLE @lt_valid
+  WHERE banfn        IN @s_banfn AND
+        werks        IN @s_werks AND
+        ebeln        IN @s_ebeln AND
+        creationdate IN @s_crdate.
+
+  SORT lt_valid BY banfn.
+  DELETE ADJACENT DUPLICATES FROM lt_valid COMPARING banfn.
+
+  IF lt_valid IS INITIAL.
+    MESSAGE TEXT-003 TYPE 'E'.
+  ELSE.
+    LOOP AT lt_valid  ASSIGNING FIELD-SYMBOL(<fs_valid>).
+      <fs_valid>-objectid = <fs_valid>-banfn.
+    ENDLOOP.
+  ENDIF.
+
+*--> Preparing the report for Display.
+START-OF-SELECTION.
+  IF  lt_valid IS NOT INITIAL.
+    PERFORM get_data.                              "--> Get all the required details for the Report.
+    PERFORM process_data.                          "--> Prepare the final Result set.
+    PERFORM display_Report.                        "--> Display the Report in ALV formart.
+  ENDIF.
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_eban_data.
+  PERFORM get_approver_data.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  "--> Preparing the final result set.
+  LOOP AT lt_eban INTO DATA(ls_eban).
+    ls_result-banfn        = ls_eban-banfn.
+    ls_result-bnfpo        = ls_eban-bnfpo.
+    ls_result-bsart        = ls_eban-bsart.
+    ls_result-werks        = ls_eban-werks.
+    ls_result-matnr        = ls_eban-matnr.
+    ls_result-maktx        = ls_eban-maktx.
+    ls_result-ekgrp_r      = |{ ls_eban-ekgrp }-{ ls_eban-eknam }|.
+    ls_result-menge        = ls_eban-menge.
+    ls_result-bumng        = ls_eban-bumng.
+    ls_result-meins        = ls_eban-meins.
+    ls_result-afnam        = ls_eban-afnam.
+    ls_result-badat        = ls_eban-badat.
+    ls_result-creationdate = ls_eban-creationdate.
+    ls_result-frgdt        = ls_eban-frgdt.
+    ls_result-ebeln        = ls_eban-ebeln.
+    ls_result-ebelp        = ls_eban-ebelp.
+    ls_result-bedat        = ls_eban-bedat.
+
+    "--> Calulating the Number of days Taken.
+    ls_result-days_taken_pocreation     = COND int2( WHEN ls_eban-bedat EQ ls_eban-frgdt THEN 0
+                                                     WHEN ls_eban-bedat GT ls_eban-frgdt THEN ( ( ls_eban-bedat - ls_eban-frgdt ) + 1 )
+                                                   ).
+
+    ls_result-days_pending_ponotcreate  = COND int2( WHEN sy-datum EQ ls_eban-frgdt THEN 0
+                                                     WHEN sy-datum GT ls_eban-frgdt THEN ( ( sy-datum - ls_eban-frgdt ) + 1 )
+                                                   ).
+
+    "--> Fetch the approver details like name,date,days taken for approval based on Approval Lvel.
+    READ TABLE lt_approval INTO DATA(ls_approval) WITH KEY banfn = ls_eban-banfn BINARY SEARCH.
+    IF  sy-subrc EQ 0 AND ls_approval IS NOT INITIAL.
+
+      "--> first approval detail.
+      IF ls_approval-frgc1 IS NOT INITIAL.
+        ls_result-approval1_date = ls_approval-approval1_date.
+        ls_result-approver1_id   = ls_approval-approver1_id.
+        ls_result-approver1_name = ls_approval-approver1_name.
+        ls_result-days_l1        = COND int2( WHEN ls_eban-creationdate EQ ls_approval-approval1_date THEN 0
+                                              WHEN ls_approval-approval1_date GT ls_eban-creationdate THEN  ( ( ls_approval-approval1_date - ls_eban-creationdate ) + 1 )
+                                            ).
+      ENDIF.
+
+      "--> second approval detail.
+      IF ls_approval-frgc2 IS NOT INITIAL.
+        ls_result-approval2_date = ls_approval-approval2_date.
+        ls_result-approver2_id  = ls_approval-approver2_id.
+        ls_result-approver2_name = ls_approval-approver2_name.
+        ls_result-days_l2        = COND int2( WHEN ls_approval-approval2_date EQ ls_approval-approval1_date THEN 0
+                                              WHEN ls_approval-approval2_date GT ls_approval-approval1_date THEN  ( ( ls_approval-approval2_date - ls_approval-approval1_date ) + 1 )
+                                            ).
+      ENDIF.
+
+      "--> third approval detail.
+      IF ls_approval-frgc3 IS NOT INITIAL.
+        ls_result-approval3_date = ls_approval-approval3_date.
+        ls_result-approver3_id   = ls_approval-approver3_id.
+        ls_result-approver3_name = ls_approval-approver3_name.
+        ls_result-days_l3        = COND int2( WHEN ls_approval-approval3_date EQ ls_approval-approval2_date THEN 0
+                                              WHEN ls_approval-approval3_date GT ls_approval-approval2_date THEN  ( ( ls_approval-approval3_date - ls_approval-approval2_date ) + 1 )
+                                            ).
+      ENDIF.
+
+      "--> Fourth approval detail.
+      IF ls_approval-frgc4 IS NOT INITIAL.
+        ls_result-approval4_date = ls_approval-approval4_date.
+        ls_result-approver4_id   = ls_approval-approver4_id.
+        ls_result-approver4_name = ls_approval-approver4_name.
+        ls_result-days_l4        = COND int2( WHEN ls_approval-approval4_date EQ ls_approval-approval4_date THEN 0
+                                              WHEN ls_approval-approval4_date GT ls_approval-approval4_date THEN  ( ( ls_approval-approval4_date - ls_approval-approval3_date ) + 1 )
+                                            ).
+      ENDIF.
+
+      "--> fifth approval detail.
+      IF ls_approval-frgc5 IS NOT INITIAL.
+        ls_result-approval5_date = ls_approval-approval5_date.
+        ls_result-approver5_id   = ls_approval-approver5_id.
+        ls_result-approver5_name = ls_approval-approver5_name.
+        ls_result-days_l5        = COND int2( WHEN ls_approval-approval5_date EQ ls_approval-approval4_date THEN 0
+                                              WHEN ls_approval-approval5_date GT ls_approval-approval4_date THEN  ( ( ls_approval-approval5_date - ls_approval-approval4_date ) + 1 )
+                                            ).
+      ENDIF.
+
+      "--> sixth approval detail.
+      IF ls_approval-frgc6 IS NOT INITIAL.
+        ls_result-approval6_date = ls_approval-approval6_date.
+        ls_result-approver6_id   = ls_approval-approver6_id.
+        ls_result-approver6_name = ls_approval-approver6_name.
+        ls_result-days_l6        = COND int2( WHEN ls_approval-approval6_date EQ ls_approval-approval5_date THEN 0
+                                              WHEN ls_approval-approval6_date GT ls_approval-approval5_date THEN  ( ( ls_approval-approval6_date - ls_approval-approval5_date ) + 1 )
+                                            ).
+      ENDIF.
+    ENDIF.
+
+    APPEND ls_result TO lt_result.
+    CLEAR : ls_eban,ls_approval.
+  ENDLOOP.
+
+  SORT lt_result BY banfn bnfpo.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_Report
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_Report .
+  PERFORM get_all_catalogs.                         "--> Prepare the Catalog for display formart.
+  PERFORM display_alv_grid_display.                 "--> Display The final Result.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_eban_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_eban_data .
+  IF lt_valid IS NOT INITIAL .
+    SELECT eban~banfn,eban~bnfpo,eban~bsart,eban~werks,eban~matnr,
+           eban~ekgrp,eban~menge,eban~bumng,eban~meins,
+           eban~afnam,eban~badat,eban~creationdate,eban~frgdt,
+           eban~ebeln,eban~ebelp,eban~bedat,
+           t024~eknam,
+           makt~maktx
+    FROM eban
+    LEFT OUTER JOIN t024 ON eban~ekgrp EQ t024~ekgrp
+    LEFT OUTER JOIN makt ON eban~matnr EQ makt~matnr AND "#EC CI_BUFFJOIN
+                            makt~spras EQ @sy-langu
+    INTO TABLE @lt_eban
+    FOR ALL ENTRIES IN @lt_valid
+    WHERE eban~banfn = @lt_valid-banfn.
+
+  ENDIF.
+  SORT lt_eban BY banfn bnfpo.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_approver_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_approver_data .
+  PERFORM get_t16fs_data.
+  PERFORM get_t16fw_data.
+  PERFORM Change_details.
+
+  LOOP AT  lt_valid INTO DATA(ls_valid).
+    READ TABLE lt_t16fs INTO DATA(ls_t16fs) WITH KEY frggr = ls_valid-frggr
+                                                     frgsx = ls_valid-frgst.
+    IF sy-subrc EQ 0 AND ls_t16fs IS NOT INITIAL.
+      ls_approval-banfn = ls_valid-banfn.
+      ls_approval-frggr = ls_valid-frggr.
+      ls_approval-frgst = ls_valid-frgst.
+
+      "--> Fetch First Approval Details.
+      IF ls_t16fs-frgc1 IS NOT INITIAL.
+        ls_approval-frgc1 = ls_t16fs-frgc1.
+        READ TABLE lt_t16fw INTO DATA(ls_t16fw1) WITH KEY frggr = ls_t16fs-frggr frgco = ls_t16fs-frgc1.
+        IF ls_t16fw1 IS NOT INITIAL.
+          ls_approval-approver1_id   = ls_t16fw1-objid.
+          ls_approval-approver1_name = ls_t16fw1-name_textc.
+        ENDIF.
+
+        READ TABLE lt_change INTO  DATA(ls_change1) WITH KEY objectid  = ls_valid-objectid value_new = 'X'.
+        IF ls_change1 IS NOT INITIAL.
+          ls_approval-approval1_ind  = ls_change1-value_new.
+          ls_approval-approval1_date = ls_change1-udate.
+        ENDIF.
+      ENDIF.
+
+      "--> Fetch Second Approval Details.
+      IF ls_t16fs-frgc2 IS NOT INITIAL.
+        ls_approval-frgc2 = ls_t16fs-frgc2.
+        READ TABLE lt_t16fw INTO DATA(ls_t16fw2) WITH KEY frggr = ls_t16fs-frggr frgco = ls_t16fs-frgc2.
+        IF ls_t16fw2 IS NOT INITIAL.
+          ls_approval-approver2_id   = ls_t16fw2-objid.
+          ls_approval-approver2_name = ls_t16fw2-name_textc.
+        ENDIF.
+
+        READ TABLE lt_change INTO  DATA(ls_change2) WITH KEY objectid  = ls_valid-objectid  value_new = 'XX'.
+        IF ls_change2 IS NOT INITIAL.
+          ls_approval-approval2_ind  = ls_change2-value_new.
+          ls_approval-approval2_date = ls_change2-udate.
+        ENDIF.
+      ENDIF.
+
+      "--> Fetch Third Approval Details.
+      IF ls_t16fs-frgc3 IS NOT INITIAL.
+        ls_approval-frgc3 = ls_t16fs-frgc3.
+        READ TABLE lt_t16fw INTO DATA(ls_t16fw3) WITH KEY frggr = ls_t16fs-frggr frgco = ls_t16fs-frgc3.
+        IF ls_t16fw3 IS NOT INITIAL.
+          ls_approval-approver3_id   = ls_t16fw3-objid.
+          ls_approval-approver3_name = ls_t16fw3-name_textc.
+        ENDIF.
+
+        READ TABLE lt_change INTO  DATA(ls_change3) WITH KEY objectid  = ls_valid-objectid  value_new = 'XXX'.
+        IF ls_change3 IS NOT INITIAL.
+          ls_approval-approval3_ind  = ls_change3-value_new.
+          ls_approval-approval3_date = ls_change3-udate.
+        ENDIF.
+      ENDIF.
+
+      "--> Fetch fourth Approval Details.
+      IF ls_t16fs-frgc4 IS NOT INITIAL.
+        ls_approval-frgc4 = ls_t16fs-frgc4.
+        READ TABLE lt_t16fw INTO DATA(ls_t16fw4) WITH KEY frggr = ls_t16fs-frggr frgco = ls_t16fs-frgc4.
+        IF ls_t16fw4 IS NOT INITIAL.
+          ls_approval-approver4_id   = ls_t16fw4-objid.
+          ls_approval-approver4_name = ls_t16fw4-name_textc.
+        ENDIF.
+
+        READ TABLE lt_change INTO  DATA(ls_change4) WITH KEY objectid  = ls_valid-objectid  value_new = 'XXXX'.
+        IF ls_change4 IS NOT INITIAL.
+          ls_approval-approval4_ind  = ls_change4-value_new.
+          ls_approval-approval4_date = ls_change4-udate.
+        ENDIF.
+      ENDIF.
+
+      "--> Fetch Fifth Approval Details.
+      IF ls_t16fs-frgc5 IS NOT INITIAL.
+        ls_approval-frgc5 = ls_t16fs-frgc5.
+        READ TABLE lt_t16fw INTO DATA(ls_t16fw5) WITH KEY frggr = ls_t16fs-frggr frgco = ls_t16fs-frgc5.
+        IF ls_t16fw5 IS NOT INITIAL.
+          ls_approval-approver5_id   = ls_t16fw5-objid.
+          ls_approval-approver5_name = ls_t16fw5-name_textc.
+        ENDIF.
+
+        READ TABLE lt_change INTO  DATA(ls_change5) WITH KEY objectid  = ls_valid-objectid  value_new = 'XXXXX'.
+        IF ls_change5 IS NOT INITIAL.
+          ls_approval-approval5_ind  = ls_change5-value_new.
+          ls_approval-approval5_date = ls_change5-udate.
+        ENDIF.
+      ENDIF.
+
+      "--> Fetch sixth Approval Details.
+      IF ls_t16fs-frgc6 IS NOT INITIAL.
+        ls_approval-frgc6 = ls_t16fs-frgc6.
+        READ TABLE lt_t16fw INTO DATA(ls_t16fw6) WITH KEY frggr = ls_t16fs-frggr frgco = ls_t16fs-frgc6.
+        IF ls_t16fw6 IS NOT INITIAL.
+          ls_approval-approver6_id   = ls_t16fw6-objid.
+          ls_approval-approver6_name = ls_t16fw6-name_textc.
+        ENDIF.
+
+        READ TABLE lt_change INTO  DATA(ls_change6) WITH KEY objectid  = ls_valid-objectid  value_new = 'XXXXXX'.
+        IF ls_change6 IS NOT INITIAL.
+          ls_approval-approval6_ind  = ls_change6-value_new.
+          ls_approval-approval6_date = ls_change6-udate.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    APPEND ls_approval TO lt_approval.
+    CLEAR: ls_approval,ls_valid,ls_t16fs,ls_t16fw1,ls_change1,
+           ls_t16fw2,ls_change2,ls_t16fw3,ls_change3,
+           ls_t16fw4,ls_change4,ls_t16fw5,ls_change5,
+           ls_t16fw6,ls_change6.
+  ENDLOOP.
+
+  SORT lt_approval BY banfn.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_t16fs_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_t16fs_data .
+  IF lt_valid IS NOT INITIAL.
+    SELECT frggr,frgsx,frgc1,frgc2,
+           frgc3,frgc4,frgc5,frgc6
+    FROM t16fs
+    FOR ALL ENTRIES IN @lt_valid
+    WHERE frggr = @lt_valid-frggr AND
+          frgsx = @lt_valid-frgst
+    INTO TABLE @lt_t16fs.
+  ENDIF .
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_t16fw_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_t16fw_data .
+  IF lt_valid IS NOT INITIAL.
+    SELECT t16fw~frggr,t16fw~frgco,t16fw~objid,
+           user_addr~name_textc
+    FROM t16fw
+    LEFT OUTER JOIN user_addr ON t16fw~objid EQ user_addr~bname "#EC CI_BUFFJOIN
+    FOR ALL ENTRIES IN @lt_valid
+    WHERE t16fw~frggr EQ @lt_valid-frggr
+    INTO TABLE @lt_t16fw.
+  ENDIF .
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form Change_details
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM Change_details .
+  IF lt_valid IS NOT INITIAL.
+    SELECT cdpos~objectid,cdpos~changenr,cdpos~value_new,
+           cdhdr~udate
+    FROM  cdpos
+    INNER JOIN cdhdr ON cdpos~objectid = cdhdr~objectid AND
+                        cdpos~changenr = cdhdr~changenr
+    FOR ALL ENTRIES IN @lt_valid
+    WHERE cdpos~objectid = @lt_valid-objectid
+      AND cdpos~value_new LIKE 'X%'
+    INTO TABLE @lt_change.
+  ENDIF .
+
+  SORT lt_change BY objectid changenr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_all_catalogs
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_all_catalogs .
+
+  CLEAR : fcat[].
+  PERFORM get_catalog USING 'LT_RESULT'   'WERKS'               'Plant'                                    '5'.
+  PERFORM get_catalog USING 'LT_RESULT'   'BSART'               'Doc Type'                                 '5'.
+  PERFORM get_catalog USING 'LT_RESULT'   'BANFN'               'PR Number'                                '12'.
+  PERFORM get_catalog USING 'LT_RESULT'   'BNFPO'               'Item No'                                  '7'.
+  PERFORM get_catalog USING 'LT_RESULT'   'MATNR'               'Material Code'                            '40'.
+  PERFORM get_catalog USING 'LT_RESULT'   'MAKTX'               'Material Description'                     '40'.
+  PERFORM get_catalog USING 'LT_RESULT'   'EKGRP_R'             'Purchase Group'                           '30'.
+  PERFORM get_catalog USING 'LT_RESULT'   'MENGE'               'Required Qty.'                            '20'.
+  PERFORM get_catalog USING 'LT_RESULT'   'BUMNG'               'Stock Qty.'                               '20'.
+  PERFORM get_catalog USING 'LT_RESULT'   'MEINS'               'UOM'                                      '20'.
+  PERFORM get_catalog USING 'LT_RESULT'   'AFNAM'               'PR Request by'                            '15'.
+  PERFORM get_catalog USING 'LT_RESULT'   'BADAT'               'Material Required Date/Delivery Date'     '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'CREATIONDATE'        'PR Creation Date'                         '10'.
+
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVAL1_DATE'      'PR Approval Date L1'                      '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER1_ID'        'L1 Approver ID'                           '12'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER1_NAME'      'L1 Approver name'                         '50'.
+  PERFORM get_catalog USING 'LT_RESULT'   'DAYS_L1'             'Days taken by L1'                         '5'.
+
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVAL2_DATE'      'PR Approval Date L2'                      '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER2_ID'        'L2 Approver ID'                           '12'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER2_NAME'      'L2 Approver name'                         '50'.
+  PERFORM get_catalog USING 'LT_RESULT'   'DAYS_L2'             'Days taken by L2'                         '5'.
+
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVAL3_DATE'      'PR Approval Date L3'                      '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER3_ID'        'L3 Approver ID'                           '12'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER3_NAME'      'L3 Approver name'                         '50'.
+  PERFORM get_catalog USING 'LT_RESULT'   'DAYS_L3'             'Days taken by L3'                         '5'.
+
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVAL4_DATE'      'PR Approval Date L4'                      '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER4_ID'        'L4 Approver ID'                           '12'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER4_NAME'      'L4 Approver name'                         '50'.
+  PERFORM get_catalog USING 'LT_RESULT'   'DAYS_L4'             'Days taken by L4'                         '5'.
+
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVAL5_DATE'      'PR Approval Date L5'                      '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER5_ID'        'L5 Approver ID'                           '12'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER5_NAME'      'L5 Approver name'                         '50'.
+  PERFORM get_catalog USING 'LT_RESULT'   'DAYS_L5'             'Days taken by L5'                         '5'.
+
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVAL6_DATE'      'PR Approval Date L6'                      '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER6_ID'        'L6 Approver ID'                           '12'.
+  PERFORM get_catalog USING 'LT_RESULT'   'APPROVER6_NAME'      'L6 Approver name'                         '50'.
+  PERFORM get_catalog USING 'LT_RESULT'   'DAYS_L6'             'Days taken by L6'                         '5'.
+
+  PERFORM get_catalog USING 'LT_RESULT'   'FRGDT'                     'PR Released Date'                         '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'EBELN'                     'PO Number'                                '12'.
+  PERFORM get_catalog USING 'LT_RESULT'   'EBELP'                     'PO Line Item'                             '7'.
+  PERFORM get_catalog USING 'LT_RESULT'   'BEDAT'                     'PO Date'                                  '10'.
+  PERFORM get_catalog USING 'LT_RESULT'   'days_taken_pocreation'     'No of days taken for PO Creation'         '5'.
+  PERFORM get_catalog USING 'LT_RESULT'   'days_pending_ponotcreate'  'No of days pending for PO not created'    '5'.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form  get_catalog
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_catalog  USING    VALUE(p1)
+                           VALUE(p2)
+                           VALUE(p3)
+                           VALUE(p4).
+  CLEAR :fcat.
+  fcat-tabname    = p1.
+  fcat-fieldname  = p2.
+  fcat-seltext_l  = p3.
+  fcat-outputlen  = p4.
+
+  APPEND fcat.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+
+  DATA: ls_layout TYPE slis_layout_alv.
+
+  CLEAR : ls_layout.
+  ls_layout-colwidth_optimize = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+      is_layout          = ls_layout
+      it_fieldcat        = fcat[]
+      i_save             = 'A'
+    TABLES
+      t_outtab           = lt_result.
+ENDFORM.

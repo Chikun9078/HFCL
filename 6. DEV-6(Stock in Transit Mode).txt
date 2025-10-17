@@ -1,0 +1,911 @@
+ Development 6:stock in Transit Report
+"---------------------------------------------------------------------------------------------------------------------------------
+Basically throught this report we can analyze what ever the goods moved from one plant to another plant.here in HFCL they are doing sell purchasing for the 
+stock Transit.
+-----------------------------------------------------------------------------------------------------------------------------------
+Package                        : ZMM
+TR                             : DFHK909487                   MM:Copy of stock in Transit Report                 (Released on 13-08-2024)    
+                                 DFHK909489  
+
+TOC                            : DFHK909493       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report            (released on 14-08-2024)
+                                 DFHK909492       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report            (released on 14-08-2024)
+                                 DFHK909506       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report                  "
+                                 DFHK909507                    MM:TOC:Copy of Stock in Transit Report                  "
+                                 DFHK909518                    MM:TOC:Copy of Stock in Transit Report                  "   
+                                 DFHK909527       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Repo 
+                                 DFHK909530                    MM:TOC:Copy of Stock in Transit Report  
+                                 DFHK909531       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report 
+                                 DFHK909533       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909534       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report 
+                                 DFHK909535       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909536       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909537       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909542                    MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909543       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909544                    MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909547       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909548       AIRDITDEBI   Copy of Stock in Transist Report
+                                 DFHK909549       AIRDITDEBI   Copy of Stock in Transist Report
+                                 DFHK909550       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909551       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 DFHK909605       AIRDITDEBI   MM:TOC:Copy of Stock in Transit Report
+                                 
+
+
+D. program                     : ZMM_STOCK_TRANSIT_REPORT     MM:REPT:Copy of Stock in Transit Report
+TCODE :                          ZMM0087
+"-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+0000001121    
+1131
+5.02.2024     --  31.03.2024
+GLG2ESEXXXH2D5030024OXX04    GLG2ESEXXXH2D5030024OXX05
+
+
+
+
+5800000050               
+5800000051
+5800000053
+5800000055
+5800000056
+
+
+
+1000009677
+1000009698
+1000009982
+1000010031
+1000010050
+
+
+
+
+5105607325
+5105607326
+5105607339
+5105608095
+5105610350
+5105610593
+5105611922
+5105613356
+5105610350
+5105610593
+5105614077
+
+
+
+13600270
+13600259
+13600274
+13600370
+13600438
+13600448
+13600549
+13600601
+13600655
+
+1000	Document Number	S	I	EQ	5105614389		
+---------------------------------------------------------------------------------------------------------------------------------------------
+*&---------------------------------------------------------------------*
+*& Report ZMM_STOCK_TRANSIT_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmm_stock_transit_report.
+TYPES: BEGIN OF ty_stock_transit,
+         po_doc_type  LIKE ekko-bsart,                          "--> PO Document Type
+         po_no        LIKE ekko-ebeln,                          "--> PO Number
+         llief        LIKE ekko-llief,                          "--> Suppling Plant
+         werks        LIKE ekpo-werks,                          "--> Receiving or Purchasing Plant
+         po_date      LIKE ekko-aedat,                          "--> PO Date
+         po_ebelp     LIKE ekpo-ebelp,                          "--> PO Line Item
+         matnr        LIKE ekpo-matnr,                          "--> Material Code
+         txz01        LIKE ekpo-txz01,                          "--> Material Description
+         po_menge     LIKE ekpo-menge,                          "--> PO Quantity
+         po_meins     LIKE ekpo-meins,                          "--> Unit of Measure
+         po_netwr     LIKE ekpo-netwr,                          "--> PO Value
+         kbetr        LIKE prcd_elements-kbetr,                 "--> Market pricing
+         auart        LIKE vbak-auart,                          "--> Sales Document Type
+         vbeln        TYPE vbeln_va,                            "--> Sales Document
+         posnr        TYPE posnr_va,                            "--> Sales order line item
+         netwr        TYPE netwr_ap,                            "--> Net Value of the Order Item in Document Currency
+         kwmeng       TYPE kwmeng,                              "--> Cumulative order quantity in sales unit
+         bstnk        LIKE vbak-bstnk,                          "--> Customer Reference
+         inv_num      LIKE vbrk-vbeln,                          "--> Invoice Number
+         inv_date     LIKE vbrk-fkdat,                          "--> Invoice date
+         inv_qty      LIKE vbrp-fkimg,                          "--> Invoice Quantity
+         inv_value    LIKE vbrp-netwr,                          "--> Invoice Value
+         grn_num      LIKE ekbe-belnr,                          "--> GRN Number
+         grn_date     LIKE ekbe-budat,                          "--> GRN Date
+         grn_qty      LIKE ekbe-menge,                          "--> GRN Quantity
+         received_val LIKE ekbe-dmbtr,                          "--> Received Value
+         open_qty     LIKE vbrp-fkimg,                          "--> Open Quantity
+       END OF ty_stock_transit.
+
+TYPES: BEGIN OF ty_ekko,
+         ebeln    LIKE ekko-ebeln,
+         bukrs    LIKE ekko-bukrs,
+         bsart    LIKE ekko-bsart,
+         aedat    LIKE ekko-aedat,
+         llief    LIKE ekko-llief,
+         knumv    LIKE ekko-knumv,
+         cust_ref LIKE vbak-bstnk,
+       END OF ty_ekko.
+
+TYPES: BEGIN OF ty_ekpo,
+         ebeln LIKE ekpo-ebeln,
+         ebelp LIKE ekpo-ebelp,
+         aedat LIKE ekpo-aedat,
+         matnr LIKE ekpo-matnr,
+         txz01 LIKE ekpo-txz01,
+         werks LIKE ekpo-werks,
+         menge LIKE ekpo-menge,
+         meins LIKE ekpo-meins,
+         netwr LIKE ekpo-netwr,
+       END OF ty_ekpo.
+
+TYPES: BEGIN OF ty_po_order,
+         bsart LIKE ekko-bsart,
+         ebeln LIKE ekko-ebeln,
+         llief LIKE ekko-llief,
+         werks LIKE ekpo-werks,
+         aedat LIKE ekko-aedat,
+         ebelp LIKE ekpo-ebelp,
+         matnr LIKE ekpo-matnr,
+         txz01 LIKE ekpo-txz01,
+         menge LIKE ekpo-menge,
+         meins LIKE ekpo-meins,
+         netwr LIKE ekpo-netwr,
+         kbetr LIKE prcd_elements-kbetr,
+       END OF ty_po_order.
+
+TYPES: BEGIN OF ty_market_price,
+         knumv LIKE prcd_elements-knumv,
+         kposn LIKE prcd_elements-kposn,
+         kschl LIKE prcd_elements-kschl,
+         kbetr LIKE prcd_elements-kbetr,
+       END OF ty_market_price.
+
+TYPES : BEGIN OF ty_vbak,
+          vbeln LIKE vbak-vbeln,
+          auart LIKE vbak-auart,
+          bstnk LIKE vbak-bstnk,
+        END OF ty_vbak.
+
+TYPES : BEGIN OF ty_vbap,
+          vbeln  TYPE vbeln_va,
+          posnr  TYPE posnr_va,
+          netwr  TYPE netwr_ap,
+          kwmeng TYPE kwmeng,
+        END OF ty_vbap.
+
+TYPES: BEGIN OF ty_sales_order,
+         auart  LIKE vbak-auart,
+         bstnk  LIKE vbak-bstnk,
+         vbeln  TYPE vbeln_va,
+         posnr  TYPE posnr_va,
+         netwr  TYPE netwr_ap,
+         kwmeng TYPE kwmeng,
+       END OF ty_sales_order.
+
+
+TYPES: BEGIN OF ty_ekbe,
+         ebeln LIKE ekbe-ebeln,
+         ebelp LIKE ekbe-ebelp,
+         vgabe LIKE ekbe-vgabe,
+         belnr LIKE ekbe-belnr,
+         lfbnr LIKE ekbe-lfbnr,
+       END OF ty_ekbe.
+
+TYPES: BEGIN OF ty_invoice,
+         ebeln LIKE ekbe-ebeln,                                "--> PO Document no
+         ebelp LIKE ekbe-ebelp,                                "--> PO Document item no
+         vgabe LIKE ekbe-vgabe,                                "--> Transaction/event type, purchase order history
+         belnr LIKE ekbe-belnr,                                "--> Number of Material Document
+         lfbnr LIKE ekbe-lfbnr,                                "--> GRN Reference
+         xblnr LIKE vbrk-xblnr,                                "--> Reference Document Number/
+         vbeln LIKE vbrk-vbeln,                                "--> Invoice Number
+         fkdat LIKE vbrk-fkdat,                                "--> Billing Date/Invoice Date
+         fkimg LIKE vbrp-fkimg,                                "--> Invoice Quantity
+         netwr LIKE vbrp-netwr,                                "--> Invoice Value
+         matnr LIKE vbrp-matnr,                                "--> Material Code
+       END OF ty_invoice.
+
+TYPES: BEGIN OF ty_grn,
+         ebeln LIKE ekbe-ebeln,                                "--> PO Document no
+         ebelp LIKE ekbe-ebelp,                                "--> PO Document item no
+         vgabe LIKE ekbe-vgabe,                                "--> Transaction/event type, purchase order history
+         belnr LIKE ekbe-belnr,                                "--> Number of Material Document
+         budat LIKE ekbe-budat,                                "--> Grn date
+         menge LIKE ekbe-menge,                                "--> invoice Quantity
+         dmbtr LIKE ekbe-dmbtr,                                "--> Invoiced Value
+       END OF ty_grn.
+
+TYPES:BEGIN OF ty_inv_grn,
+        ebeln        LIKE ekbe-ebeln,
+        ebelp        LIKE ekbe-ebelp,
+        matnr        LIKE vbrp-matnr,
+        inv_num      LIKE vbrk-vbeln,
+        inv_date     LIKE vbrk-fkdat,
+        inv_qty      LIKE vbrp-fkimg,
+        inv_value    LIKE vbrp-netwr,
+        grn_num      LIKE ekbe-belnr,
+        grn_date     LIKE ekbe-budat,
+        grn_qty      LIKE ekbe-menge,
+        received_val LIKE ekbe-dmbtr,
+        open_qty     LIKE vbrp-fkimg,
+      END OF ty_inv_grn.
+
+DATA: lv_matnr TYPE matnr,
+      lv_aedat TYPE mmpur_erdat,
+      lv_llief TYPE werks_d .                                 "--> Creation Date of Purchase Order
+
+DATA: ls_invoice      TYPE ty_invoice,
+      ls_grn          TYPE ty_grn,
+      ls_po           TYPE ty_po_order,
+      ls_sales        TYPE ty_sales_order,
+      ls_inv_grn      TYPE ty_inv_grn,
+      temp_final      TYPE ty_stock_transit,
+      ls_stock_result TYPE ty_stock_transit.
+
+DATA: lt_ekko         TYPE TABLE OF ty_ekko,
+      lt_ekpo         TYPE TABLE OF ty_ekpo,
+      lt_market_price TYPE TABLE OF ty_market_price,
+      lt_vbak         TYPE TABLE OF ty_vbak,
+      lt_vbap         TYPE TABLE OF ty_vbap,
+      lt_ekbe_inv     TYPE TABLE OF ty_ekbe,
+      lt_invoice      TYPE TABLE OF ty_invoice,
+      lt_grn          TYPE TABLE OF ty_grn,
+      lt_inv_grn      TYPE TABLE OF ty_inv_grn,
+      lt_po_order     TYPE TABLE OF ty_po_order,
+      lt_sales_order  TYPE TABLE OF ty_sales_order,
+      lt_stock_result TYPE TABLE OF ty_stock_transit.
+
+DATA: fcat TYPE slis_fieldcat_alv  OCCURS 0 WITH HEADER LINE.
+
+"--> Selection screen for input from user .
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  PARAMETERS: p_llief TYPE llief OBLIGATORY ,                 "--> Suppling plant
+              p_werks TYPE werks_d OBLIGATORY.                "--> Reciving Plant
+
+  SELECT-OPTIONS: s_aedat FOR lv_aedat OBLIGATORY,            "--> Creation Date of Purchase Order
+                  s_matnr FOR lv_matnr.                       "--> Material Code
+SELECTION-SCREEN END OF BLOCK b1.
+
+"--> Validating the User Input.
+
+AT SELECTION-SCREEN.
+  CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+    EXPORTING
+      input  = p_llief
+    IMPORTING
+      output = lv_llief.
+
+  SELECT werks FROM t001w
+  INTO TABLE @DATA(lt_t001w)
+  WHERE werks IN ( @lv_llief,@p_werks ).
+
+  "--> Validating Supplying Plant.
+  READ TABLE lt_t001w INTO DATA(temp_llief) WITH KEY werks = lv_llief.
+  IF  sy-subrc NE 0.
+    MESSAGE 'Enter a Valid Supplying Plant.' TYPE 'I' DISPLAY LIKE 'I'.             ##NO_TEXT
+    LEAVE PROGRAM.
+  ENDIF.
+
+  "--> Validating Reciving Plant.
+  READ TABLE lt_t001w INTO DATA(temp_werks) WITH KEY werks = p_werks.
+  IF  sy-subrc NE 0.
+    MESSAGE 'Enter a Valid Receiving Plant.' TYPE 'I' DISPLAY LIKE 'I'.             ##NO_TEXT
+    LEAVE PROGRAM.
+  ENDIF.
+
+  "--> Validating Matrerial code.
+  IF s_matnr IS NOT INITIAL.
+    SELECT matnr FROM mara
+    INTO TABLE @DATA(lt_mara)
+    WHERE matnr IN @s_matnr.
+    IF  sy-subrc NE 0.
+      MESSAGE 'Enter a Valid Matrial code.' TYPE 'I' DISPLAY LIKE 'I'.              ##NO_TEXT
+      LEAVE PROGRAM.
+    ENDIF.
+  ENDIF.
+
+START-OF-SELECTION.
+
+  SELECT ebeln,bukrs,bsart,aedat,llief,knumv
+  FROM ekko
+  INTO TABLE @lt_ekko
+  WHERE bsart = 'ZIUP'   AND
+        llief = @p_llief AND
+  aedat IN @s_aedat.
+  SORT lt_ekko BY ebeln.
+
+  IF lt_ekko IS NOT INITIAL.
+    SELECT ebeln,ebelp,aedat,matnr,txz01,werks,
+           menge,meins,netwr
+    FROM ekpo
+    FOR ALL ENTRIES IN @lt_ekko
+    WHERE ebeln = @lt_ekko-ebeln AND
+          werks = @p_werks       AND
+          matnr IN @s_matnr
+    INTO TABLE @lt_ekpo.
+    SORT lt_ekpo BY ebeln ebelp.
+
+    IF sy-subrc EQ 0.
+
+      PERFORM get_data.
+      PERFORM process_data.
+      PERFORM display_data.
+    ELSE.
+      MESSAGE 'No Record present from this receiving Plant or No Record Present for the combination of Receiving Plant and Material code.' TYPE 'I' DISPLAY LIKE 'E'.    ##NO_TEXT
+    ENDIF.
+  ELSE.
+    MESSAGE 'No Record present from this Suppling Plant or No Record Present for the combination of Suppling Plant and Date Range.' TYPE 'I' DISPLAY LIKE 'E'.           ##NO_TEXT
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM purchase_order_data.
+  PERFORM sales_order_data.
+  PERFORM invoice_grn_data.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  LOOP AT lt_ekko INTO DATA(ls_ekko).
+    LOOP AT  lt_ekpo INTO DATA(ls_ekpo).
+      IF ls_ekko-ebeln EQ ls_ekpo-ebeln.
+        READ TABLE lt_po_order INTO DATA(ls_po_order) WITH  KEY ebeln = ls_ekpo-ebeln
+                                                          ebelp = ls_ekpo-ebelp BINARY SEARCH.
+        IF sy-subrc EQ 0.
+          temp_final-po_doc_type = ls_po_order-bsart.
+          temp_final-po_no       = ls_po_order-ebeln.
+          temp_final-llief       = |{  ls_po_order-llief ALPHA = OUT }|.
+          temp_final-werks       = ls_po_order-werks.
+          temp_final-po_date     = ls_po_order-aedat.
+          temp_final-po_ebelp    = ls_po_order-ebelp.
+          temp_final-matnr       = ls_po_order-matnr.
+          temp_final-txz01       = ls_po_order-txz01.
+          temp_final-po_menge    = ls_po_order-menge.
+          temp_final-po_meins    = ls_po_order-meins.
+          temp_final-po_netwr    = ls_po_order-netwr.
+          temp_final-kbetr       = ls_po_order-kbetr.
+
+          READ TABLE lt_sales_order INTO DATA(ls_sales_order) WITH KEY bstnk = ls_ekko-cust_ref
+                                                                 posnr = ls_ekpo-ebelp.
+          IF  sy-subrc EQ 0.
+            temp_final-auart  = ls_sales_order-auart.
+            temp_final-vbeln  = |{ ls_sales_order-vbeln ALPHA = OUT }|.
+            temp_final-posnr  = ls_sales_order-posnr.
+            temp_final-netwr  = ls_sales_order-netwr.
+            temp_final-kwmeng = ls_sales_order-kwmeng.
+            temp_final-bstnk  = ls_sales_order-bstnk.
+          ENDIF.
+
+          LOOP AT lt_inv_grn INTO DATA(ls_inv_grn).
+            IF ls_inv_grn-ebeln = ls_po_order-ebeln AND ls_inv_grn-ebelp = ls_po_order-ebelp AND ls_inv_grn-matnr = ls_po_order-matnr.
+              ls_stock_result = CORRESPONDING #( temp_final ).
+              ls_stock_result-inv_num     = |{  ls_inv_grn-inv_num ALPHA = OUT }|.
+              ls_stock_result-inv_date    = ls_inv_grn-inv_date.
+              ls_stock_result-inv_qty     = ls_inv_grn-inv_qty.
+              ls_stock_result-inv_value   = ls_inv_grn-inv_value.
+              ls_stock_result-grn_num     = ls_inv_grn-grn_num.
+              ls_stock_result-grn_date    = ls_inv_grn-grn_date.
+              ls_stock_result-grn_qty     = ls_inv_grn-grn_qty.
+              ls_stock_result-received_val = ls_inv_grn-received_val.
+              ls_stock_result-open_qty    = ls_inv_grn-open_qty.
+
+              APPEND ls_stock_result TO lt_stock_result.
+            ENDIF.
+            CLEAR: ls_stock_result.
+          ENDLOOP.
+        ENDIF.
+        CLEAR:ls_po_order,ls_sales_order,ls_inv_grn,temp_final.
+      ENDIF.
+      CLEAR ls_ekpo.
+    ENDLOOP.
+    CLEAR: ls_ekko.
+  ENDLOOP.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+
+  PERFORM get_all_catalogs.
+  PERFORM display_alv_grid_display.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form purchase_order_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM purchase_order_data .
+  PERFORM get_markrt_price_data.
+
+  IF  lt_ekko IS NOT INITIAL.
+    LOOP AT lt_ekko INTO DATA(ls_ekko).
+      ls_ekko-cust_ref = LS_ekko-ebeln.
+      MODIFY lt_ekko FROM ls_ekko.
+    ENDLOOP.
+  ENDIF.
+
+  CLEAR: ls_ekko.
+  LOOP AT lt_ekko INTO ls_ekko.
+    LOOP AT lt_ekpo INTO DATA(ls_ekpo).
+      IF  ls_ekpo-ebeln = ls_ekko-ebeln.
+
+        ls_po-bsart = ls_ekko-bsart.
+        ls_po-ebeln = ls_ekko-ebeln.
+        ls_po-aedat = ls_ekko-aedat.
+        ls_po-llief = ls_ekko-llief.
+        ls_po-werks = ls_ekpo-werks.
+        ls_po-ebelp = ls_ekpo-ebelp.
+        ls_po-matnr = ls_ekpo-matnr.
+        ls_po-txz01 = ls_ekpo-txz01.
+        ls_po-menge = ls_ekpo-menge.
+        ls_po-meins = ls_ekpo-meins.
+        ls_po-netwr = ls_ekpo-netwr.
+        READ TABLE lt_market_price INTO DATA(ls_market) WITH KEY knumv = ls_ekko-knumv
+                                                                 kposn = ls_ekpo-ebelp.
+        IF sy-subrc EQ 0.
+          ls_po-kbetr = ls_market-kbetr.
+        ENDIF.
+        APPEND ls_po TO lt_po_order.
+      ENDIF.
+      CLEAR: ls_ekpo,ls_market.
+    ENDLOOP.
+    CLEAR: ls_ekko.
+  ENDLOOP.
+
+  SORT lt_po_order BY ebeln ebelp.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form sales_order_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM sales_order_data .
+  PERFORM get_vbak_data.               "--> Get Sales order Header Data.
+  PERFORM get_vbap_data.               "--> Get Sales Order Item Data.
+
+  LOOP AT lt_ekko INTO DATA(ls_ekko).
+    LOOP AT lt_vbak INTO DATA(ls_vbak).
+      IF ls_vbak-bstnk = ls_ekko-cust_ref.
+        LOOP AT lt_vbap INTO DATA(ls_vbap).
+          IF ls_vbap-vbeln  = ls_vbak-vbeln.
+            ls_sales-auart  = ls_vbak-auart.
+            ls_sales-bstnk  = ls_ekko-cust_ref.
+            ls_sales-vbeln  = ls_vbap-vbeln.
+            ls_sales-posnr  = ls_vbap-posnr.
+            ls_sales-netwr  = ls_vbap-netwr.
+            ls_sales-kwmeng = ls_vbap-kwmeng.
+
+            APPEND ls_sales TO lt_sales_order.
+          ENDIF.
+        ENDLOOP.
+        CLEAR:ls_vbap.
+      ENDIF.
+      CLEAR:ls_vbak.
+    ENDLOOP.
+    CLEAR: ls_ekko.
+  ENDLOOP.
+
+  SORT lt_sales_order BY bstnk vbeln posnr.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form invoice_grn_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM invoice_grn_data .
+*---------------------------------------------------------------
+*--> Local Declaration for the subroutine
+  DATA: lv_open_qty TYPE ekpo-menge.
+
+*---------------------------------------------------------------
+  PERFORM invoice_data.
+  PERFORM grn_data.
+
+  LOOP AT lt_ekko INTO DATA(ls_ekko).
+    LOOP AT lt_ekpo INTO DATA(ls_ekpo).
+      lv_open_qty = ls_ekpo-menge.
+      IF ls_ekpo-ebeln EQ ls_ekko-ebeln.
+        LOOP AT lt_invoice INTO DATA(ls_invoice).
+          IF ls_invoice-ebeln = ls_ekpo-ebeln AND ls_invoice-ebelp = ls_ekpo-ebelp AND ls_invoice-matnr = ls_ekpo-matnr.
+*            lv_open_qty = lv_open_qty - ls_invoice-fkimg.
+            ls_inv_grn-ebeln      = ls_invoice-ebeln.
+            ls_inv_grn-ebelp      = ls_invoice-ebelp.
+            ls_inv_grn-matnr      = ls_invoice-matnr.
+            ls_inv_grn-inv_num    = ls_invoice-vbeln.
+            ls_inv_grn-inv_date   = ls_invoice-fkdat.
+            ls_inv_grn-inv_qty    = ls_invoice-fkimg.
+            ls_inv_grn-inv_value  = ls_invoice-netwr.
+*            ls_inv_grn-open_qty     = lv_open_qty .
+
+            READ TABLE lt_grn INTO DATA(ls_grn) WITH  KEY ebeln = ls_invoice-ebeln
+                                                          ebelp = ls_invoice-ebelp
+                                                          belnr = ls_invoice-lfbnr .
+            IF sy-subrc EQ 0.
+              lv_open_qty = lv_open_qty - ls_grn-menge.
+              ls_inv_grn-grn_num      = ls_grn-belnr.
+              ls_inv_grn-grn_date     = ls_grn-budat.
+              ls_inv_grn-grn_qty      = ls_grn-menge.
+              ls_inv_grn-received_val  = ls_grn-dmbtr.
+              ls_inv_grn-open_qty     = lv_open_qty.
+            ENDIF.
+
+            APPEND ls_inv_grn TO lt_inv_grn.
+          ENDIF.
+          CLEAR: ls_invoice,ls_grn.
+        ENDLOOP.
+      ENDIF.
+      CLEAR: ls_ekpo,lv_open_qty.
+    ENDLOOP.
+  ENDLOOP.
+
+  SORT lt_inv_grn BY ebeln ebelp inv_num.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form invoice_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM invoice_data .
+*----> local declaration for making the RBKP Database
+*      table's XBLNR field type Compatable
+*      with VBRK Table's Vbeln field.
+*------------------------------------------------------
+  TYPES: BEGIN OF ty_rbkp,
+           belnr     LIKE rbkp-belnr,
+           xblnr     LIKE rbkp-xblnr,
+           vbeln_out LIKE vbrk-vbeln,
+           vbeln_in  LIKE vbrk-vbeln,
+         END OF ty_rbkp.
+
+  DATA: lt_rbkp TYPE TABLE OF ty_rbkp.
+*------------------------------------------------------
+
+  IF lt_ekko IS NOT INITIAL.
+    SELECT ebeln,ebelp,vgabe,belnr,lfbnr
+    FROM ekbe
+    FOR ALL ENTRIES IN @lt_ekko
+    WHERE ebeln = @lt_ekko-ebeln AND
+          vgabe = '2'                             " Here VGABE Fiels value 2 Indicates "Invoice Recipt"
+    INTO TABLE @lt_ekbe_inv.
+
+    SORT lt_ekbe_inv BY ebeln ebelp belnr lfbnr.
+  ENDIF.
+
+  IF lt_ekbe_inv IS NOT INITIAL.
+    SELECT belnr,xblnr
+    FROM rbkp
+    FOR ALL ENTRIES IN @lt_ekbe_inv
+    WHERE belnr = @lt_ekbe_inv-belnr
+    INTO TABLE @lt_rbkp.
+
+    LOOP AT lt_rbkp INTO DATA(wa_rbkp).
+      wa_rbkp-vbeln_out = |{ wa_rbkp-xblnr ALPHA = OUT }|.
+      wa_rbkp-vbeln_in  = |{  wa_rbkp-vbeln_out ALPHA = IN }|.
+      MODIFY lt_rbkp FROM wa_rbkp.
+    ENDLOOP.
+    SORT lt_rbkp BY belnr.
+  ENDIF.
+
+  IF  lt_rbkp IS NOT INITIAL.
+    SELECT vbrk~vbeln,vbrk~fkdat,vbrk~xblnr,
+           vbrp~posnr,vbrp~fkimg,vbrp~netwr,vbrp~matnr
+    FROM vbrk
+    LEFT OUTER JOIN vbrp ON vbrk~vbeln = vbrp~vbeln
+    FOR ALL ENTRIES IN @lt_rbkp
+    WHERE ( vbrk~vbeln = @lt_rbkp-vbeln_in and vbrk~fksto IS INITIAL ) or
+          ( vbrk~xblnr = @lt_rbkp-xblnr    AND vbrk~fksto IS INITIAL )
+    INTO TABLE @DATA(lt_vbrk).
+    SORT lt_vbrk BY vbeln.
+
+    IF lt_vbrk IS NOT INITIAL.
+      SELECT vbeln,fkdat,xblnr,
+      SUM( fkimg ) AS fkimg,SUM( netwr ) AS netwr,matnr
+      FROM @lt_vbrk AS invoice                                                                 ##ITAB_DB_SELECT
+      GROUP BY vbeln,fkdat,xblnr,matnr
+      INTO TABLE @DATA(lt_total_inv).
+    ENDIF.
+    SORT lt_total_inv BY vbeln xblnr matnr.
+  ENDIF.
+
+  LOOP AT lt_ekko INTO DATA(ls_ekko).
+    LOOP AT lt_ekpo INTO DATA(ls_ekpo).
+      IF ls_ekpo-ebeln EQ ls_ekko-ebeln.
+        LOOP AT lt_ekbe_inv INTO DATA(ls_ekbe).
+          IF ls_ekbe-ebeln EQ ls_ekpo-ebeln AND ls_ekbe-ebelp EQ ls_ekpo-ebelp.
+            READ TABLE lt_rbkp INTO DATA(ls_rbkp) WITH KEY belnr = ls_ekbe-belnr BINARY SEARCH.
+            IF sy-subrc EQ 0.
+              READ TABLE lt_total_inv INTO DATA(ls_invc) WITH  KEY vbeln = ls_rbkp-vbeln_in
+                                                                   matnr = ls_ekpo-matnr BINARY SEARCH.
+              IF sy-subrc EQ 0.
+                ls_invoice-ebeln = ls_ekko-ebeln.
+                ls_invoice-ebelp = ls_ekpo-ebelp.
+                ls_invoice-vgabe = ls_ekbe-vgabe.
+                ls_invoice-belnr = ls_ekbe-belnr.
+                ls_invoice-xblnr = ls_rbkp-xblnr.
+                ls_invoice-lfbnr = ls_ekbe-lfbnr.
+                ls_invoice-vbeln = ls_invc-vbeln.
+                ls_invoice-fkdat = ls_invc-fkdat.
+                ls_invoice-fkimg = ls_invc-fkimg.
+                ls_invoice-netwr = ls_invc-netwr.
+                ls_invoice-matnr = ls_invc-matnr.
+
+                APPEND ls_invoice TO lt_invoice.
+              ELSE.
+                READ TABLE lt_total_inv INTO ls_invc WITH  KEY xblnr = ls_rbkp-xblnr
+                                                               matnr = ls_ekpo-matnr BINARY SEARCH.
+                IF sy-subrc EQ 0.
+                  ls_invoice-ebeln = ls_ekko-ebeln.
+                  ls_invoice-ebelp = ls_ekpo-ebelp.
+                  ls_invoice-vgabe = ls_ekbe-vgabe.
+                  ls_invoice-belnr = ls_ekbe-belnr.
+                  ls_invoice-xblnr = ls_rbkp-xblnr.
+                  ls_invoice-lfbnr = ls_ekbe-lfbnr.
+                  ls_invoice-vbeln = ls_invc-vbeln.
+                  ls_invoice-fkdat = ls_invc-fkdat.
+                  ls_invoice-fkimg = ls_invc-fkimg.
+                  ls_invoice-netwr = ls_invc-netwr.
+                  ls_invoice-matnr = ls_invc-matnr.
+
+                  APPEND ls_invoice TO lt_invoice.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+          CLEAR:ls_ekbe,ls_rbkp,ls_invc,ls_invoice.
+        ENDLOOP.
+      ENDIF.
+      CLEAR:ls_ekpo.
+    ENDLOOP.
+    CLEAR:ls_ekko.
+  ENDLOOP.
+
+  SORT lt_invoice BY ebeln xblnr fkdat .
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form grn_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM grn_data .
+
+  IF  lt_ekbe_inv IS NOT INITIAL .
+    SELECT ebeln,ebelp,vgabe,belnr,budat,menge,dmbtr
+    FROM  ekbe
+    FOR ALL ENTRIES IN @lt_ekbe_inv
+    WHERE lfbnr = @lt_ekbe_inv-lfbnr AND
+          vgabe = '1'
+    INTO TABLE @DATA(lt_ekbe_grn).
+
+    SORT lt_ekbe_grn BY ebeln ebelp belnr.
+  ENDIF.
+
+  LOOP AT lt_ekko INTO DATA(ls_ekko).
+    LOOP AT lt_ekpo INTO DATA(ls_ekpo).
+      IF ls_ekpo-ebeln EQ ls_ekko-ebeln.
+        LOOP AT lt_ekbe_inv INTO DATA(ls_ekbe_inv).
+          IF ls_ekbe_inv-ebeln EQ ls_ekpo-ebeln AND
+             ls_ekbe_inv-ebelp EQ ls_ekpo-ebelp.
+            READ TABLE lt_ekbe_grn INTO DATA(ls_grn) WITH KEY ebeln = ls_ekbe_inv-ebeln
+                                                              ebelp = ls_ekbe_inv-ebelp
+                                                              belnr = ls_ekbe_inv-lfbnr BINARY SEARCH.
+            IF sy-subrc EQ 0.
+              ls_grn-ebeln = ls_grn-ebeln.
+              ls_grn-ebelp = ls_grn-ebelp.
+              ls_grn-vgabe = ls_grn-vgabe.
+              ls_grn-belnr = ls_grn-belnr.
+              ls_grn-budat = ls_grn-budat.
+              ls_grn-menge = ls_grn-menge.
+              ls_grn-dmbtr = ls_grn-dmbtr.
+
+              APPEND ls_grn TO lt_grn.
+            ENDIF.
+          ENDIF.
+          CLEAR : ls_ekbe_inv,ls_grn.
+        ENDLOOP.
+      ENDIF.
+      CLEAR: ls_ekpo.
+    ENDLOOP.
+    CLEAR: ls_ekko.
+  ENDLOOP.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_markrt_price_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_markrt_price_data .
+  IF lt_ekko IS NOT INITIAL.
+    SELECT knumv,Kposn,kschl,kbetr                          " #EC CI_NO_TRANSFORM
+    FROM prcd_elements
+    FOR ALL ENTRIES IN @lt_ekko
+    WHERE knumv = @lt_ekko-knumv AND
+          kschl = 'ZSAL'
+    INTO TABLE @lt_market_pricE.
+  ENDIF.
+
+  SORT lt_market_price BY knumv kposn.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_vbak_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_vbak_data .
+  IF lt_ekko IS NOT INITIAL.
+    SELECT vbeln,auart,bstnk
+    FROM vbak
+    FOR ALL ENTRIES IN @lt_ekko
+    WHERE auart = 'ZIVS'            AND
+          bstnk = @lt_ekko-cust_ref AND
+          bstdk = @lt_ekko-aedat
+    INTO TABLE @lt_vbak.
+  ENDIF.
+
+  SORT lt_vbak BY vbeln.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_vbap_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_vbap_data .
+  IF lt_vbak IS NOT INITIAL.
+    SELECT vbeln,posnr,netwr,kwmeng
+    FROM vbap
+    FOR ALL ENTRIES IN @lt_vbak
+    WHERE vbeln = @lt_vbak-vbeln
+    INTO TABLE @lt_vbap.
+  ENDIF.
+
+  SORT lt_vbap BY vbeln posnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_all_catalogs
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*ls_stock_result     LT_STOCK_RESULT
+FORM get_all_catalogs .
+  CLEAR : fcat[].
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'PO_DOC_TYPE'        'PO Document type'                        '5' .
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'PO_NO'              'PO NO.'                                  '15'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'LLIEF'              'Supplier Plant'                          '10'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'WERKS'              'Purchasing Plant'                        '10'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'PO_DATE'            'PO Date'                                 '10'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'PO_EBELP'           'PO Line Item'                            '5' .
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'MATNR'              'Material Code'                           '50'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'TXZ01'              'Material Description'                    '50'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'PO_MENGE'           'PO QTY'                                  '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'PO_MEINS'           'UOM'                                     '5' .
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'PO_NETWR'           'PO Value'                                '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'KBETR'              'Market Price'                            '35'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'AUART'              'Sales Doc. Type'                         '5' .
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'VBELN'              'Sales Document'                          '15'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'POSNR'              'SO Line Item'                            '5' .
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'NETWR'              'Order QTY'                               '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'KWMENG'             'Order Value'                             '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'BSTNK'              'Customer Reference No'                   '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'INV_NUM'            'Billing Doc. Number'                     '15'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'INV_DATE'           'Billing Doc. Date'                       '10'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'INV_QTY'            'Billing Doc. QTY'                        '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'INV_VALUE'          'Billing Doc. Value'                      '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'GRN_NUM'            'GRN Number'                              '15'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'GRN_DATE'           'GRN Date'                                '10'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'GRN_QTY'            'GRN QTY'                                 '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'RECEIVED_VAL'       'Received Value'                          '20'.
+  PERFORM get_catalog USING 'LT_STOCK_RESULT'   'OPEN_QTY'           'Open QTY'                                '20'.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form  get_catalog
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_catalog  USING    VALUE(p1)
+                           VALUE(p2)
+                           VALUE(p3)
+                           VALUE(p4).
+
+  CLEAR :fcat.
+
+  fcat-tabname    = p1.
+  fcat-fieldname  = p2.
+  fcat-seltext_l  = p3.
+  fcat-outputlen  = p4.
+
+  APPEND fcat.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+*------------------------------------------------
+*--> Local Declaration
+  DATA: ls_layout TYPE slis_layout_alv.
+
+*------------------------------------------------
+  CLEAR : ls_layout.
+  ls_layout-colwidth_optimize = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+      is_layout          = ls_layout
+      it_fieldcat        = fcat[]
+      i_save             = 'A'
+    TABLES
+      t_outtab           = lt_stock_result.
+ENDFORM.
+
+
+
+

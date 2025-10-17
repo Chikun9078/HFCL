@@ -1,0 +1,492 @@
+*---------------------------------------------------------------------*
+* DESCRIPTION: Transfer Stock to Vendor
+* RICEFW ID :
+*
+* PROGRAM NAME: ZMMEP_CUST_STOCK_TRANSFER
+* AUTHOR: ANKUR JAIN , WIPRO
+* T-CODE : ZMM0055
+* DATE  : 25/03/2023
+*---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* CHANGE HISTORY:1
+*------------------
+* Date      : 24-10-2024   Changed By: AIRDITDEBI
+* Ticket NO : 28065
+* Description : Due to conversion-exit in domain level of WBS Element and
+*               customer Record ,issue came during Record Fetch and that
+*               was handed by  conversion-exit FM and Material,cusomer desc. field added in Report.
+*--------------------------------------------------------------------------------------------------*
+* dd/mm/yyyy   User ID         9999         xxxxxxxxxxxxxxxxxxxxxxxx
+*
+*---------------------------------------------------------------------------------------------------*
+REPORT zmmep_cust_stock_transfer.
+
+TABLES : zmm_stk_entry.
+TYPE-POOLS: slis.
+
+TYPES : BEGIN OF ty_final,
+          zstk_crt_id    TYPE zmm_stk_entry-zstk_crt_id,
+          item_no        TYPE zmm_stk_entry-item_no,
+          werks          TYPE zmm_stk_entry-werks,
+          zstrloc        TYPE zmm_stk_entry-zstrloc,
+          matnr          TYPE zmm_stk_entry-matnr,
+          zbusptr        TYPE zmm_stk_entry-zbusptr,
+          pspel          TYPE zmm_stk_entry-pspel,
+          zqty           TYPE zmm_stk_entry-zqty,
+          uom            TYPE zmm_stk_entry-uom,
+          Mat_desc       TYPE maktx,
+          zbusptr_name   TYPE name1_gp,
+          vendor         TYPE zmm_stk_transfer-vendor,
+          stock_issue_dt TYPE char10,
+          vendor_name    TYPE lfa1-name1,
+          qty_transfer   TYPE zmm_stk_entry-zqty,
+          qty_balance    TYPE zmm_stk_entry-zqty,
+          document_no    TYPE char40,
+          document_date  TYPE char10,
+          site_name      TYPE char40,
+        END OF ty_final.
+
+DATA : ls_final TYPE ty_final                    ##NEEDED,
+       lt_final TYPE STANDARD TABLE OF ty_final  ##NEEDED.
+
+DATA : ls_stk_transfer TYPE zmm_stk_transfer                    ##NEEDED,
+       lt_stk_transfer TYPE STANDARD TABLE OF zmm_stk_transfer  ##NEEDED.
+
+DATA: lt_fieldcat TYPE STANDARD TABLE OF lvc_s_fcat  ##NEEDED,
+      ls_fieldcat TYPE lvc_s_fcat                    ##NEEDED.
+DATA : lv_flag TYPE string                           ##NEEDED.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b2 WITH FRAME.
+  SELECT-OPTIONS :  p_plant  FOR zmm_stk_entry-werks,
+                    p_strloc FOR zmm_stk_entry-zstrloc,
+                    p_cust   FOR zmm_stk_entry-zbusptr,
+                    p_wbs    FOR zmm_stk_entry-pspel ,
+                    p_matnr  FOR zmm_stk_entry-matnr .
+SELECTION-SCREEN : END OF BLOCK b2.
+
+START-OF-SELECTION.
+*"--> Fetch Descripion for Fuure Purpose and #required.
+  "--> Fetch Maerial desc.
+  SELECT matnr,maktx FROM makt
+  WHERE matnr IN @p_matnr INTO TABLE @DATA(lt_makt).
+  "--> Fetch customer Name.
+  SELECT Kunnr,name1 FROM kna1
+  WHERE kunnr IN @p_cust INTO TABLE @DATA(lt_kna1).
+
+  IF p_wbs IS NOT INITIAL.
+    LOOP AT p_wbs[] ASSIGNING FIELD-SYMBOL(<fs_wbs>).
+      CALL FUNCTION 'CONVERSION_EXIT_ABPSN_OUTPUT'
+        EXPORTING
+          input  = <fs_wbs>-low
+        IMPORTING
+          output = <fs_wbs>-low.
+    ENDLOOP.
+  ENDIF.
+
+  IF p_cust IS NOT INITIAL.
+    LOOP AT p_cust[] ASSIGNING FIELD-SYMBOL(<fs_cust>).
+      CALL FUNCTION 'CONVERSION_EXIT_ALPHA_OUTPUT'
+        EXPORTING
+          input  = <fs_cust>-low
+        IMPORTING
+          output = <fs_cust>-low.
+    ENDLOOP.
+  ENDIF.
+
+  PERFORM get_data.
+  PERFORM display_data.
+*&---------------------------------------------------------------------*
+*& Form selection
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  SELECT zstk_crt_id item_no werks zstrloc matnr zbusptr pspel zqty uom
+   FROM zmm_stk_entry
+   INTO TABLE lt_final                    ##TOO_MANY_ITAB_FIELDS
+      WHERE werks   IN p_plant AND
+            zstrloc IN p_strloc AND
+            zbusptr IN p_cust AND
+            pspel   IN p_wbs AND
+            matnr   IN p_matnr  .
+
+  IF sy-subrc = 0.
+
+    LOOP AT lt_final ASSIGNING FIELD-SYMBOL(<fs_final>).
+      AUTHORITY-CHECK OBJECT 'ZMMA_CDEV'
+       ID 'WERKS' FIELD <fs_final>-werks
+       ID 'TCODE' FIELD 'ZMM0055'.
+      IF sy-subrc <> 0.
+        CLEAR:<fs_final>-werks.
+      ENDIF.
+
+    ENDLOOP.
+
+    DELETE lt_final WHERE werks IS INITIAL.
+
+    IF lt_final IS INITIAL.
+      MESSAGE e166(zmm).
+    ENDIF.
+
+    LOOP AT lt_final INTO ls_final.
+
+      "-->Read material desc. .
+      READ TABLE lt_makt INTO DATA(ls_makt) WITH KEY matnr = ls_final-matnr.
+      IF sy-subrc = 0.
+        ls_final-mat_desc = ls_makt-maktx.
+        MODIFY lt_final FROM ls_final TRANSPORTING mat_desc.
+      ENDIF.
+      "-->Read customer name.
+      READ TABLE lt_kna1 INTO DATA(ls_kna1) WITH KEY kunnr = |{ ls_final-zbusptr ALPHA = IN }|.
+      IF sy-subrc = 0.
+        ls_final-zbusptr_name = ls_kna1-name1.
+        MODIFY lt_final FROM ls_final TRANSPORTING zbusptr_name.
+      ENDIF.
+
+      SELECT SINGLE zqty FROM zmm_stk_entry INTO @DATA(ls_stk_entry) WHERE zstk_crt_id = @ls_final-zstk_crt_id AND item_no = @ls_final-item_no. "#EC CI_ALL_FIELDS_NEEDED.
+      SELECT SUM( qty ) FROM zmm_stk_transfer INTO @DATA(lv_sumqty) WHERE zstk_crt_id = @ls_final-zstk_crt_id AND item_no = @ls_final-item_no.
+      IF sy-subrc = 0.
+        ls_final-qty_balance = ls_stk_entry - lv_sumqty.
+        CLEAR lv_sumqty.
+        MODIFY lt_final FROM ls_final TRANSPORTING qty_balance.
+      ENDIF.
+    ENDLOOP.
+
+    LOOP AT lt_final INTO ls_final WHERE qty_balance = 0 ##INTO_OK.
+      DELETE lt_final INDEX sy-tabix.
+    ENDLOOP.
+
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data.
+  DATA: ls_layout TYPE lvc_s_layo           ##NEEDED.
+  DATA: gt_fieldcatalog TYPE lvc_t_fcat     ##NEEDED,
+        gs_fieldcatalog TYPE lvc_s_fcat     ##NEEDED,
+        gt_events       TYPE slis_t_event   ##NEEDED,
+        gs_events       TYPE slis_alv_event ##NEEDED.
+
+  IF lt_final[] IS NOT INITIAL.
+    SORT lt_final.
+
+********Preparing the field cat********
+    PERFORM get_fieldcat USING 'ZSTK_CRT_ID' 'LT_FINAL' 'Stock Entry Id' '' CHANGING lt_fieldcat  ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'ITEM_NO'  'LT_FINAL' 'Item no' ''  CHANGING lt_fieldcat           ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'WERKS' 'LT_FINAL'  'Plant' '' CHANGING lt_fieldcat                ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'ZSTRLOC' 'LT_FINAL' 'Storage Location' ''  CHANGING lt_fieldcat   ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'MATNR'  'LT_FINAL' 'Material Number' '' CHANGING lt_fieldcat      ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'MAT_DESC'  'LT_FINAL' 'Material Desc.' '' CHANGING lt_fieldcat      ##PERF_GLOBAL_PAR_OK ##NO_TEXT.               "added b airditdebi on 24-10-2024
+    PERFORM get_fieldcat USING 'PSPEL' 'LT_FINAL' 'WBS Element' ''  CHANGING lt_fieldcat          ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'ZBUSPTR' 'LT_FINAL' 'Customer id' '' CHANGING lt_fieldcat         ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'ZBUSPTR_NAME' 'LT_FINAL' 'Customer Name' '' CHANGING lt_fieldcat         ##PERF_GLOBAL_PAR_OK ##NO_TEXT.            "added b airditdebi on 24-10-2024
+    PERFORM get_fieldcat USING 'ZQTY' 'LT_FINAL' 'Qty Assigneed' ''  CHANGING lt_fieldcat         ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'UOM' 'LT_FINAL' 'UoM' '' CHANGING lt_fieldcat                     ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'QTY_BALANCE' 'LT_FINAL' 'Qty Balance' '' CHANGING lt_fieldcat     ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'VENDOR' 'LT_FINAL' 'Vendor Number' 'X'  CHANGING lt_fieldcat      ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'STOCK_ISSUE_DT' 'LT_FINAL' 'Stock Issue Date' 'X'  CHANGING lt_fieldcat      ##PERF_GLOBAL_PAR_OK ##NO_TEXT.  "Added on 31.07.2024
+    PERFORM get_fieldcat USING 'VENDOR_NAME' 'LT_FINAL' 'Vendor Name' ''  CHANGING lt_fieldcat    ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'QTY_TRANSFER' 'LT_FINAL' 'Qty Transfer' 'X'  CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'DOCUMENT_NO' 'LT_FINAL' 'Document No' 'X'  CHANGING lt_fieldcat   ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'DOCUMENT_DATE' 'LT_FINAL' 'Document Date' 'X'  CHANGING lt_fieldcat   ##PERF_GLOBAL_PAR_OK ##NO_TEXT.         "Added on 31.07.2024
+    PERFORM get_fieldcat USING 'SITE_NAME' 'LT_FINAL' 'SITE Name' 'X'  CHANGING lt_fieldcat       ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+
+
+*......Trigger ENTER Event.....
+    gs_events-name = 'CALLER_EXIT'.
+    gs_events-form = 'CALLER_EXIT'.
+    APPEND gs_events TO gt_events.
+
+*.....To capture changed data.....
+    gs_events-name = 'DATA_CHANGED'.
+    gs_events-form = 'DATA_CHANGED'.
+    APPEND gs_events TO gt_events.
+
+    CLEAR: ls_layout.
+    ls_layout-cwidth_opt = 'X'.
+
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY_LVC'
+      EXPORTING
+        i_callback_program       = sy-repid
+        i_callback_pf_status_set = 'PF_STATUS'
+        i_callback_user_command  = 'USR_CMND'
+        is_layout_lvc            = ls_layout
+        it_fieldcat_lvc          = lt_fieldcat[]
+        it_events                = gt_events
+      TABLES
+        t_outtab                 = lt_final
+      EXCEPTIONS
+        program_error            = 1
+        OTHERS                   = 2.
+    IF sy-subrc <> 0   .
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                                    WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+  ELSE.
+    MESSAGE 'No data to display !' TYPE 'I' ##NO_TEXT.
+  ENDIF.
+
+ENDFORM.
+
+FORM get_fieldcat  USING    p_field_name
+                            p_tab_name
+                            p_sel_name
+                            p_col_fixed
+                     CHANGING p_lt_fieldcat  ##PERF_NO_TYPE ##NEEDED.
+
+  IF p_field_name = 'QTY_TRANSFER'.
+    ls_fieldcat-datatype = 'ZDEQTY'.
+  ENDIF.
+
+  ls_fieldcat-fieldname = p_field_name.
+  ls_fieldcat-tabname = p_tab_name.
+  ls_fieldcat-scrtext_m = p_sel_name.
+  ls_fieldcat-edit = p_col_fixed    ##NUMBER_OK.
+  ls_fieldcat-outputlen = 40        ##NUMBER_OK.
+  APPEND ls_fieldcat TO lt_fieldcat.
+  CLEAR: ls_fieldcat.
+
+ENDFORM.
+
+FORM caller_exit USING is_data TYPE slis_data_caller_exit   ##NEEDED  ##called  .
+  DATA: lr_alv TYPE REF TO cl_gui_alv_grid.
+
+  IF lr_alv IS INITIAL.
+    CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+      IMPORTING
+        e_grid = lr_alv.
+
+* Register ENTER as edit event:
+    CALL METHOD lr_alv->register_edit_event
+      EXPORTING
+        i_event_id = cl_gui_alv_grid=>mc_evt_enter.
+  ENDIF.
+ENDFORM. "CALLER_EXIT
+
+
+FORM pf_status USING rt_extab TYPE slis_t_extab  ##NEEDED ##called  .
+  SET PF-STATUS 'ZPF_STATUS'.
+ENDFORM.
+
+FORM usr_cmnd      ##called
+        USING p_ucomm LIKE sy-ucomm
+              p_selfield TYPE slis_selfield  ##NEEDED.
+
+  DATA: gd_repid LIKE sy-repid     ##NEEDED , "Exists
+        ref_grid TYPE REF TO cl_gui_alv_grid.
+  IF ref_grid IS INITIAL.
+    CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+      IMPORTING
+        e_grid = ref_grid.
+  ENDIF.
+  IF NOT ref_grid IS INITIAL.
+    CALL METHOD ref_grid->check_changed_data.
+  ENDIF.
+*.....on triggering save data will be saved in database....
+  CASE p_ucomm.
+    WHEN 'SAVE'.
+
+      LOOP AT lt_final INTO ls_final WHERE vendor <> '' AND qty_transfer <> ''  ##LITERAL.
+        SELECT MAX( zstk_trf_id ) FROM zmm_stk_transfer INTO @DATA(lv_count). "#EC CI_NOWHERE
+        lv_count = lv_count + 1. " new id generated
+
+*         SELECT * FROM zmm_stk_transfer INTO TABLE @DATA(lt_zmm_stk_transfer)
+*          WHERE zstk_crt_id = @ls_final-zstk_crt_id ."AND item_no = @ls_final-item_no.
+*
+*        SORT lt_zmm_stk_transfer BY zstk_trf_id zstk_trf_line DESCENDING.
+*        DELETE ADJACENT DUPLICATES FROM lt_zmm_stk_transfer COMPARING zstk_trf_id .
+
+*        IF lt_zmm_stk_transfer IS NOT INITIAL.
+*          LOOP AT lt_zmm_stk_transfer INTO DATA(ls_zmm_stk_transfer) .
+*            ls_stk_transfer-zstk_trf_id = ls_zmm_stk_transfer-zstk_trf_id.
+*            ls_stk_transfer-zstk_trf_line = ls_zmm_stk_transfer-zstk_trf_line + 10.
+*          ENDLOOP.
+*        ENDIF.
+
+*        IF lt_zmm_stk_transfer IS INITIAL.
+        ls_stk_transfer-zstk_trf_id = lv_count.
+        ls_stk_transfer-zstk_trf_line = ls_final-item_no .
+*        ENDIF.
+
+        ls_stk_transfer-zstk_crt_id = ls_final-zstk_crt_id.
+        ls_stk_transfer-item_no = ls_final-item_no.
+        ls_stk_transfer-werks = ls_final-werks.
+        ls_stk_transfer-zstrloc = ls_final-zstrloc.
+        ls_stk_transfer-customer = ls_final-zbusptr.
+        ls_stk_transfer-matnr = ls_final-matnr.
+        ls_stk_transfer-pspel = ls_final-pspel.
+        ls_stk_transfer-vendor = ls_final-vendor.
+        ls_stk_transfer-qty = ls_final-qty_transfer.
+
+*   Begin of Add on 31.07.2024 after discussion with Shivam
+        CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+          EXPORTING
+            date_external            = ls_final-stock_issue_dt
+*           accept_initial_date      =
+          IMPORTING
+            date_internal            = ls_stk_transfer-stock_issue_dt
+          EXCEPTIONS
+            date_external_is_invalid = 1
+            OTHERS                   = 2.
+        IF sy-subrc <> 0.
+* Implement suitable error handling here
+        ENDIF.
+
+        CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+          EXPORTING
+            date_external            = ls_final-document_date
+*           accept_initial_date      =
+          IMPORTING
+            date_internal            = ls_stk_transfer-document_date
+          EXCEPTIONS
+            date_external_is_invalid = 1
+            OTHERS                   = 2.
+        IF sy-subrc <> 0.
+* Implement suitable error handling here
+        ENDIF.
+
+*   End of add 31.07.2024 after discussion with Shivam
+
+        ls_stk_transfer-qty = ls_final-qty_transfer.
+        CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+          EXPORTING
+            input  = ls_final-matnr
+          IMPORTING
+            output = ls_final-matnr.
+
+        SELECT SINGLE matnr, meins FROM mara INTO @DATA(lv_matnr_meins) WHERE matnr = @ls_final-matnr.
+        ls_stk_transfer-uom = lv_matnr_meins-meins.
+        ls_stk_transfer-document_no = ls_final-document_no.
+        ls_stk_transfer-site_name = ls_final-site_name.
+
+        ls_stk_transfer-syuname = sy-uname.
+        ls_stk_transfer-sydate = sy-datum.
+        ls_stk_transfer-sytime = sy-uzeit.
+
+        INSERT INTO zmm_stk_transfer VALUES ls_stk_transfer   .
+        IF sy-subrc = 0.
+          COMMIT WORK AND WAIT.
+          MESSAGE  'Stock Transferred Successfully' TYPE 'S'  ##NO_TEXT.
+        ENDIF.
+      ENDLOOP.
+
+      LOOP AT lt_final INTO ls_final WHERE vendor <> '' AND qty_transfer <> ''  ##INTO_OK ##LITERAL.
+        IF ls_final-zqty = ls_final-qty_transfer.
+          DELETE lt_final INDEX sy-tabix.
+        ENDIF.
+      ENDLOOP.
+
+      CLEAR lt_final.
+      PERFORM refresh_grid.
+
+  ENDCASE.
+ENDFORM.
+
+FORM data_changed USING ir_data_changed TYPE REF TO cl_alv_changed_data_protocol   ##called.
+  DATA ls_modi TYPE lvc_s_modi.
+  SORT lt_final.
+
+  LOOP AT ir_data_changed->mt_mod_cells INTO ls_modi  ##into_ok.
+
+    DATA(lv_index) = ls_modi-row_id.
+    READ TABLE lt_final INTO ls_final INDEX ls_modi-row_id.
+    IF lv_index = ls_modi-row_id AND lv_flag = abap_true.
+      CLEAR : lv_flag.
+    ENDIF.
+    DATA : lv_hype TYPE dd01v-datatype.
+    CASE ls_modi-fieldname.
+      WHEN 'VENDOR'.
+        CLEAR lv_hype.
+        READ TABLE lt_final INTO ls_final INDEX ls_modi-row_id.
+        IF sy-subrc = 0.
+          CALL FUNCTION 'NUMERIC_CHECK'
+            EXPORTING
+              string_in = ls_modi-value
+            IMPORTING
+              htype     = lv_hype.
+          IF lv_hype = 'NUMC'. " NUMERIC
+            DATA lv_vendorid(18) TYPE c.
+            CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+              EXPORTING
+                input  = ls_modi-value
+              IMPORTING
+                output = lv_vendorid.
+            ls_stk_transfer-vendor = lv_vendorid+8(10).
+            IF ls_stk_transfer-vendor IS NOT INITIAL.
+              SELECT SINGLE lifnr, name1 FROM lfa1 INTO @DATA(lv_lfa1) WHERE lifnr = @ls_stk_transfer-vendor.
+              IF sy-subrc <> 0.
+                CONCATENATE 'In-correct vendor id' ls_modi-value INTO DATA(lv_vendormsg) SEPARATED BY '' ##NO_TEXT.
+                MESSAGE lv_vendormsg TYPE 'E'.
+              ELSE.
+                ls_final-vendor_name = lv_lfa1-name1.
+                MODIFY lt_final FROM ls_final INDEX sy-tabix TRANSPORTING vendor_name.
+              ENDIF.
+            ENDIF.
+
+          ELSEIF lv_hype = 'CHAR'. " NON-NUMERIC
+            MESSAGE 'Pls enter numeric value in qty' TYPE 'E' DISPLAY LIKE 'I'  ##NO_TEXT.
+          ENDIF.
+        ENDIF.
+
+      WHEN 'QTY_TRANSFER'.
+        READ TABLE lt_final INTO ls_final INDEX ls_modi-row_id.
+        IF sy-subrc = 0.
+*          CLEAR lv_hype.
+*          CALL FUNCTION 'NUMERIC_CHECK'
+*            EXPORTING
+*              string_in = ls_modi-value
+*            IMPORTING
+*              htype     = lv_hype.
+
+*          IF lv_hype = 'NUMC'. " NUMERIC
+          SELECT SUM( qty ) FROM zmm_stk_transfer INTO @DATA(lv_sumqty)
+          WHERE zstk_crt_id = @ls_final-zstk_crt_id AND item_no = @ls_final-item_no.
+
+          lv_sumqty = ls_final-zqty - lv_sumqty.
+          DATA : lv_modi_val_dec TYPE p DECIMALS 3.
+          REPLACE ALL OCCURRENCES OF ',' IN ls_modi-value WITH '.'.
+          lv_modi_val_dec = ls_modi-value.
+*            IF lv_sumqty >= ls_modi-value.
+          IF lv_sumqty >= lv_modi_val_dec.
+            ls_stk_transfer-qty = lv_modi_val_dec.
+            ls_final-qty_transfer = lv_modi_val_dec.
+            MODIFY lt_final FROM ls_final INDEX sy-tabix TRANSPORTING qty_transfer.
+          ELSE.
+            DATA lv_qtymsg(60) TYPE c.
+            DATA lv_qty(10) TYPE c.
+            lv_qty = lv_sumqty.
+            CONDENSE lv_qty NO-GAPS.
+*            CONCATENATE 'Transfer qty is more then assigned qty' '' INTO lv_qtymsg SEPARATED BY ''.
+            CONCATENATE 'Transfer qty' ls_modi-value 'is more then balance qty' lv_qty INTO lv_qtymsg SEPARATED BY ''  ##NO_TEXT.
+            MESSAGE lv_qtymsg TYPE 'E'.
+          ENDIF.
+        ENDIF.
+*        ELSEIF lv_hype = 'CHAR'. " NON-NUMERIC
+*          MESSAGE 'Pls enter numeric value in qty' TYPE 'E' DISPLAY LIKE 'I'.
+*        ENDIF.
+
+    ENDCASE.
+  ENDLOOP.
+  PERFORM refresh_grid.
+ENDFORM.                    "data_changed
+
+FORM refresh_grid.
+  " Refresh ALV Grid
+  DATA: g_alv TYPE REF TO cl_gui_alv_grid.
+  CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+    IMPORTING
+      e_grid = g_alv.
+  CALL METHOD g_alv->refresh_table_display.
+ENDFORM.

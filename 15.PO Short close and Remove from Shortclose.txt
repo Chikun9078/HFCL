@@ -1,0 +1,223 @@
+PO Shortclose  
+---------------------------------
+* Purpose is to short close open PO which is time taking task for ticking on each line items
+* Benefit is time saving by using the shared Tcode and complying with Audit Observation for Open POs
+
+--------------------------------------------------------------------------------------------------------
+TR :  DFHK910419       AIRDITDEBI   DEBI:TR:MM:REPT:PO Shortclose
+
+---------------------------------------------------------------------------------------------------------*----------------------------------------------------------------------*
+* DESCIPTION   : Report for PO Item shortclose Or Remove for shortclose.
+* PROGRAM NAME : ZMM_PO_SHORTCLOSE_REPORT
+* AUTHOR       : Debidutta Swain(AIRDITDEBI) <AIRDIT>
+* CREATED DATE : 17/10/2024
+* Ticket NO    : 26906
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Description :
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Report ZMM_PO_SHORTCLOSE_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmm_po_shortclose_report.
+*"-------------------------------------------PO Shortclose-----------------------------------------------------"
+TYPES: BEGIN OF ty_ekpo,
+         ebeln TYPE ekpo-ebeln,
+         ebelp TYPE ekpo-ebelp,
+         loekz TYPE ekpo-loekz,
+         elikz TYPE ekpo-elikz,
+       END OF ty_ekpo.
+
+DATA: lv_ebelp                     TYPE ekpo-ebelp,
+      lv_ebeln                     TYPE ekko-ebeln,
+      lv_msg_po_close              TYPE string,
+      lv_msg_po_open               TYPE string,
+      lv_msg_item_no_exist         TYPE string,
+      lv_msg_deleted_item          TYPE string,
+      lv_msg_locked_item           TYPE string,
+      lv_msg_delivery_complete     TYPE string,
+      lv_msg_delivery_NOT_complete TYPE string.
+
+DATA:lt_ekpo TYPE TABLE OF ty_ekpo.
+
+*"--> Preparation of Selection screen.
+SELECTION-SCREEN BEGIN OF BLOCK bl WITH FRAME TITLE TEXT-000.
+  PARAMETERS:p_ebeln TYPE ekko-ebeln OBLIGATORY.
+  SELECT-OPTIONS :s_ebelp FOR lv_ebelp OBLIGATORY .
+SELECTION-SCREEN END OF BLOCK bl.
+
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-003.
+  PARAMETERS : po_dc  RADIOBUTTON GROUP dely DEFAULT 'X',
+               po_ndc RADIOBUTTON GROUP dely.
+SELECTION-SCREEN END OF BLOCK b2.
+
+
+AT SELECTION-SCREEN.
+*"--> Validate the PO.
+  SELECT SINGLE ebeln FROM ekko
+  INTO @lv_ebeln WHERE ebeln EQ @p_ebeln.
+
+  IF lv_ebeln IS INITIAL.
+    MESSAGE TEXT-001 TYPE 'E'.
+    LEAVE PROGRAM.
+  ENDIF.
+
+  "--> check not existing item.
+  SELECT ebeln,ebelp
+  FROM ekpo INTO TABLE @DATA(lt_item)
+  WHERE ebeln EQ @lv_ebeln AND
+        ebelp IN @s_ebelp.
+  IF lt_item IS NOT INITIAL.
+    LOOP AT s_ebelp INTO DATA(ls_ebelp).
+      IF ls_ebelp IS NOT INITIAL AND line_exists( lt_item[ ebelp = ls_ebelp-low ] ).
+        CONTINUE.
+      ELSE.
+        lv_msg_item_no_exist = COND #( WHEN lv_msg_item_no_exist IS INITIAL THEN ls_ebelp-low
+                                            ELSE |{ lv_msg_item_no_exist },{ ls_ebelp-low }|
+                                          ).
+      ENDIF.
+    ENDLOOP.
+
+  ELSE.
+    MESSAGE TEXT-004 TYPE 'E'.
+    LEAVE PROGRAM.
+  ENDIF.
+
+*"--> Perform Operation.
+START-OF-SELECTION.
+  IF lv_ebeln IS NOT INITIAL.
+    PERFORM get_data.
+    PERFORM process_data.
+    PERFORM Display_Message.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  IF lv_ebeln IS NOT INITIAL.
+
+    SELECT ebeln,ebelp,loekz,elikz
+    FROM ekpo INTO TABLE @lt_ekpo
+    WHERE ebeln EQ @lv_ebeln AND
+          ebelp IN @s_ebelp.
+  ENDIF.
+
+  SORT lt_ekpo BY ebeln ebelp.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  IF po_dc EQ 'X'.
+    LOOP AT lt_ekpo INTO DATA(ls_ekpo).
+      IF ls_ekpo-loekz IS INITIAL AND ls_ekpo-elikz IS INITIAL.
+        UPDATE ekpo SET elikz = 'X' WHERE ebeln = ls_ekpo-ebeln AND ebelp = ls_ekpo-ebelP.
+
+        lv_msg_po_close = COND #( WHEN lv_msg_po_close IS INITIAL THEN ls_ekpo-ebelp
+                                  ELSE |{ lv_msg_po_close },{ ls_ekpo-ebelp }|
+                                          ).
+      ENDIF.
+
+      IF ls_ekpo-loekz IS NOT INITIAL AND ls_ekpo-loekz EQ 'L'.
+        lv_msg_deleted_item = COND #( WHEN lv_msg_deleted_item IS INITIAL THEN ls_ekpo-ebelp
+                                      ELSE  |{ lv_msg_deleted_item  },{ ls_ekpo-ebelp }|
+                                    ).
+      ENDIF.
+
+      IF ls_ekpo-loekz IS NOT INITIAL AND ls_ekpo-loekz EQ 'S'.
+        lv_msg_locked_item = COND #( WHEN lv_msg_locked_item IS INITIAL   THEN ls_ekpo-ebelp
+                                     ELSE  |{ lv_msg_locked_item  },{ ls_ekpo-ebelp }|
+                              ).
+      ENDIF.
+
+      IF ls_ekpo-loekz IS INITIAL AND ls_ekpo-elikz IS NOT INITIAL.
+        lv_msg_delivery_complete = COND #( WHEN  lv_msg_delivery_complete IS INITIAL  THEN ls_ekpo-ebelp
+                                           ELSE |{ lv_msg_delivery_complete },{ ls_ekpo-ebelp }|
+                              ).
+      ENDIF.
+    ENDLOOP.
+
+  ELSEIF po_ndc EQ 'X'.
+    LOOP AT lt_ekpo INTO ls_ekpo.
+
+      IF ls_ekpo-loekz IS INITIAL AND ls_ekpo-elikz IS NOT INITIAL.
+        UPDATE ekpo SET elikz = ' ' WHERE ebeln = ls_ekpo-ebeln AND ebelp = ls_ekpo-ebelP.
+
+        lv_msg_po_open = COND #( WHEN lv_msg_po_open IS INITIAL THEN ls_ekpo-ebelp
+                                  ELSE |{ lv_msg_po_open },{ ls_ekpo-ebelp }|
+                                          ).
+      ENDIF.
+
+      IF ls_ekpo-loekz IS NOT INITIAL AND ls_ekpo-loekz EQ 'L'.
+        lv_msg_deleted_item = COND #( WHEN lv_msg_deleted_item IS INITIAL THEN ls_ekpo-ebelp
+                                      ELSE  |{ lv_msg_deleted_item  },{ ls_ekpo-ebelp }|
+                                    ).
+      ENDIF.
+
+      IF ls_ekpo-loekz IS NOT INITIAL AND ls_ekpo-loekz EQ 'S'.
+        lv_msg_locked_item = COND #( WHEN lv_msg_locked_item IS INITIAL   THEN ls_ekpo-ebelp
+                                     ELSE  |{ lv_msg_locked_item  },{ ls_ekpo-ebelp }|
+                              ).
+      ENDIF.
+
+      IF ls_ekpo-loekz IS INITIAL AND ls_ekpo-elikz IS INITIAL.
+        lv_msg_delivery_not_complete = COND #( WHEN  lv_msg_delivery_not_complete IS INITIAL  THEN ls_ekpo-ebelp
+                                               ELSE |{ lv_msg_delivery_not_complete },{ ls_ekpo-ebelp }|
+                              ).
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form Display_Message
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM Display_Message .
+
+  IF lv_msg_po_close IS NOT INITIAL.
+    WRITE:/'PO Item ',lv_msg_po_close,' Short-Close.'.
+  ENDIF.
+  IF lv_msg_po_open IS NOT INITIAL.
+    WRITE:/'PO Item ',lv_msg_po_open,' Removed from Short-Close.'.
+  ENDIF.
+  IF lv_msg_deleted_item  IS NOT INITIAL.
+    WRITE:/'Item ',lv_msg_deleted_item,' Deleted from PO.'.
+  ENDIF.
+  IF lv_msg_locked_item  IS NOT INITIAL.
+    WRITE:/'PO Item ',lv_msg_locked_item,' in Locked State.'.
+  ENDIF.
+  IF lv_msg_delivery_complete  IS NOT INITIAL.
+    WRITE:/'Item ',lv_msg_delivery_complete ,' already Delivery completed.'.
+  ENDIF.
+  IF lv_msg_delivery_not_complete  IS NOT INITIAL.
+    WRITE:/'Item ',lv_msg_delivery_not_complete ,' Delivery Not happened Yet.'.
+  ENDIF.
+  IF lv_msg_item_no_exist IS NOT INITIAL.
+    WRITE:/'PO Item ',lv_msg_item_no_exist,' doesnot Exist.'.
+  ENDIF.
+ENDFORM.
+
+TOP-OF-PAGE.
+  WRITE:'PO Shortclose/Removed From Shortclose Deails.'.
+  WRITE:/'-------------------------------------------------'.

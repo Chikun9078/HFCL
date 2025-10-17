@@ -1,0 +1,565 @@
+*----------------------------------------------------------------------*
+* Business Requirement :
+*
+* PROGRAM NAME : ZFI_NEFT_RTGS_PRINT_REPORT
+* AUTHOR       : Debidutta Swain(AIRDITDEBI)  ::AIRDIT SOFTWARE::
+* CREATED DATE : 13.11.2024
+* Ticket NO    :
+* T-Code       : ZFI0053
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Modification:
+*----------------------------------------------------------------------*
+*NOTE: Here all the variable naming with RTGS Contain both value
+*      of NEFT &RTGS.Plese take care while doing changes and don't confuse.
+*----------------------------------------------------------------------*
+*& Report ZFI_NEFT_RTGS_PRINT_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zfi_neft_rtgs_print_report.
+TABLES: acdoca,bkpf.
+
+*//--> Structure line Declaration.
+TYPES : BEGIN OF ty_header,
+          belnr LIKE bkpf-belnr,
+          bukrs LIKE bkpf-bukrs,
+          gjahr LIKE bkpf-gjahr,
+          blart LIKE bkpf-blart,
+          budat LIKE bkpf-budat,
+        END OF ty_header.
+
+TYPES : BEGIN OF types_rtgs,
+          bukrs LIKE bseg-bukrs,
+          belnr LIKE bseg-belnr,
+          gjahr LIKE bseg-gjahr,
+          koart LIKE bseg-koart,
+          shkzg LIKE bseg-shkzg,
+          gsber LIKE bseg-gsber,
+          dmbtr LIKE bseg-dmbtr,
+          wrbtr LIKE bseg-wrbtr,
+          hkont LIKE bseg-hkont,
+          sgtxt LIKE bseg-sgtxt,
+          lifnr LIKE bseg-lifnr,
+          name1 LIKE lfa1-name1,
+          land1 LIKE lfa1-land1,
+          hbkid LIKE bseg-hbkid,
+          hktid LIKE bseg-hktid,
+          banks LIKE t012-banks,
+          bankl LIKE t012-bankl,
+          bankn LIKE lfbk-bankn,
+          bkont LIKE lfbk-bkont,
+          text1 LIKE t012t-text1,
+          banka LIKE bnka-banka,
+          provz LIKE bnka-provz,
+          stras LIKE bnka-stras,
+          ort01 LIKE bnka-ort01,
+          brnch LIKE bnka-brnch,
+          saknr LIKE skat-saknr,
+          txt50 LIKE skat-txt50,
+        END OF   types_rtgs.
+
+*//--> Data Object Declaration.
+DATA:lv_tabix                   TYPE sy-tabix,
+     lv_amount_word             TYPE char300,
+     lv_benificiary_vendor_flag TYPE char1,
+     lv_word                    TYPE char50,
+     lv_result                  TYPE char300,
+     lv_sl_no                   TYPE int2.
+
+*//-> Workarea declaration.
+DATA:ls_rtgs_final      TYPE zfi_rtgs_print_s,
+     ls_rtgs_bulk_FINAL TYPE zfi_rtgs_bulk_s.
+
+*//-> Required Internal table / Buffer Table.
+DATA: Valid_belnr        TYPE TABLE OF ty_header,
+      lt_rtgs_gl         TYPE TABLE OF types_rtgs,
+      TEMP_rtgs_gl       TYPE TABLE OF types_rtgs,
+      lt_rtgs_vendor     TYPE TABLE OF types_rtgs,
+      temp_rtgs_vendor   TYPE TABLE OF types_rtgs,
+      lt_rtgs_final      TYPE TABLE OF zfi_rtgs_print_s,
+      lt_rtgs_bulk_final TYPE TABLE OF zfi_rtgs_bulk_s.
+
+DATA: ls_output_options     TYPE  ssfcompop,
+      ls_control_parameters TYPE  ssfctrlop,
+      ls_job_output_info    TYPE  ssfcrescl,
+      ls_FNL_output_info    TYPE  ssfcrescl,
+      lv_fmname_rtgs        TYPE  rs38l_fnam,
+      lv_fmname_rtgs_bulk   TYPE  rs38l_fnam.
+
+*//-> Smartform Name used.
+CONSTANTS: lv_formname_rtgs      TYPE  tdsfname VALUE 'ZFISF_RTGS_FORM',
+           lv_formname_rtgs_bulk TYPE tdsfname VALUE 'ZFISF_RTGS_BULK_FORM'.
+
+*//--> Selection field Preparation.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS : s_belnr FOR bkpf-belnr OBLIGATORY.
+
+  PARAMETERS: p_bukrs TYPE bkpf-bukrs OBLIGATORY,
+              p_gjahr TYPE bkpf-gjahr OBLIGATORY DEFAULT '2024'.
+SELECTION-SCREEN END OF BLOCK b1 .
+
+*//--> Selection field Preparation.
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  PARAMETERS : r_rtgs RADIOBUTTON GROUP dely DEFAULT 'X',
+               r_neft RADIOBUTTON GROUP dely.
+SELECTION-SCREEN END OF BLOCK b2.
+
+*//--> Check the input validation..
+AT SELECTION-SCREEN.
+
+  "--> Check Valid company code.
+  SELECT SINGLE bukrs FROM t001 INTO @DATA(v_bukrs) WHERE bukrs EQ @p_bukrs.
+  IF v_BUKRS IS INITIAL.
+    MESSAGE TEXT-020 TYPE 'E'.
+  ENDIF.
+
+  "--> check Document Validation.
+  SELECT belnr,bukrs,gjahr,blart,budat FROM bkpf INTO TABLE @valid_belnr
+  WHERE bukrs EQ @p_bukrs AND gjahr EQ @p_gjahr AND belnr IN @s_belnr AND blart IN ('KZ','SA').
+  IF valid_belnr IS INITIAL.
+    MESSAGE TEXT-021 TYPE 'E'.
+  ENDIF.
+
+START-OF-SELECTION.
+  IF valid_belnr IS NOT INITIAL AND r_rtgs EQ TEXT-003 OR r_neft EQ TEXT-003.
+
+    PERFORM get_data.            "//-> Get all the details Requird for Print .
+    PERFORM process_data.        "//-> Process the data to get the final result .
+    PERFORM display_print.       "//-> Display the Smartform ..
+
+  ENDIF.
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*  K = Vendors
+*  S = G/L accounts
+*&---------------------------------------------------------------------*
+FORM get_data .
+  "--> sort the Buffer table contail valid Document Number.
+  SORT valid_belnr BY belnr.
+
+  IF valid_belnr IS NOT INITIAL.
+
+    "--> get the G/L Account details of Document Number .
+    SELECT bseg~bukrs,bseg~belnr,bseg~gjahr,bseg~koart,bseg~shkzg,
+           bseg~gsber,bseg~dmbtr,bseg~wrbtr,bseg~hkont,bseg~lifnr,
+           bseg~hbkid,bseg~hktid,
+           t012k~bankn,t012k~bkont,
+           t012t~text1,
+           t012~banks,t012~bankl,
+           bnka~banka,bnka~provz,bnka~stras,bnka~ort01,bnka~brnch,
+           skat~saknr,skat~txt50
+    FROM bseg
+    LEFT OUTER JOIN t012k ON t012k~hbkid = bseg~hbkid AND t012k~hktid = bseg~hktid
+    LEFT OUTER JOIN t012t ON t012t~hbkid = bseg~hbkid AND t012t~hktid = bseg~hktid AND  t012t~spras = @sy-langu "#EC CI_BUFFJOIN
+    LEFT OUTER JOIN t012  ON t012~bukrs  = bseg~bukrs AND t012~hbkid  = bseg~hbkid
+    LEFT OUTER JOIN bnka  ON bnka~banks  = t012~banks AND bnka~bankl  = t012~bankl
+    LEFT OUTER JOIN skat  ON skat~saknr  = bseg~hkont AND skat~spras  = @sy-langu "#EC CI_BUFFJOIN
+    INTO CORRESPONDING FIELDS OF TABLE @lt_rtgs_gl
+    FOR ALL ENTRIES IN @valid_belnr
+    WHERE bseg~bukrs = @valid_belnr-bukrs AND
+          bseg~belnr = @valid_belnr-belnr AND
+          bseg~gjahr = @valid_belnr-gjahr AND
+          bseg~koart = 'S'.
+
+    "--> get the vendor details of Document Number .
+    SELECT bseg~bukrs,bseg~belnr,bseg~gjahr,bseg~koart,bseg~shkzg,
+           bseg~gsber,bseg~dmbtr,bseg~wrbtr,bseg~hkont,bseg~lifnr,bseg~sgtxt,
+           lfa1~name1,lfa1~land1,
+           lfbk~bankl,lfbk~bankn,lfbk~bkont,
+           bnka~banka,bnka~provz,bnka~stras,bnka~ort01,bnka~brnch
+    FROM bseg
+    LEFT OUTER JOIN lfa1  ON lfa1~lifnr  = bseg~lifnr
+    LEFT OUTER JOIN lfbk  ON lfbk~lifnr  = bseg~lifnr AND lfbk~banks  = lfa1~land1
+    LEFT OUTER JOIN bnka  ON bnka~banks  = lfa1~land1 AND bnka~bankl  = lfbk~bankl
+    INTO CORRESPONDING FIELDS OF  TABLE  @lt_rtgs_vendor
+    FOR ALL ENTRIES IN @valid_belnr
+    WHERE bseg~bukrs = @valid_belnr-bukrs AND
+          bseg~belnr = @valid_belnr-belnr AND
+          bseg~gjahr = @valid_belnr-gjahr AND
+          bseg~koart = 'K'.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+FORM process_data .
+
+  SORT: lt_rtgs_gl BY belnr,
+        lt_rtgs_vendor BY belnr.
+
+  LOOP AT valid_belnr INTO DATA(ls_valid).
+
+    ls_rtgs_final-belnr = ls_valid-belnr.
+    ls_rtgs_final-gjahr = ls_valid-gjahr.
+    ls_rtgs_final-bukrs = ls_valid-bukrs.
+    ls_rtgs_final-budat = ls_valid-budat.
+    ls_rtgs_final-rqst_person    = TEXT-010.
+
+
+*-->Get the requested bank details.
+    READ TABLE lt_rtgs_gl INTO DATA(ls_gl) WITH KEY belnr = ls_valid-belnr koart = 'S' shkzg = 'H'.
+    IF sy-subrc EQ 0.
+      ls_rtgs_final-rqst_bankn     = ls_gl-bankn.
+      ls_rtgs_final-rest_ifsc_code = ls_gl-bankl.
+      ls_rtgs_final-rqst_banka     = ls_gl-banka.
+      ls_rtgs_final-rest_add_brnch = ls_gl-brnch.
+      ls_rtgs_final-rqst_add_stras = ls_gl-stras.
+      ls_rtgs_final-rqst_add_ort01 = ls_gl-ort01.
+
+      IF ls_gl-dmbtr IS NOT INITIAL.
+        ls_rtgs_final-amount         = ls_gl-dmbtr.
+      ELSE.
+        ls_rtgs_final-amount         = ls_gl-wrbtr.
+      ENDIF.
+
+      "--> Convert amount into WORD.
+      IF ls_rtgs_final-amount IS NOT INITIAL.
+        CALL FUNCTION 'HR_IN_CHG_INR_WRDS'
+          EXPORTING
+            amt_in_num         = CONV pc207-betrg( ls_rtgs_final-amount )
+          IMPORTING
+            amt_in_words       = lv_amount_word
+          EXCEPTIONS
+            data_type_mismatch = 1
+            OTHERS             = 2.
+        IF sy-subrc <> 0.
+          " Implement suitable error handling here
+        ENDIF.
+
+        TRANSLATE lv_amount_word TO LOWER CASE .
+        SPLIT lv_amount_word AT space INTO TABLE DATA(itab) .
+        LOOP AT itab ASSIGNING  FIELD-SYMBOL(<temp>) .
+          lv_word = <temp> .
+          TRANSLATE lv_word+0(1) TO UPPER CASE .
+          CONCATENATE lv_result lv_word INTO lv_result SEPARATED BY space .
+        ENDLOOP .
+        CLEAR lv_amount_word.
+        lv_amount_word = lv_result.
+        CLEAR: lv_word,lv_result,itab.
+
+        ls_rtgs_final-amount_w = |{ lv_amount_word } Only| .
+      ENDIF.
+
+      "--> Get the REF: Detail need to be shown in Print.
+      IF ls_gl-txt50 IS NOT INITIAL.
+        IF ls_gl-txt50 CA 'cc' OR ls_gl-txt50 CA 'CC'.
+          ls_rtgs_final-print_ref =  TEXT-012.
+        ELSEIF ls_gl-txt50 CA 'ca' OR ls_gl-txt50 CA 'CA'.
+          ls_rtgs_final-print_ref =  TEXT-013.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+*--> Get Benificiary Bank details.
+*---> first check wheather any supplier detail availble .
+    "--> Here i have taken one Variable "LV_BENIFICIARY_VENDOR_FLAG", It indicates if any Vendor for the payment is available for this document, then it contain value as 'X'.
+    CLEAR:lv_benificiary_vendor_flag.
+    REFRESH : temp_rtgs_vendor.
+    READ TABLE lt_rtgs_vendor INTO DATA(ls_vendor) WITH KEY belnr = ls_valid-belnr koart = 'K' shkzg = 'S'.
+    IF sy-subrc EQ 0.
+      lv_benificiary_vendor_flag = 'X'.
+
+      SELECT * FROM @lt_rtgs_vendor AS vendor
+      WHERE belnr = @ls_valid-belnr AND koart = 'K' AND shkzg = 'S' INTO TABLE @temp_rtgs_vendor. "#EC CI_NOORDER
+      DESCRIBE TABLE temp_rtgs_vendor LINES DATA(lv_count).
+
+      IF  lv_count EQ 1.
+        IF r_rtgs EQ TEXT-003  .
+          ls_rtgs_final-print_subject  = TEXT-011.
+        ELSEIF r_neft EQ TEXT-003.
+          ls_rtgs_final-print_subject  = TEXT-016.
+        ENDIF.
+
+        ls_rtgs_final-benif_count      = lv_count.
+        ls_rtgs_final-benif_name       = ls_vendor-name1.
+        ls_rtgs_final-benif_bankn      = ls_vendor-bankn.
+        ls_rtgs_final-benif_ifsc_code  = ls_vendor-bankl.
+        ls_rtgs_final-benif_banka      = ls_vendor-banka.
+        ls_rtgs_final-benif_add_stras  = ls_vendor-stras.
+        ls_rtgs_final-benif_add_ort01  = ls_vendor-ort01.
+        ls_rtgs_final-benif_add_brnch  = ls_vendor-brnch.
+        IF ls_vendor-bkont  = '10'  .
+          ls_rtgs_final-benif_acc_type = 'Savings account'.
+        ELSEIF ls_vendor-bkont  = '11'.
+          ls_rtgs_final-benif_acc_type = 'Current account'.
+        ENDIF.
+        "ls_rtgs_final-benif_acc_type
+        ls_rtgs_final-print_purpose    = TEXT-015.
+        ls_rtgs_final-peint_footer_msg = 'Please remit the amount as per the aforesaid details, by debiting our account for the amount of remittance plus your charges.'.
+
+      ELSEIF lv_count GT 1.
+        IF r_rtgs EQ TEXT-003  .
+          ls_rtgs_final-print_subject  = TEXT-014.
+        ELSEIF r_neft EQ TEXT-003.
+          ls_rtgs_final-print_subject  = TEXT-017.
+        ENDIF.
+        ls_rtgs_final-benif_count      = lv_count.
+
+        CLEAR: lv_sl_no.
+        SORT temp_rtgs_vendor BY belnr lifnr.
+        LOOP AT temp_rtgs_vendor INTO DATA(wa_rtgs).
+
+          lv_sl_no = lv_sl_no + 1.
+          ls_rtgs_bulk_final-sl_no           = lV_sl_no.
+          ls_rtgs_bulk_final-belnr           = wa_rtgs-belnr.
+          ls_rtgs_bulk_final-koart           = wa_rtgs-koart.
+          ls_rtgs_bulk_final-shkzg           = wa_rtgs-shkzg.
+          ls_rtgs_bulk_final-sb_ca_ind       = wa_rtgs-bkont.
+          ls_rtgs_bulk_final-benif_ifsc      = wa_rtgs-bankl.
+          ls_rtgs_bulk_final-benif_acc       = wa_rtgs-bankn.
+          ls_rtgs_bulk_final-benif_name      = wa_rtgs-name1.
+          ls_rtgs_bulk_final-remitter_name   = wa_rtgs-banka.
+          ls_rtgs_bulk_final-lifnr           = wa_rtgs-lifnr.
+          ls_rtgs_bulk_final-purpose         = wa_rtgs-sgtxt.
+          IF wa_rtgs-dmbtr IS NOT INITIAL.
+            ls_rtgs_bulk_final-remit_amount  = wa_rtgs-dmbtr.
+          ELSE.
+            ls_rtgs_bulk_final-remit_amount  = wa_rtgs-wrbtr.
+          ENDIF.
+          IF wa_rtgs-shkzg = 'S'.
+            ls_rtgs_bulk_final-dr_cr_ind = 'C'.
+          ELSEIF wa_rtgs-shkzg = 'H'.
+            ls_rtgs_bulk_final-dr_cr_ind = 'D'.
+          ENDIF.
+
+          APPEND ls_rtgs_bulk_final TO lt_rtgs_bulk_final.
+          CLEAR: ls_rtgs_bulk_final,wa_rtgs.
+        ENDLOOP.
+      ENDIF.
+    ENDIF.
+
+*---> if supplier detail is not availble then check and show the supplier GL acount detail if availble.
+    CLEAR:lv_count,ls_gl.
+    IF lv_benificiary_vendor_flag NE 'X'.
+      READ TABLE lt_rtgs_gl INTO LS_gl WITH KEY belnr = ls_valid-belnr koart = 'S' shkzg = 'S'.
+      IF sy-subrc EQ 0.
+        SELECT * FROM @lt_rtgs_GL AS gl
+        WHERE belnr = @ls_valid-belnr AND koart = 'S' AND  shkzg = 'S' INTO TABLE @temp_rtgs_gl. "#EC CI_NOORDER
+        DESCRIBE TABLE temp_rtgs_GL LINES lv_count.
+
+        IF  lv_count EQ 1.
+          IF r_rtgs EQ TEXT-003  .
+            ls_rtgs_final-print_subject  = TEXT-011.
+          ELSEIF r_neft EQ TEXT-003.
+            ls_rtgs_final-print_subject  = TEXT-016.
+          ENDIF.
+          ls_rtgs_final-benif_count      = lv_count.
+          ls_rtgs_final-benif_name       = ls_gl-text1.
+          ls_rtgs_final-benif_bankn      = ls_gl-bankn.
+          ls_rtgs_final-benif_ifsc_code  = ls_gl-bankl.
+          ls_rtgs_final-benif_banka      = ls_gl-banka.
+          ls_rtgs_final-benif_add_stras  = ls_gl-stras.
+          ls_rtgs_final-benif_add_ort01  = ls_gl-ort01.
+          ls_rtgs_final-benif_add_brnch  = ls_gl-brnch.
+          ls_rtgs_final-benif_acc_type   = ls_rtgs_final-print_ref.
+
+          ls_rtgs_final-print_purpose    = TEXT-015.
+          ls_rtgs_final-peint_footer_msg = 'Please remit the amount as per the aforesaid details, by debiting our account for the amount of remittance plus your charges.'.
+
+        ELSEIF lv_count GT 1.
+          IF r_rtgs EQ TEXT-003  .
+            ls_rtgs_final-print_subject  = TEXT-014.
+          ELSEIF r_neft EQ TEXT-003.
+            ls_rtgs_final-print_subject  = TEXT-017.
+          ENDIF.
+          ls_rtgs_final-benif_count      = lv_count.
+
+          CLEAR: lv_sl_no.
+          SORT temp_rtgs_gl BY belnr hkont.
+          LOOP AT temp_rtgs_GL INTO wa_rtgs.
+            lv_sl_no = lv_sl_no + 1.
+            ls_rtgs_bulk_final-sl_no           = lV_sl_no.
+            ls_rtgs_bulk_final-belnr           = wa_rtgs-belnr.
+            ls_rtgs_bulk_final-koart           = wa_rtgs-koart.
+            ls_rtgs_bulk_final-shkzg           = wa_rtgs-shkzg.
+            ls_rtgs_bulk_final-sb_ca_ind       = wa_rtgs-bkont.
+            ls_rtgs_bulk_final-benif_ifsc      = wa_rtgs-bankl.
+            ls_rtgs_bulk_final-benif_acc       = wa_rtgs-bankn.
+            ls_rtgs_bulk_final-benif_name      = wa_rtgs-text1.
+            ls_rtgs_bulk_final-remitter_name   = wa_rtgs-banka.
+            ls_rtgs_bulk_final-purpose         = wa_rtgs-sgtxt.
+            ls_rtgs_bulk_final-hkont           = wa_rtgs-hkont.
+            IF wa_rtgs-dmbtr IS NOT INITIAL.
+              ls_rtgs_bulk_final-remit_amount  = wa_rtgs-dmbtr.
+            ELSE.
+              ls_rtgs_bulk_final-remit_amount  = wa_rtgs-wrbtr.
+            ENDIF.
+            IF wa_rtgs-shkzg = 'S'.
+              ls_rtgs_bulk_final-dr_cr_ind = 'C'.
+            ELSEIF wa_rtgs-shkzg = 'H'.
+              ls_rtgs_bulk_final-dr_cr_ind = 'D'.
+            ENDIF.
+
+            APPEND ls_rtgs_bulk_final TO lt_rtgs_bulk_final.
+          ENDLOOP.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+
+    APPEND ls_rtgs_final TO lt_rtgs_final.
+  ENDLOOP.
+
+  SORT: lt_rtgs_final BY belnr,
+        lt_rtgs_bulk_final BY belnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_print
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+FORM display_print .
+
+  CLEAR:ls_output_options,ls_control_parameters,ls_fnL_output_info.
+
+  "--> Providing constant value for print.
+  ls_output_options-tddest   = 'LOCL'.
+
+  ls_control_parameters-preview   = 'X'.
+  ls_control_parameters-getotf    = 'X'.
+  ls_control_parameters-no_dialog = 'X'.
+  "--------------------------------------------
+
+  "--> Get the Function Modules Related to taht smartform.
+  PERFORM get_funtion_module.
+
+  "--> Print Smartform.
+  LOOP AT lt_rtgs_final INTO DATA(es_rtgs_final).
+
+    IF ls_rtgs_final-benif_count EQ 1.
+      CALL FUNCTION lv_fmname_rtgs
+        EXPORTING
+          control_parameters = ls_control_parameters
+          output_options     = ls_output_options
+          user_settings      = ' '
+          ls_rtgs            = es_rtgs_final
+        IMPORTING
+          job_output_info    = ls_job_output_info
+        EXCEPTIONS
+          formatting_error   = 1
+          internal_error     = 2
+          send_error         = 3
+          user_canceled      = 4
+          OTHERS             = 5.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      CALL FUNCTION 'SSF_CLOSE'
+        IMPORTING
+          job_output_info  = ls_job_output_info
+        EXCEPTIONS
+          formatting_error = 1
+          internal_error   = 2
+          send_error       = 3
+          OTHERS           = 4.
+      IF sy-subrc <> 0.
+        " Implement suitable error handling here
+      ENDIF.
+      APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+      CLEAR: es_rtgs_final,ls_job_output_info.
+
+*--> for print Bulk RTGS/NEFT Smartform.
+    ELSEIF ls_rtgs_final-benif_count GT 1.
+
+      DATA(et_rtgs_bulk) = CORRESPONDING zfi_rtgs_bulk_t( lt_rtgs_bulk_final ).
+      DELETE et_rtgs_bulk WHERE belnr NE es_rtgs_final-belnr .
+      SORT et_rtgs_bulk BY sl_no.
+      DESCRIBE TABLE et_rtgs_bulk LINES DATA(lv_count).
+
+      IF es_rtgs_final-benif_count EQ lv_count .
+        CALL FUNCTION lv_fmname_rtgs_bulk
+          EXPORTING
+            control_parameters = ls_control_parameters
+            output_options     = ls_output_options
+            user_settings      = ' '
+            ls_rtgs            = es_rtgs_final
+            lt_rtgs_bulk       = et_rtgs_bulk
+          IMPORTING
+            job_output_info    = ls_job_output_info
+          EXCEPTIONS
+            formatting_error   = 1
+            internal_error     = 2
+            send_error         = 3
+            user_canceled      = 4
+            OTHERS             = 5.
+        IF sy-subrc <> 0.
+          " Implement suitable error handling here
+        ENDIF.
+
+        CALL FUNCTION 'SSF_CLOSE'
+          IMPORTING
+            job_output_info  = ls_job_output_info
+          EXCEPTIONS
+            formatting_error = 1
+            internal_error   = 2
+            send_error       = 3
+            OTHERS           = 4.
+        IF sy-subrc <> 0.
+          " Implement suitable error handling here
+        ENDIF.
+        APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+
+      ENDIF.
+      CLEAR: es_rtgs_final,ls_job_output_info.
+    ENDIF.
+  ENDLOOP.
+
+*//--> Print Form.
+  CALL FUNCTION 'HR_IT_DISPLAY_WITH_PDF'
+    TABLES
+      otf_table = ls_fnL_output_info-otfdata.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_funtion_module
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_funtion_module .
+  CLEAR :lv_fmname_rtgs.
+
+  "--> Function Module for single Transaction
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lv_formname_rtgs
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = lv_fmname_rtgs
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+  "--> Function Module For BULK RTGS transaction.
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lv_formname_rtgs_bulk
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = lv_fmname_rtgs_bulk
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+ENDFORM.

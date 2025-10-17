@@ -1,0 +1,898 @@
+*&---------------------------------------------------------------------*
+*& Report ZSDEP_DUE_N_NOTDUE_SALEORDRREP
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zsdep_due_n_notdue_saleordrrep.
+
+TABLES : vbak, vbap, stxh.
+
+DATA : zcountline1  LIKE  sy-tabix.
+
+DATA:   fcat    TYPE slis_fieldcat_alv  OCCURS 0 WITH HEADER LINE.
+
+DATA : raw_sales_group_texts TYPE tvgrt OCCURS 0 WITH HEADER LINE,
+       raw_sales_offce_texts TYPE tvkbt OCCURS 0 WITH HEADER LINE,
+       lines                 LIKE tline OCCURS 0 WITH HEADER LINE.
+
+DATA : BEGIN OF raw_sordr_business_data OCCURS 0,
+         vbeln LIKE   vbkd-vbeln,
+         posnr LIKE   vbkd-posnr,
+         zterm LIKE   vbkd-zterm,
+         inco1 LIKE   vbkd-inco1,
+         inco2 LIKE   vbkd-inco2,
+       END   OF raw_sordr_business_data.
+
+DATA : BEGIN OF raw_sale_order_data OCCURS 0,
+         vbeln  LIKE   vbak-vbeln,
+         posnr  LIKE   vbap-posnr,
+         etenr  LIKE   vbep-etenr,
+         audat  LIKE   vbak-audat,
+         auart  LIKE   vbak-auart,
+         bstnk  LIKE   vbak-bstnk,
+         kunnr  LIKE   vbak-kunnr,
+         bstdk  LIKE   vbak-bstdk,
+         vkgrp  LIKE   vbak-vkgrp,
+         vkbur  LIKE   vbak-vkbur,
+         matnr  LIKE   vbap-matnr,
+         arktx  LIKE   vbap-arktx,
+         vrkme  LIKE   vbap-vrkme,
+*         meins  LIKE   vbap-meins,
+         kwmeng LIKE   vbap-kwmeng,
+         uebto  LIKE   vbap-uebto,
+         untto  LIKE   vbap-untto,
+         werks  LIKE   vbap-werks,
+         ntgew  LIKE   vbap-ntgew,
+         gewei  LIKE   vbap-gewei,
+         netpr  LIKE   vbap-netpr,
+         gbsta  LIKE   vbap-gbsta,
+         lfsta  LIKE   vbap-lfsta,
+         edatu  LIKE   vbep-edatu,
+         waerk  LIKE   vbak-waerk,
+         zcrd   LIKE   vbap-zcrd,
+         zspd   LIKE   vbap-zspd,
+         ztds   LIKE   vbap-ztds,
+         tdsvr  LIKE   vbap-tdsvr,
+         zdrm   LIKE   vbap-zdrm,
+         zpds   LIKE   vbap-zpds,
+         zduppr LIKE   vbap-zduppr,
+         zdlow  LIKE   vbap-zdlow,
+         zshl   LIKE   vbap-zshl,
+         zremk  LIKE   vbap-zremk,
+         ztol   LIKE   vbap-ztol,
+         zdtol  LIKE   vbap-zdtol,
+         zotol  LIKE   vbap-zotol,
+       END   OF raw_sale_order_data.
+
+DATA : BEGIN OF raw_sales_delivered_details OCCURS 0,
+         vbelv   LIKE   vbfa-vbelv,
+         posnv   LIKE   vbfa-posnv,
+         vbeln   LIKE   vbfa-vbeln,
+         posnn   LIKE   vbfa-posnn,
+         vbtyp_n LIKE   vbfa-vbtyp_n,
+         rfmng   LIKE   vbfa-rfmng,
+         meins   LIKE   vbfa-meins,
+         erdat   LIKE   vbfa-erdat,
+       END   OF raw_sales_delivered_details.
+
+DATA : BEGIN OF result OCCURS 0,
+         bstnk                     LIKE   vbak-bstnk,
+         bstdk                     LIKE   vbak-bstdk,
+         kunnr                     LIKE   vbak-kunnr,
+         name1                     LIKE   kna1-name1,
+         vbeln                     LIKE   vbap-vbeln,
+         vkgrp                     LIKE   vbak-vkgrp,
+         vkgrp_DESC                LIKE   tvgrt-bezei,
+         vkbur                     LIKE   vbak-vkbur,
+         vkbur_desc                LIKE   tvkbt-bezei,
+         zterm                     LIKE   vbkd-zterm,
+         inco1                     LIKE   vbkd-inco1,
+         inco2                     LIKE   vbkd-inco2,
+         posnr                     LIKE   vbap-posnr,
+         audat                     LIKE   vbak-audat,
+         auart                     LIKE   vbak-auart,
+         edatu                     LIKE   vbep-edatu,
+         werks                     LIKE   vbap-werks,
+         matnr                     LIKE   vbap-matnr,
+         arktx                     LIKE   vbap-arktx,
+*         VRKME                     LIKE   vbap-VRKME,
+         meins                     LIKE   vbap-meins,
+         kwmeng                    LIKE   vbap-kwmeng,
+         conv_meins                LIKE   vbap-meins,                         "--> addded by AIRDITDEBI 16-12-2024 FOR CONVERT UOM TO 'KM'
+         conv_kwmeng               LIKE   vbap-kwmeng,                        "--> addded by AIRDITDEBI 16-12-2024 FOR CONVERT QUANTITY TO 'KM' If quantity on "Foot,meter"
+         uebto                     LIKE   vbap-uebto,
+         untto                     LIKE   vbap-untto,
+         dlvrdqty                  LIKE   vbfa-rfmng,
+         dlvrdqty_KM               LIKE   vbfa-rfmng,                        "--> addded by AIRDITDEBI 16-12-2024 FOR CONVERT QUANTITY TO 'KM' If quantity on "Foot,meter"
+         balqty                    LIKE   vbfa-rfmng,
+         balqty_KM                 LIKE   vbfa-rfmng,                        "--> addded by AIRDITDEBI 16-12-2024 FOR CONVERT QUANTITY TO 'KM' If quantity on "Foot,meter"
+         netpr                     LIKE   vbap-netpr,
+         netpr_KM                  LIKE   vbap-netpr,                        "--> addded by AIRDITDEBI 16-12-2024 FOR CONVERT QUANTITY VALUE TO 'KM' If quantity on "Foot,meter"
+         waerk                     LIKE   vbak-waerk,
+         ntgew                     LIKE   vbap-ntgew,
+         gewei                     LIKE   vbap-gewei,
+         dlvstatus(25),
+         ovrdlvstatus(25),
+         zcrd                      LIKE   vbap-zcrd,
+         zspd                      LIKE   vbap-zspd,
+         ztds                      LIKE   vbap-ztds,
+         tdsvr                     LIKE   vbap-tdsvr,
+         zdrm                      LIKE   vbap-zdrm,
+         zpds                      LIKE   vbap-zpds,
+         zduppr                    LIKE   vbap-zduppr,
+         zdlow                     LIKE   vbap-zdlow,
+         zshl                      LIKE   vbap-zshl,
+         zremk                     LIKE   vbap-zremk,
+         ztol                      LIKE   vbap-ztol,
+         zdtol                     LIKE   vbap-zdtol,
+         zotol                     LIKE   vbap-zotol,
+         inspections_txt(100),
+         special_instructions(100),
+         uk_n_ce_texts(100),
+         customer_part_number(100),
+         customer_description(100),
+       END   OF result.
+
+DATA: uv_qty LIKE vbap-kwmeng,
+      uv_uom LIKE vbap-meins,
+      cv_qty LIKE vbap-kwmeng.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME.
+  SELECT-OPTIONS: s_vbeln FOR vbak-vbeln,
+                  s_kunnr FOR vbak-kunnr,
+                  s_audat FOR vbak-audat,
+                  s_werks FOR vbap-werks,
+                  s_vkorg FOR vbak-vkorg,
+                  s_auart FOR vbak-auart,
+                  s_VKGRP FOR vbak-vkgrp,
+                  s_VKBUR FOR vbak-vkbur,
+                  s_bstnk FOR vbak-bstnk.
+SELECTION-SCREEN  END OF BLOCK b1.
+
+START-OF-SELECTION.
+  PERFORM get_data.
+  PERFORM process_data.
+  PERFORM display_data.
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_raw_salesgroup_texts.
+  PERFORM get_raw_salesoffce_texts.
+  PERFORM get_raw_sale_ordr_data.
+  IF raw_sale_order_data[] IS NOT INITIAL.
+    PERFORM get_raw_sale_ordr_bdata.
+    PERFORM get_raw_delivery_details.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  CLEAR : result[].
+
+  LOOP AT raw_sale_order_data.
+    CLEAR : result.
+    result-bstnk    = raw_sale_order_data-bstnk.
+    result-bstdk    = raw_sale_order_data-bstdk.
+    result-kunnr    = raw_sale_order_data-kunnr.
+    SELECT     SINGLE   name1
+      INTO     result-name1
+      FROM     kna1
+      WHERE    kunnr = raw_sale_order_data-kunnr.
+    result-vbeln    = raw_sale_order_data-vbeln.
+    result-vkbur    = raw_sale_order_data-vkbur.
+    result-vkgrp    = raw_sale_order_data-vkgrp.
+    READ TABLE raw_sales_group_texts WITH KEY vkgrp = raw_sale_order_data-vkgrp BINARY SEARCH.
+    IF sy-subrc = 0.
+      result-vkgrp_desc = raw_sales_group_texts-bezei.
+    ENDIF.
+    READ TABLE raw_sales_offce_texts WITH KEY vkbur = raw_sale_order_data-vkbur BINARY SEARCH.
+    IF sy-subrc = 0.
+      result-vkbur_desc  = raw_sales_offce_texts-bezei.
+    ENDIF.
+    READ TABLE raw_sordr_business_data WITH KEY vbeln = raw_sale_order_data-vbeln BINARY SEARCH.
+    IF sy-subrc = 0.
+      result-inco1  = raw_sordr_business_data-inco1.
+      result-inco2  = raw_sordr_business_data-inco2.
+      result-zterm  = raw_sordr_business_data-zterm.
+    ENDIF.
+    result-posnr    = raw_sale_order_data-posnr.
+    result-audat    = raw_sale_order_data-audat.
+    result-auart    = raw_sale_order_data-auart.
+    result-edatu    = raw_sale_order_data-edatu.
+    result-ntgew    = raw_sale_order_data-ntgew.
+    result-gewei    = raw_sale_order_data-gewei.
+    result-netpr    = raw_sale_order_data-netpr.
+    result-waerk    = raw_sale_order_data-waerk.
+    result-kwmeng   = raw_sale_order_data-kwmeng.
+    result-uebto    = raw_sale_order_data-uebto.
+    result-untto    = raw_sale_order_data-untto.
+    result-meins    = raw_sale_order_data-vrkme.
+    result-matnr    = raw_sale_order_data-matnr.
+    result-arktx    = raw_sale_order_data-arktx.
+    result-werks    = raw_sale_order_data-werks.
+    READ TABLE raw_sales_delivered_details WITH KEY vbelv = raw_sale_order_data-vbeln  posnv = raw_sale_order_data-posnr BINARY SEARCH.
+    IF sy-subrc = 0.
+      CLEAR : zcountline1.
+      zcountline1 = sy-tabix.
+      LOOP AT raw_sales_delivered_details FROM zcountline1.
+        IF raw_sales_delivered_details-vbelv NE raw_sale_order_data-vbeln OR raw_sales_delivered_details-posnv NE raw_sale_order_data-posnr.
+          EXIT.
+        ELSE.
+          result-dlvrdqty  = result-dlvrdqty + raw_sales_delivered_details-rfmng.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+    result-balqty    =   result-kwmeng - result-dlvrdqty.
+
+*/Start/--> Accoding to funtional "Utam", if the UOM is in Foot & Meter the convert the Qantity  into KM .                             "===> Addred by AIRDITDEBI ON 16-12-2024
+    IF raw_sale_order_data-vrkme = 'FT' OR raw_sale_order_data-vrkme = 'M' OR raw_sale_order_data-vrkme = 'KM'.
+      result-CONV_meins = 'KM'.
+
+      IF raw_sale_order_data-vrkme = 'FT' OR raw_sale_order_data-vrkme = 'M'.
+        IF raw_sale_order_data-kwmeng IS NOT INITIAL.
+          CLEAR: uv_qty,uv_uom,cv_qty.
+          uv_qty = raw_sale_order_data-kwmeng.
+          uv_uom = raw_sale_order_data-vrkme.
+          PERFORM conversion USING uv_qty uv_uom CHANGING cv_qty  .
+          result-conv_kwmeng = cv_qty.
+        ENDIF.
+
+        IF result-dlvrdqty IS NOT INITIAL.
+          CLEAR: uv_qty,uv_uom,cv_qty.
+          uv_qty = result-dlvrdqty.
+          uv_uom = raw_sale_order_data-vrkme.
+          PERFORM conversion USING uv_qty uv_uom CHANGING cv_qty  .
+          result-dlvrdqty_km = cv_qty.
+        ENDIF.
+
+        IF result-balqty IS NOT INITIAL.
+          CLEAR: uv_qty,uv_uom,cv_qty.
+          uv_qty = result-balqty.
+          uv_uom = raw_sale_order_data-vrkme.
+          PERFORM conversion USING uv_qty uv_uom CHANGING cv_qty  .
+          result-balqty_km = cv_qty.
+        ENDIF.
+
+        IF raw_sale_order_data-vrkme = 'FT'.
+          result-netpr_km    = raw_sale_order_data-netpr * '3280.8400'.
+        ELSEIF raw_sale_order_data-vrkme = 'M'.
+          result-netpr_km    = raw_sale_order_data-netpr * 1000 .
+        ENDIF.
+      ELSE.
+        result-conv_kwmeng = raw_sale_order_data-kwmeng.
+        result-dlvrdqty_km = result-dlvrdqtY.
+        result-balqty_km   = result-balqty.
+        result-netpr_km    = raw_sale_order_data-netpr.
+      ENDIF.
+    ENDIF.
+*/end/--------------------------------------------------------------------------------------------------------------->
+
+    IF raw_sale_order_data-gbsta = ' '.
+      result-dlvstatus = ' '.
+    ELSEIF raw_sale_order_data-gbsta = 'A'.
+      result-dlvstatus = 'Open'.
+    ELSEIF raw_sale_order_data = 'B'.
+      result-dlvstatus = 'In Process'.
+    ELSEIF raw_sale_order_data-gbsta = 'C'.
+      result-dlvstatus = 'Completed'.
+    ENDIF.
+
+    IF raw_sale_order_data-lfsta = ' '.
+      result-ovrdlvstatus = ' '.
+    ELSEIF raw_sale_order_data-lfsta = 'A'.
+      result-ovrdlvstatus = 'Not Delivered'.
+    ELSEIF raw_sale_order_data-lfsta = 'B'.
+      result-ovrdlvstatus = 'Partially Delivered'.
+    ELSEIF raw_sale_order_data-lfsta = 'C'.
+      result-ovrdlvstatus = 'Fully Delivered'.
+    ENDIF.
+
+    result-zcrd       =    raw_sale_order_data-zcrd.
+    result-zspd       =    raw_sale_order_data-zspd.
+    result-ztds       =    raw_sale_order_data-ztds.
+    result-tdsvr      =    raw_sale_order_data-tdsvr.
+    result-zdrm       =    raw_sale_order_data-zdrm.
+    result-zpds       =    raw_sale_order_data-zpds.
+    result-zduppr     =    raw_sale_order_data-zduppr.
+    result-zdlow      =    raw_sale_order_data-zdlow.
+    result-zshl       =    raw_sale_order_data-zshl.
+    result-zremk      =    raw_sale_order_data-zremk.
+    result-ztol       =    raw_sale_order_data-ztol.
+    result-zdtol      =    raw_sale_order_data-zdtol.
+    result-zotol      =    raw_sale_order_data-zotol.
+
+    PERFORM get_inspection_texts.
+    PERFORM get_special_instruction_texts.
+    PERFORM get_customer_part_number_texts.
+    PERFORM get_customer_description_texts.
+    PERFORM get_uk_n_ce_texts.
+
+    APPEND result.
+  ENDLOOP.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+  PERFORM get_all_catalogs.
+  PERFORM display_alv_grid_display.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_raw_sale_ordr_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_raw_sale_ordr_data .
+
+  CLEAR : raw_sale_order_data[].
+
+  SELECT        vbak~vbeln
+                vbap~posnr
+                vbep~etenr
+                vbak~audat
+                vbak~auart
+                vbak~bstnk
+                vbak~kunnr
+                vbak~bstdk
+                vbak~vkgrp
+                vbak~vkbur
+                vbap~matnr
+                vbap~arktx
+                vbap~vrkme
+                vbap~kwmeng
+                vbap~uebto
+                vbap~untto
+                vbap~werks
+                vbap~ntgew
+                vbap~gewei
+                vbap~netpr
+                vbap~gbsta
+                vbap~lfsta
+                vbep~edatu
+                vbak~waerk
+                vbap~zcrd
+                vbap~zspd
+                vbap~ztds
+                vbap~tdsvr
+                vbap~zdrm
+                vbap~zpds
+                vbap~zduppr
+                vbap~zdlow
+                vbap~zshl
+                vbap~zremk
+                vbap~ztol
+                vbap~zdtol
+                vbap~zotol
+    INTO        TABLE raw_sale_order_data
+    FROM        vbak  INNER JOIN vbap
+                      ON vbak~vbeln = vbap~vbeln
+                      LEFT JOIN vbep
+                      ON vbap~vbeln = vbep~vbeln AND
+                         vbap~posnr = vbep~posnr
+    WHERE       vbak~vbeln    IN  s_vbeln  AND
+                vbak~audat    IN  s_audat  AND
+                vbap~werks    IN  s_werks  AND
+                vbak~auart    IN  s_auart  AND
+                vbak~vkorg    IN  s_vkorg  AND
+                vbak~kunnr    IN  s_kunnr  AND
+                vbak~vkbur    IN  s_vkbur  AND
+                vbak~vkgrp    IN  s_vkgrp  AND
+                vbak~bstnk    IN  s_bstnk.
+
+  SORT raw_sale_order_data BY vbeln posnr edatu DESCENDING.
+  DELETE ADJACENT DUPLICATES FROM raw_sale_order_data COMPARING vbeln posnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_raw_delivery_details
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_raw_delivery_details .
+  CLEAR : raw_sales_delivered_details[].
+
+  SELECT       vbfa~vbelv
+               vbfa~posnv
+               vbfa~vbeln
+               vbfa~posnn
+               vbfa~vbtyp_n
+               vbfa~rfmng
+               vbfa~meins
+               vbfa~erdat
+    INTO       TABLE raw_sales_delivered_details
+    FROM       vbfa
+    FOR        ALL ENTRIES IN raw_sale_order_data
+    WHERE      vbfa~vbelv  =  raw_sale_order_data-vbeln  AND
+               vbfa~posnv  =  raw_sale_order_data-posnr  AND
+               vbfa~vbtyp_n  = 'J'.
+
+  SORT raw_sales_delivered_details BY vbelv posnv.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_all_catalogs
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_all_catalogs .
+
+  CLEAR : fcat[].
+  PERFORM get_catalog USING 'RESULT'   'AUDAT'                  'Document Date'                                     '10'.
+  PERFORM get_catalog USING 'RESULT'   'AUART'                  'Document Type'                                     '10'.
+  PERFORM get_catalog USING 'RESULT'   'VBELN'                  'Sale Ordr No'                                      '10'.
+  PERFORM get_catalog USING 'RESULT'   'BSTNK'                  'Customer Reference'                                '25'.
+  PERFORM get_catalog USING 'RESULT'   'BSTDK'                  'Customer Reference Date'                           '25'.
+  PERFORM get_catalog USING 'RESULT'   'KUNNR'                  'Sold To Party'                                     '10'.
+  PERFORM get_catalog USING 'RESULT'   'NAME1'                  'Sold To Party Name'                                '25'.
+  PERFORM get_catalog USING 'RESULT'   'POSNR'                  'Sale Ordr Itm No'                                  '10'.
+  PERFORM get_catalog USING 'RESULT'   'EDATU'                  'Delivery Date'                                     '10'.
+  PERFORM get_catalog USING 'RESULT'   'WERKS'                  'Plant'                                             '10'.
+  PERFORM get_catalog USING 'RESULT'   'MATNR'                  'Material Code'                                     '40'.
+  PERFORM get_catalog USING 'RESULT'   'ARKTX'                  'Material Desc'                                     '35'.
+  PERFORM get_catalog USING 'RESULT'   'KWMENG'                 'Sale Order Qty'                                    '20'.
+  PERFORM get_catalog USING 'RESULT'   'MEINS'                  'Sale Unit'                                         '10'.
+  PERFORM get_catalog USING 'RESULT'   'DLVRDQTY'               'Delivered Qty'                                     '20'.
+  PERFORM get_catalog USING 'RESULT'   'BALQTY'                 'Balanced Qty'                                      '20'.
+  PERFORM get_catalog USING 'RESULT'   'NETPR'                  'Net Price'                                         '10'.
+  PERFORM get_catalog USING 'RESULT'   'CONV_MEINS'             'Convt.Sale Unit(KM)'                               '10'.
+  PERFORM get_catalog USING 'RESULT'   'CONV_KWMENG'            'Convt.Sale Order Qty(KM)'                          '20'.
+  PERFORM get_catalog USING 'RESULT'   'DLVRDQTY_KM'            'Delivered Qty(KM)'                                 '20'.
+  PERFORM get_catalog USING 'RESULT'   'BALQTY_KM'              'Balanced Qty(KM)'                                  '20'.
+  PERFORM get_catalog USING 'RESULT'   'NETPR_KM'               'Net Price/KM'                                      '10'.
+  PERFORM get_catalog USING 'RESULT'   'WAERK'                  'Currency'                                          '10'.
+  PERFORM get_catalog USING 'RESULT'   'VKGRP'                  'Sales Group'                                       '10'.
+  PERFORM get_catalog USING 'RESULT'   'VKGRP_DESC'             'Sales Group Description'                           '25'.
+  PERFORM get_catalog USING 'RESULT'   'VKBUR'                  'Sales Office'                                      '10'.
+  PERFORM get_catalog USING 'RESULT'   'VKBUR_DESC'             'Sales Office Description'                          '25'.
+  PERFORM get_catalog USING 'RESULT'   'ZTERM'                  'Payment Terms'                                     '10'.
+  PERFORM get_catalog USING 'RESULT'   'INCO1'                  'Incoterms (Part 1)'                                '10'.
+  PERFORM get_catalog USING 'RESULT'   'INCO2'                  'Incoterms (Part 2)'                                '28'.
+  PERFORM get_catalog USING 'RESULT'   'NTGEW'                  'Net Weight'                                        '10'.
+  PERFORM get_catalog USING 'RESULT'   'GEWEI'                  'Weight Unit'                                       '10'.
+  PERFORM get_catalog USING 'RESULT'   'UEBTO'                  'Overdelivery Tolerance'                            '10'.
+  PERFORM get_catalog USING 'RESULT'   'UNTTO'                  'Underdelivery Tolerance'                           '10'.
+  PERFORM get_catalog USING 'RESULT'   'ZCRD'                   'Customer Requested Date'                           '10'.
+  PERFORM get_catalog USING 'RESULT'   'ZSPD'                   'Supplier Promise Date'                             '10'.
+  PERFORM get_catalog USING 'RESULT'   'ZTDS'                   'TDS Number'                                        '10'.
+  PERFORM get_catalog USING 'RESULT'   'TDSVR'                  'TDS Version'                                       '10'.
+  PERFORM get_catalog USING 'RESULT'   'ZDRM'                   'Drum Length/Cut Length (DRUM Dimen)'               '10'.
+  PERFORM get_catalog USING 'RESULT'   'ZPDS'                   'Product Data Sheet Number (PDS No.)'               '10'.
+  PERFORM get_catalog USING 'RESULT'   'ZDUPPR'                 'Drum Tolerance Upper Limit'                        '10'.
+  PERFORM get_catalog USING 'RESULT'   'ZDLOW'                  'Drum Tolerance Lower Limit'                        '10'.
+  PERFORM get_catalog USING 'RESULT'   'ZSHL'                   'Short Length'                                      '20'.
+  PERFORM get_catalog USING 'RESULT'   'ZREMK'                  'Remarks'                                           '40'.
+  PERFORM get_catalog USING 'RESULT'   'ZTOL'                   'Tolerance Limit(Tol %)'                            '15'.
+  PERFORM get_catalog USING 'RESULT'   'ZDTOL'                  'Drum Tolerance (Tol %)'                            '15'.
+  PERFORM get_catalog USING 'RESULT'   'ZOTOL'                  'Order Tolerance(Tol %)'                            '15'.
+  PERFORM get_catalog USING 'RESULT'   'DLVSTATUS'              'Delivery Status'                                   '25'.
+  PERFORM get_catalog USING 'RESULT'   'OVRDLVSTATUS'           'OverAll Delivery Status'                           '25'.
+  PERFORM get_catalog USING 'RESULT'   'SPECIAL_INSTRUCTIONS'   'Special Instrcutions'                              '100'.
+  PERFORM get_catalog USING 'RESULT'   'INSPECTIONS_TXT'        'Inspections'                                       '100'.
+  PERFORM get_catalog USING 'RESULT'   'CUSTOMER_PART_NUMBER'   'Customer Part Number'                              '100'.
+  PERFORM get_catalog USING 'RESULT'   'CUSTOMER_DESCRIPTION'   'Customer Description'                              '100'.
+  PERFORM get_catalog USING 'RESULT'   'UK_N_CE_TEXTS'          'UK/CE'                                             '100'.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+  DATA: is_layout TYPE slis_layout_alv.
+
+  CLEAR : is_layout.
+  is_layout-colwidth_optimize = 'X'.
+
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+      is_layout          = is_layout
+      it_fieldcat        = fcat[]
+      i_save             = 'A'
+    TABLES
+      t_outtab           = result[].
+ENDFORM.
+
+
+FORM get_catalog  USING    VALUE(p1)
+                           VALUE(p2)
+                           VALUE(p3)
+                           VALUE(p4).
+
+  CLEAR :fcat.
+
+  fcat-tabname    = p1.
+  fcat-fieldname  = p2.
+  fcat-seltext_l  = p3.
+  fcat-outputlen  = p4.
+
+  APPEND fcat.
+
+ENDFORM.                    " GET_CATALOG
+*&---------------------------------------------------------------------*
+*& Form get_raw_salesgroup_texts
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_raw_salesgroup_texts .
+
+  CLEAR : raw_sales_group_texts[].
+
+  SELECT      *
+    INTO      TABLE raw_sales_group_texts
+    FROM      tvgrt
+   WHERE      spras  = 'E'.
+
+  SORT raw_sales_group_texts BY vkgrp.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_raw_salesoffce_texts
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_raw_salesoffce_texts .
+
+  CLEAR : raw_sales_offce_texts[].
+
+  SELECT     *
+    INTO     TABLE raw_sales_offce_texts
+    FROM     tvkbt
+    WHERE    spras  = 'E'.
+
+  SORT raw_sales_offce_texts BY vkbur.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_RAW_SALE_ORDR_BDATA
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_raw_sale_ordr_bdata .
+
+  CLEAR : raw_sordr_business_data[].
+
+  SELECT     vbkd~vbeln
+             vbkd~posnr
+             vbkd~zterm
+             vbkd~inco1
+             vbkd~inco2
+    INTO     TABLE raw_sordr_business_data
+    FROM     vbkd
+    FOR      ALL ENTRIES IN raw_sale_order_data
+    WHERE    vbkd~vbeln = raw_sale_order_data-vbeln.
+
+  SORT raw_sordr_business_data BY vbeln posnr.
+  DELETE ADJACENT DUPLICATES FROM raw_sordr_business_data COMPARING vbeln.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_INSPECTION_TEXTS
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_inspection_texts .
+
+  CLEAR : result-inspections_txt,lines[].
+
+  SELECT    SINGLE  *
+    FROM    stxh
+    WHERE   tdobject  = 'VBBK'                     AND
+            tdname    = raw_sale_order_data-vbeln  AND
+            tdid      = 'Z140'                     .
+  IF sy-subrc = 0.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+*       CLIENT                  = SY-MANDT
+        id                      = stxh-tdid
+        language                = stxh-tdspras
+        name                    = stxh-tdname
+        object                  = stxh-tdobject
+*       ARCHIVE_HANDLE          = 0
+*       LOCAL_CAT               = ' '
+*       USE_OLD_PERSISTENCE     = ABAP_FALSE
+*     IMPORTING
+*       HEADER                  =
+*       OLD_LINE_COUNTER        =
+      TABLES
+        lines                   = lines[]
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+    READ TABLE lines INDEX 1.
+    IF sy-subrc = 0.
+      result-inspections_txt = lines-tdline.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_SPECIAL_INSTRUCTION_TEXTS
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_special_instruction_texts .
+  CLEAR : result-special_instructions,lines[].
+
+  SELECT    SINGLE  *
+    FROM    stxh
+    WHERE   tdobject  = 'VBBK'                     AND
+            tdname    = raw_sale_order_data-vbeln  AND
+            tdid      = 'Z230'                     .
+  IF sy-subrc = 0.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+*       CLIENT                  = SY-MANDT
+        id                      = stxh-tdid
+        language                = stxh-tdspras
+        name                    = stxh-tdname
+        object                  = stxh-tdobject
+*       ARCHIVE_HANDLE          = 0
+*       LOCAL_CAT               = ' '
+*       USE_OLD_PERSISTENCE     = ABAP_FALSE
+*     IMPORTING
+*       HEADER                  =
+*       OLD_LINE_COUNTER        =
+      TABLES
+        lines                   = lines[]
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+    READ TABLE lines INDEX 1.
+    IF sy-subrc = 0.
+      result-special_instructions = lines-tdline.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_CUSTOMER_PART_NUMBER_TEXTS
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_customer_part_number_texts .
+  DATA : ztdname  LIKE  stxh-tdname.
+  CLEAR : result-customer_part_number,lines[],ztdname.
+  ztdname = |{ raw_sale_order_data-vbeln ALPHA = IN }{ raw_sale_order_data-posnr }|.
+  SELECT    SINGLE  *
+    FROM    stxh
+    WHERE   tdobject  = 'VBBP'                     AND
+            tdname    = ztdname                    AND
+            tdid      = 'Z310'                     .
+  IF sy-subrc = 0.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+*       CLIENT                  = SY-MANDT
+        id                      = stxh-tdid
+        language                = stxh-tdspras
+        name                    = stxh-tdname
+        object                  = stxh-tdobject
+*       ARCHIVE_HANDLE          = 0
+*       LOCAL_CAT               = ' '
+*       USE_OLD_PERSISTENCE     = ABAP_FALSE
+*     IMPORTING
+*       HEADER                  =
+*       OLD_LINE_COUNTER        =
+      TABLES
+        lines                   = lines[]
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+    READ TABLE lines INDEX 1.
+    IF sy-subrc = 0.
+      result-customer_part_number = lines-tdline.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_CUSTOMER_DESCRIPTION_TEXTS
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_customer_description_texts .
+  DATA : ztdname  LIKE  stxh-tdname.
+  CLEAR : result-customer_description,lines[],ztdname.
+  ztdname = |{ raw_sale_order_data-vbeln ALPHA = IN }{ raw_sale_order_data-posnr }|.
+  SELECT    SINGLE  *
+    FROM    stxh
+    WHERE   tdobject  = 'VBBP'                     AND
+            tdname    = ztdname                    AND
+            tdid      = 'Z320'                     .
+  IF sy-subrc = 0.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+*       CLIENT                  = SY-MANDT
+        id                      = stxh-tdid
+        language                = stxh-tdspras
+        name                    = stxh-tdname
+        object                  = stxh-tdobject
+*       ARCHIVE_HANDLE          = 0
+*       LOCAL_CAT               = ' '
+*       USE_OLD_PERSISTENCE     = ABAP_FALSE
+*     IMPORTING
+*       HEADER                  =
+*       OLD_LINE_COUNTER        =
+      TABLES
+        lines                   = lines[]
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+    READ TABLE lines INDEX 1.
+    IF sy-subrc = 0.
+      result-customer_description = lines-tdline.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_UK_N_CE_TEXTS
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_uk_n_ce_texts .
+  DATA : ztdname  LIKE  stxh-tdname.
+  CLEAR : result-uk_n_ce_texts,lines[],ztdname.
+  ztdname = |{ raw_sale_order_data-vbeln ALPHA = IN }{ raw_sale_order_data-posnr }|.
+  SELECT    SINGLE  *
+    FROM    stxh
+    WHERE   tdobject  = 'VBBP'                     AND
+            tdname    = ztdname                    AND
+            tdid      = 'Z280'                     .
+  IF sy-subrc = 0.
+    CALL FUNCTION 'READ_TEXT'
+      EXPORTING
+*       CLIENT                  = SY-MANDT
+        id                      = stxh-tdid
+        language                = stxh-tdspras
+        name                    = stxh-tdname
+        object                  = stxh-tdobject
+*       ARCHIVE_HANDLE          = 0
+*       LOCAL_CAT               = ' '
+*       USE_OLD_PERSISTENCE     = ABAP_FALSE
+*     IMPORTING
+*       HEADER                  =
+*       OLD_LINE_COUNTER        =
+      TABLES
+        lines                   = lines[]
+      EXCEPTIONS
+        id                      = 1
+        language                = 2
+        name                    = 3
+        not_found               = 4
+        object                  = 5
+        reference_check         = 6
+        wrong_access_to_archive = 7
+        OTHERS                  = 8.
+    IF sy-subrc <> 0.
+* Implement suitable error handling here
+    ENDIF.
+
+    READ TABLE lines INDEX 1.
+    IF sy-subrc = 0.
+      result-uk_n_ce_texts = lines-tdline.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form CONVERSION
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM conversion USING uv_qty TYPE any
+                      uv_uom TYPE any
+                CHANGING cv_qty TYPE any.
+  CALL FUNCTION 'UNIT_CONVERSION_SIMPLE'
+    EXPORTING
+      input                = uv_qty
+      no_type_check        = 'X'
+      round_sign           = ' '
+      unit_in              = uv_uom
+      unit_out             = 'KM'
+    IMPORTING
+      output               = cv_qty
+    EXCEPTIONS
+      conversion_not_found = 1
+      division_by_zero     = 2
+      input_invalid        = 3
+      output_invalid       = 4
+      overflow             = 5
+      type_invalid         = 6
+      units_missing        = 7
+      unit_in_not_found    = 8
+      unit_out_not_found   = 9
+      OTHERS               = 10.
+ENDFORM.

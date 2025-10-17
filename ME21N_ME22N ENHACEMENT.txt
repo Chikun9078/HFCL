@@ -1,0 +1,356 @@
+*---------------------------------------------------------------------*
+* DESCIPTION:
+*  Checking NFA's(Custom Field at PO header Level) corresponding PO value
+*  and comparing quantity and value with given input value if entering
+*  value and quantity is greater then quantity and value the will display
+*  error message that entering quantity and value should not be more
+*  then existing value
+*
+* AUTHOR: Dharmendra Singh Dangi
+* DATE  : 05/12/2023
+* WRICEF ID : FS_MM_028
+*---------------------------------------------------------------------*
+* CHANGE HISTORY
+* Date         Changed By     Defect/RFC    Description
+*---------------------------------------------------------------------*
+* dd/mm/yyyy   User ID         9999         xxxxxxxxxxxxxxxxxxxxxxxx
+*---------------------------------------------------------------------*
+  METHOD if_ex_me_process_po_cust~check.
+
+    CONSTANTS : lc_me21n   TYPE syst_tcode VALUE 'ME21N',
+                lc_me22n   TYPE syst_tcode VALUE 'ME22N',
+                lc_me23n   TYPE syst_tcode VALUE 'ME23N',
+                lc_me29n   TYPE syst_tcode VALUE 'ME29N',
+                lc_release TYPE syst_ucomm VALUE 'MERELEASE',
+                lc_sign    TYPE tvarv_sign  VALUE 'I',
+                lc_eq      TYPE tvarv_opti  VALUE 'EQ'.
+
+
+    IF sy-tcode EQ lc_me21n
+    OR sy-tcode EQ lc_me22n
+    OR sy-tcode EQ lc_me23n
+    OR sy-tcode EQ lc_me29n.
+
+      DATA: wa_header    TYPE mepoheader,
+            ls_item_data TYPE mepoitem,
+            it_items     TYPE purchase_order_items,
+            lv_sum       TYPE vfprc_element_value,
+            lv_item_sum  TYPE bprei,
+            lv_tot1      TYPE zde_total_amt,
+            lr_knumv     TYPE RANGE OF knumv.
+
+      CLEAR: wa_header.
+      FREE : it_items.
+
+      CONSTANTS : lc_enh TYPE sychar40 VALUE 'NFA_VALIDATION_IN_PO'.
+*
+      SELECT SINGLE zdactive FROM zcaenh_act_dct INTO @DATA(lv_enh_check)
+        WHERE zenhnmnt EQ @lc_enh.
+
+      IF lv_enh_check NE abap_true. "Checking if the enhancement 'NFA_VALIDATION_IN_PO' is deactivated or not.
+        wa_header = im_header->get_data( ).
+        it_items  = im_header->get_items( ).
+
+
+        IF wa_header-zznfa2 IS NOT INITIAL.
+
+          " Fetching value of total value of amount (Line item)
+          LOOP AT it_items ASSIGNING FIELD-SYMBOL(<fs_items>).
+            ls_item_data = <fs_items>-item->get_data( ).
+            lv_item_sum = lv_item_sum + ls_item_data-netwr.
+          ENDLOOP.
+
+          " Checking NFA number is availability
+          SELECT SINGLE znfa_no FROM zmm_po_nfa INTO        "#EC WARNOK
+            @DATA(lv_nfa)
+            WHERE znfa_no = @wa_header-zznfa2.
+
+          IF lv_nfa IS INITIAL .
+
+            " Fetching total amount
+            SELECT SINGLE totamt
+            FROM zmmnfa_head
+                 INTO lv_tot1
+            WHERE nfanumbr EQ wa_header-zznfa2.
+
+            " Error Message
+            IF lv_item_sum GT lv_tot1.
+              MESSAGE e001(zmm) WITH wa_header-zznfa2.
+            ENDIF.
+
+          ELSE.
+
+            " Fetching PO number related to NFA
+            SELECT a~ebeln, b~nfanumbr, b~totamt
+            FROM zmm_po_nfa AS a INNER JOIN zmmnfa_head AS b ON
+                                 a~znfa_no = b~nfanumbr
+                 INTO TABLE @DATA(it_ebeln)
+            WHERE a~znfa_no EQ @wa_header-zznfa2.
+
+            IF sy-subrc EQ 0 AND it_ebeln IS NOT INITIAL.
+
+              DATA(it_ebeln_temp) = it_ebeln.
+
+              DELETE it_ebeln WHERE ebeln EQ wa_header-ebeln.
+
+              " Fetching Preceeding Document number
+              IF it_ebeln IS NOT INITIAL.
+                SELECT knumv FROM ekko FOR ALL ENTRIES IN @it_ebeln
+                  WHERE ebeln EQ @it_ebeln-ebeln
+                  INTO TABLE @DATA(it_knumv).
+              ENDIF.
+
+              IF sy-subrc EQ 0
+              AND it_knumv IS NOT INITIAL.
+
+                " Fetching total value of preceeding doc
+                lr_knumv = VALUE #( FOR ls_knumv IN it_knumv
+                  ( sign = lc_sign
+                    option = lc_eq
+                    low = ls_knumv-knumv )
+               ).
+                IF lr_knumv IS NOT INITIAL.
+                  SELECT SUM( kwert ) FROM prcd_elements "#EC CI_NOORDER
+                  INTO @lv_sum
+                  WHERE knumv IN @lr_knumv.
+                ENDIF.
+
+                lv_sum = lv_sum + lv_item_sum.
+
+                " Error Message if total entering value is GT existing value
+*                SORT it_ebeln_temp BY ebeln.
+                SORT it_ebeln_temp BY nfanumbr.
+                READ TABLE it_ebeln_temp INTO DATA(wa_ebeln) WITH KEY nfanumbr = wa_header-zznfa2  BINARY SEARCH.
+                IF lv_sum GT wa_ebeln-totamt.
+                  MESSAGE e001(zmm) WITH wa_ebeln-nfanumbr.
+                ENDIF.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+
+        ENDIF.
+        CLEAR :lv_nfa,
+               lv_tot1,
+               ls_item_data,
+               it_ebeln_temp[],
+               lv_sum,
+               lv_item_sum ,
+               wa_ebeln,
+               lv_enh_check,
+               it_ebeln[],
+               it_knumv[].
+      ENDIF.
+      " End of changes by Dharmendra (WRICEF ID : FS_MM_028)
+
+*---------------------------------------------------------------------*
+* DESCIPTION:
+* Validation for Import and Domestic Pricing  in Purchase Order
+
+* AUTHOR: PRASAD DAMODARAN
+* DATE  : 19/12/2023
+* WRICEF ID : RICEFW :FS-MM-034
+*---------------------------------------------------------------------*
+* CHANGE HISTORY
+* Date         Changed By     Defect/RFC    Description
+*---------------------------------------------------------------------*
+* dd/mm/yyyy   User ID         9999         xxxxxxxxxxxxxxxxxxxxxxxx
+*---------------------------------------------------------------------*
+
+      ""Check if the enhancement 'ZMM_PO_DOC_TYPE_PRICING' is deactivated or not.
+      CONSTANTS : lc_enhncmnt TYPE sychar40 VALUE 'ZMM_PO_DOC_TYPE_PRICING_COMBINATION',
+                  lc_zmat     TYPE esart    VALUE 'ZMAT',
+                  lc_zser     TYPE esart    VALUE 'ZSER',
+                  lc_hfcdm    TYPE kalsm_d  VALUE 'ZHFCDM',
+                  lc_imp      TYPE esart    VALUE 'ZIMP',
+                  lc_isr      TYPE esart    VALUE 'ZISR',
+                  lc_hfcip    TYPE kalsm_d  VALUE 'ZHFCIP'.
+
+      SELECT SINGLE zdactive FROM zcaenh_act_dct INTO @DATA(lv_enh_check_01)
+            WHERE zenhnmnt EQ @lc_enhncmnt.
+      IF lv_enh_check_01 IS INITIAL." if not deactivated continue
+
+        wa_header = im_header->get_data( ).
+        it_items  = im_header->get_items( ).
+
+        IF (  wa_header-bsart EQ lc_zmat
+           OR wa_header-bsart EQ lc_zser ).
+          IF ( wa_header-kalsm EQ lc_hfcdm ).
+          ELSE.
+            "combination of PO document type and vendor pricing is not valid
+            DATA(lv_invalid) = abap_true.
+          ENDIF.
+        ENDIF.
+
+        IF (   wa_header-bsart EQ lc_imp
+            OR wa_header-bsart EQ lc_isr ).
+          IF ( wa_header-kalsm EQ lc_hfcip ).
+          ELSE.
+            "combination of PO document type and vendor pricing is not valid
+            lv_invalid = abap_true.
+          ENDIF.
+        ENDIF.
+
+        IF lv_invalid EQ abap_true.
+          CLEAR: lv_invalid .
+          MESSAGE e002(zmm).
+        ENDIF.
+
+        CLEAR : wa_header ,
+                it_items[].
+
+      ENDIF.
+    ENDIF.
+
+    " End of changes PRASAD DAMODARAN
+
+*---------------------------------------------------------------------*
+* DESCIPTION:                                                         *
+* PO DMS Attchment Check:                                             *
+* Checks whether any DMS document is attached and it contains any     *
+* files in it. Since DMS with File attachment is mandatory for PO     *
+* approval.                                                           *
+*                                                                     *
+* AUTHOR: Sujith P. Soman (Wipro Limited)                             *
+* DATE  : 06/06/2024                                                  *
+* WRICEF ID : <NA>                                                    *
+*---------------------------------------------------------------------*
+* CHANGE HISTORY                                                      *
+* Date         Changed By     Defect/RFC    Description               *
+*---------------------------------------------------------------------*
+* dd/mm/yyyy   User ID         9999         xxxxxxxxxxxxxxxxxxxxxxxx  *
+*---------------------------------------------------------------------*
+
+    IF sy-tcode = lc_me29n AND sy-ucomm = lc_release.
+      DATA ex_attachment TYPE char1.
+      wa_header = im_header->get_data( ).
+      CALL FUNCTION 'ZMMFM_PODMS_CHECK'
+        EXPORTING
+          im_ebeln      = wa_header-ebeln
+        IMPORTING
+          ex_attachment = ex_attachment.
+      IF ex_attachment IS INITIAL.
+        MESSAGE e143(zmm).
+      ENDIF.
+      CLEAR wa_header.
+    ENDIF.
+
+*---------------------------------------------------------------------*
+* DESCIPTION:
+*  Validatition : All line item must have same profit center by comparing
+*  the first line item of the PO.
+*
+* AUTHOR    : Debidutta Swain
+* DATE      : 23/12/2023
+* Ticket No : 31187
+*---------------------------------------------------------------------*
+* CHANGE HISTORY
+* Date:11/2/2025         Changed By:AIRDITDEBI     Defect/RFC
+* 1.Description : if PO Documwnt TYpe is 'ZSTO' ,then system ignore the
+*                 Profit center Validation Check .
+*
+* 2.Description : Accounting Assignmant must be same Validation.
+*
+*---------------------------------------------------------------------*
+    CONSTANTS : lc_check TYPE syst_ucomm VALUE 'MECHECKDOC',
+                lc_save  TYPE syst_ucomm VALUE 'MESAVE'.
+
+    IF sy-tcode = lc_me21n OR sy-tcode = lc_me22n AND sy-ucomm = lc_check OR sy-ucomm = lc_save.
+
+      DATA: Ls_item       TYPE mepoiteM,
+            lt_items      TYPE TABLE OF mepoitem,
+            ls_accounting TYPE mepoaccounting,
+            lt_accounting TYPE TABLE OF mepoaccounting,
+            lv_KNTTP      TYPE knttp.
+
+      CLEAR:ls_item,wa_header.
+      FREE : it_items,lt_items.
+      wa_header = im_header->get_data( ).
+      it_items  = im_header->get_items( ).
+
+********************Accounting Assignment Validation***********************************
+      LOOP AT it_items INTO DATA(lo_item).
+        ls_item  = lo_item-item->get_data( ).
+        IF ls_item-loekz NE 'L' AND ls_item-loekz NE 'S'.
+          IF lv_KNTTP IS INITIAL.
+            lv_knttp = ls_item-knttp.
+          ELSE.
+            IF lv_knttp NE ls_item-knttp.
+              MESSAGE 'Each line item must have same Accounting Assignment Catagory.' TYPE 'E'.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+***************************************************************************************
+
+*******************Profit Center Check Validation**************************************
+      CLEAR:ls_item,lv_knttp.
+      IF wa_header-bsart NE 'ZSTO'.
+
+        "--> Get the accounting Assignment detail of the first not deleted line item.
+        LOOP AT it_items INTO lo_item.
+          ls_item = lo_item-item->get_data( ).
+          IF ls_item-loekz NE 'L' AND ls_item-loekz NE 'S'.
+            lv_knttp = ls_item-knttp.
+            EXIT.
+          ENDIF.
+        ENDLOOP.
+
+        "--> Check Profit Center based on normal material and WBS element.
+        IF  lv_knttp NE 'Q'.
+          LOOP AT it_items ASSIGNING FIELD-SYMBOL(<fs_item>).
+            ls_item = <fs_item>-item->get_data( ).
+            IF ls_item-loekz NE 'L' AND ls_item-loekz NE 'S'.
+              APPEND ls_item TO lt_items.
+            ENDIF.
+            CLEAR:ls_item.
+          ENDLOOP.
+
+          SORT lt_items BY ebelp ko_prctr ASCENDING.
+          DELETE ADJACENT DUPLICATES FROM lt_items COMPARING ko_prctr.
+          DATA(lv_count) = lines( lt_items ).
+          IF  lv_count GT 1.
+            MESSAGE 'Profit center of line items must be Equal.Please Check.' TYPE 'E'.
+          ENDIF.
+
+        ELSE.
+          CLEAR:ls_item,ls_accounting,lt_accounting,lv_count.
+          LOOP AT it_items ASSIGNING <fs_item>.
+            ls_item = <fs_item>-item->get_data( ).
+            IF ls_item-loekz NE 'L' AND ls_item-loekz NE 'S'.
+              DATA(lo_accts) = <fs_item>-item->get_accountings( ).
+              LOOP AT lo_accts INTO DATA(lo_acct).
+                ls_accounting = lo_acct-accounting->get_data( ).
+                APPEND ls_accounting TO lt_accounting.
+                CLEAR : lo_acct,ls_accounting.
+              ENDLOOP.
+            ENDIF.
+            CLEAR: <fs_item>,ls_item.
+          ENDLOOP.
+
+          SORT lt_accounting BY prctr ASCENDING.
+          DELETE ADJACENT DUPLICATES FROM lt_accounting COMPARING prctr.
+          lv_count = lines( lt_accounting ).
+          IF  lv_count GT 1.
+            MESSAGE 'Profit center of line items must be Equal.Please Check.' TYPE 'E'.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+*****************************************************************************************
+
+    ENDIF.
+*----------------------------------------------------------------------------------------*
+
+
+***********Validation On Purchase Order For GS Vendor*******************
+    CLEAR : wa_header.
+    wa_header = im_header->get_data( ).
+    SELECT     SINGLE  ktokk
+      INTO     @DATA(zwa_ktokk)
+      FROM     lfa1
+      WHERE    lifnr = @wa_header-lifnr.
+    IF sy-subrc = 0 AND zwa_ktokk = 'Z050'.
+      MESSAGE 'Purchase Order For Vendor With Account Group Z050 Is Not Possible' TYPE 'E'.
+    ENDIF.
+
+************************************************************************
+  ENDMETHOD.

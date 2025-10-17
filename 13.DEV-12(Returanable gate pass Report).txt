@@ -1,0 +1,665 @@
+PURPOSE :
+Benifit :
+
+Report program : ZMM_RETURNABLE_GATE_PASS
+Tcode          : ZMM0096
+
+TR   :  DFHK910008       AIRDITDEBI   DEBI:MM:TR:Returnable Gatepass Detail Report
+
+TOC  : DFHK910100        AIRDITDEBI                   DEBI:TOC:MM:Testing of gate pass  Detail Report
+       DFHK910101        AIRDITDEBI                   DEBI:TOC-3:MM:Testing of gate pass  Detail Report
+       DFHK910104        AIRDITDEBI                   DEBI:TOC-4:MM:Testing of gate pass  Detail Repor
+       DFHK910107        AIRDITDEBI                   DEBI:TOC-5:MM:Testing of gate pass  Detail Repor
+
+---------------------------------------------------------------------------------------------------------------------------------------------
+*----------------------------------------------------------------------*
+* Business Requirement :
+*
+* PROGRAM NAME : ZMM_RETURNABLE_GATE_PASS
+* AUTHOR       : Debidutta Swain(AIRDITDEBI)  ::AIRDIT SOFTWARE::
+* CREATED DATE : 19.09.2024
+* Ticket NO    :
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Modification:
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Report ZMM_RETURNABLE_GATE_PASS
+*&---------------------------------------------------------------------*
+REPORT zmm_returnable_gate_pass.
+
+TYPES: BEGIN OF ty_valid_gp,
+         zgp_no LIKE zmm_gph-zgp_no,                "--> Gate Pass Number
+         zgp_ty LIKE zmm_gph-zgp_ty,                "--> Gate pass type
+         gp_odt LIKE zmm_gph-gp_odt,                "--> Gate Pass Out Date
+       END OF ty_valid_gp.
+
+"--> Gate pas header Detail structure.
+TYPES: BEGIN OF ty_rgp_header,
+         zgp_no     LIKE zmm_gph-zgp_no,
+         zgp_ty     LIKE zmm_gph-zgp_ty,
+         gp_odt     LIKE zmm_gph-gp_odt,                  "--> Gate Pass Out Date
+         cons_nam   LIKE zmm_gph-cons_nam,                "--> Carry Person
+         name1      LIKE zmm_gph-name1,                   "--> Vandor
+         tele       LIKE zmm_gph-tele,                    "--> Telephone
+         crnam      LIKE zmm_gph-crnam,                   "--> Created By   /Updator
+         crdat      LIKE zmm_gph-crdat,                   "--> Created on   /Updated on
+         crtim      LIKE zmm_gph-crtim,                   "--> Created time /Updated Time
+         reason     LIKE zmm_gph-reason,                  "--> Reason
+         ref_doc    LIKE zmm_gph-ref_doc,                 "--> Ref. Doc noumber
+         stcd3      LIKE zmm_gph-stcd3,                   "--> GST
+         city       LIKE zmm_gph-city,                    "--> Vendor city/location
+         eway       LIKE zmm_gph-eway,                    "--> E-Way Bill No.
+         aenam      LIKE zmm_gph-aenam,                   "--> Security ID
+         vehicle_no LIKE zmm_gph-vehicle_no,              "--> Vehicle No
+       END OF ty_rgp_header.
+
+"--> Gate pass Approver Detail structure.
+TYPES: BEGIN OF ty_gpa,
+         zgp_no     LIKE zmm_gph-zgp_no,
+         zgp_ty     LIKE zmm_gph-zgp_ty,
+         rel_strg   LIKE zmm_gpa-rel_strg,               "--> Releae Statergy
+         app_lvl    LIKE zmm_gpa-app_lvl,                "--> Approval Lavel
+         susid      LIKE zmm_gpa-susid,                  "--> Approver ID
+         name_text  TYPE ad_namtext,                     "--> Approver name
+         app_stat   LIKE zmm_gpa-app_stat,               "--> Approval Status
+         app_stat_t TYPE char50,                         "--> Status Desc.
+         aedat      LIKE zmm_gpa-aedat,                  "--> date
+         Aezet      LIKE zmm_gpa-aezet,                  "--> Time
+       END OF ty_gpa.
+
+"--> Gate pass Item Structure.
+TYPES :BEGIN OF ty_rgp_item,
+         zgp_no  LIKE zmm_gpi-zgp_no,
+         item    LIKE zmm_gpi-item,                         "--> Line item
+         matnr   LIKE zmm_gpi-matnr,                        "--> Material
+         maktx   LIKE zmm_gpi-maktx,                        "--> Material Desc.
+         meins   LIKE zmm_gpi-meins,                        "--> Material unit
+         menge   LIKE zmm_gpi-menge,                        "--> Material Quantity
+         remarks LIKE zmm_gpi-remarks,                      "--> Item Remark
+         steuc   LIKE zmm_gpi-steuc,                        "--> HSN code
+         netwr   LIKE zmm_gpi-netwr,                        "--> Taxable Value
+         gst_val LIKE zmm_gpi-gst_val,                      "--> GST Value
+         gtotal  LIKE zmm_gpi-gtotal,                       "--> Grand Total
+         mtart   LIKE mara-mtart,                           "--> Material Type
+       END OF ty_rgp_item.
+
+"--> Reciving item detail structure.
+TYPES: BEGIN OF ty_reciving,
+         rgpno      LIKE zmm_gpi-zgp_no,
+         rgprno     TYPE zdergprno,
+         item       TYPE zdeitem,
+         recvng_qty TYPE zderecvngqty,
+         meins      TYPE meins,
+         gp_indt    LIKE zmm_gprh-gp_indt,
+         gp_intm    LIKE zmm_gprh-gp_intm,
+       END OF ty_reciving.
+
+"--> Final item detail structure.
+TYPES: BEGIN OF ty_final_item,
+         rgpno       LIKE zmm_gpi-zgp_no,                       "--> Gate pass number
+         rgprno      TYPE zdergprno,                            "--> RGP Receipt Number
+         item        TYPE zdeitem,                              "--> Line item
+         matnr       LIKE zmm_gpi-matnr,                        "--> Material
+         maktx       LIKE zmm_gpi-maktx,                        "--> Material Desc.
+         mtart       LIKE mara-mtart,                           "--> Material Type
+         meins       LIKE zmm_gpi-meins,                        "--> Material unit
+         menge       LIKE zmm_gpi-menge,                        "--> Material Quantity
+         remarks     LIKE zmm_gpi-remarks,                      "--> Item Remark
+         steuc       LIKE zmm_gpi-steuc,                        "--> HSN CODE
+         netwr       LIKE zmm_gpi-netwr,                        "--> Taxable Value(net order price)
+         gst_val     LIKE zmm_gpi-gst_val,                      "--> GST Value
+         gtotal      LIKE zmm_gpi-gtotal,                       "--> Grand Total
+         recvng_qty  TYPE zderecvngqty,                         "--> reciving quantity
+         pending_qty TYPE zderecvngqty,                         "--> pending quantity
+         gp_indt     LIKE zmm_gprh-gp_indt,                     "--> Reciving Date
+         gp_intm     LIKE zmm_gprh-gp_intm,                     "--> Reciving Time
+       END OF ty_final_item.
+
+DATA: lv_gp_no       TYPE zdegp_no,                              "--> Gate Pass Number
+      lv_gp_out_date TYPE zdegp_odt.                             "--> Gate Pass Out Date
+
+DATA: ls_gpa        TYPE ty_gpa,
+      ls_reciving   TYPE ty_reciving,
+      ls_final_item TYPE ty_final_item,
+      ls_gp_result  TYPE zmm_gate_pass_detail_final_s.
+
+DATA: lt_gpno       TYPE TABLE OF ty_valid_gp,                       "--> IT contain valid gate pass details
+      lt_rgp_header TYPE TABLE OF ty_rgp_header,                     "--> IT contain Returbanle Gate pass Header detail.
+      lt_gpa        TYPE TABLE OF ty_gpa,                            "--> LT contain Last /currrent approver detail of each gate pass NO.
+      lt_rgp_item   TYPE TABLE OF ty_rgp_item,                       "--> IT contain Gatepass item details.
+      lt_reciving   TYPE TABLE OF ty_reciving,                       "--> IT Contain reciving item details of each gate pass.
+      lt_item_final TYPE TABLE OF ty_final_item,                     "--> LT contain final item details,
+      lt_gp_result  TYPE TABLE OF zmm_gate_pass_detail_final_s.      "--> IT contain Final gatepass results.
+
+DATA: fcat TYPE slis_fieldcat_alv  OCCURS 0 WITH HEADER LINE.
+
+*--> Preparation of Selection screen.
+SELECTION-SCREEN BEGIN OF  BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS : s_gp_no  FOR lv_gp_no,
+                   s_gp_odt FOR lv_gp_out_date.
+SELECTION-SCREEN END OF BLOCK b1.
+
+*--> Validating the input from selection screen.
+AT SELECTION-SCREEN.
+
+  IF s_gp_no IS INITIAL AND s_gp_odt IS INITIAL .
+    MESSAGE TEXT-000 TYPE 'E'.
+  ENDIF.
+
+  "--> Validating Gate pass Number.
+  IF s_gp_no IS NOT INITIAL.
+    SELECT zgp_no FROM zmm_gph
+    INTO TABLE @DATA(lt_check_gpno)
+    WHERE zgp_no IN @s_gp_no.
+
+    IF lt_check_gpno IS INITIAL .
+      MESSAGE TEXT-002 TYPE 'E'.
+      EXIT.
+    ENDIF.
+  ENDIF.
+
+*--> selcting record from database based on input screen.
+START-OF-SELECTION.
+
+  "--> check and validate the Returnable Gatepass
+  SELECT zgp_no,zgp_ty,gp_odt
+  FROM zmm_gph
+  INTO TABLE @lt_gpno
+  WHERE zgp_no IN @s_gp_no AND
+        zgp_ty EQ 'R' AND
+        gp_odt IN @s_gp_odt.
+
+  IF lt_gpno IS NOT INITIAL.
+    PERFORM get_data.                    "--> Get Gate pass Necessary Details.
+    PERFORM process_data.                "--> Prepare final Gate Pass Result set.
+    PERFORM display_data.                "--> Display the Report in ALV format.
+  ELSE.
+
+    "--> Raise message: if no Returnable Gate Pass Record present in the date range.
+    IF s_gp_odt IS NOT INITIAL.
+      SELECT zgp_no,zgp_ty,gp_odt
+      FROM zmm_gph
+      INTO TABLE @DATA(lt_gpdat)
+      WHERE zgp_ty EQ 'R' AND
+            gp_odt IN @s_gp_odt.
+
+      IF lt_gpdat IS INITIAL.
+        MESSAGE TEXT-003 TYPE 'E' DISPLAY LIKE 'I'.
+      ENDIF.
+
+      "--> Raise message: if no Returnable Gate Pass Record present in the given Gatepass number and date range.
+    ELSEIF s_gp_no IS NOT INITIAL AND s_gp_odt IS NOT INITIAL.
+      SELECT zgp_no,zgp_ty,gp_odt
+      FROM zmm_gph
+      INTO TABLE @DATA(lt_gpno_date)
+      WHERE zgp_no IN @s_gp_no AND
+            zgp_ty EQ 'R' AND
+            gp_odt IN @s_gp_odt.
+
+      IF lt_gpno_date IS INITIAL.
+        MESSAGE TEXT-004 TYPE 'E' DISPLAY LIKE 'I'.
+      ENDIF.
+
+      "--> Raise message: if no Returnable Gate Pass Record Available for the given gate pass Number .
+    ELSE.
+      MESSAGE TEXT-005 TYPE 'E' DISPLAY LIKE 'I'.
+    ENDIF.
+  ENDIF.
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_rgp_header_data.               "--> Get Gate pass Hedaer Details.
+  PERFORM get_rgp_approver_data.             "--> Get Gate pass Approver Details.
+  PERFORM get_rgp_item_data.                 "--> Get Gate pass Item Details.
+  PERFORM get_rgp_reciving_data.             "--> Get RGP Receiving Details(Return Quantity detail,date,time).
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  "--> Prepare Item final Result.
+  PERFORM process_item_result.
+
+  "--> Fetch all the availbale user details.
+  SELECT  bname,name_textc
+  FROM user_addr INTO TABLE @DATA(lt_user).             "#EC CI_NOWHERE
+
+  "--> Preparing the final result.
+  IF  lt_rgp_header IS NOT INITIAL.
+    LOOP AT lt_rgp_header INTO DATA(ls_header).
+      ls_gp_result-zgp_no        = ls_header-zgp_no.
+      ls_gp_result-zgp_ty        = ls_header-zgp_ty.
+      IF ls_header-zgp_ty EQ 'R' .
+        ls_gp_result-zgp_ty_t = 'R-Returnable Gate Pass'.
+      ENDIF.
+      ls_gp_result-Vehicle_No    = ls_header-vehicle_no.
+      ls_gp_result-gp_odt        = ls_header-gp_odt.
+      ls_gp_result-cons_nam      = ls_header-cons_nam.
+      ls_gp_result-tele          = ls_header-tele.
+      ls_gp_result-name1         = ls_header-name1.
+      ls_gp_result-crnam         = ls_header-crnam.
+      ls_gp_result-crdat         = ls_header-crdat.
+      ls_gp_result-crtim         = ls_header-crtim.
+      ls_gp_result-reason        = ls_header-reason.
+      ls_gp_result-location      = ls_header-city.
+      ls_gp_result-ref_doc       = ls_header-ref_doc.
+      ls_gp_result-eway_no       = ls_header-eway.
+      ls_gp_result-gst_no_vendor = ls_header-stcd3.
+      ls_gp_result-return_updator = ls_header-aenam.
+
+      "--> Fetch updator name.
+      READ TABLE lt_user INTO DATA(ls_updator) WITH  KEY bname = ls_header-crnam.
+      IF ls_updator IS NOT INITIAL.
+        ls_gp_result-updator = |{ ls_updator-name_textc } ({ ls_header-crnam })| .
+      ENDIF.
+
+      "--> Fetch Return updator name.
+      READ TABLE lt_user INTO DATA(ls_return_updator) WITH  KEY bname = ls_header-aenam.
+      IF ls_return_updator IS NOT INITIAL.
+        ls_gp_result-return_updator_name = |{ ls_return_updator-name_textc } ({ ls_header-aenam })| .
+      ENDIF.
+
+      "--> fetching approval detail.
+      READ TABLE lt_gpa INTO DATA(wa_gpa) WITH KEY zgp_no = ls_header-zgp_no BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        ls_gp_result-susid             = wa_gpa-susid.
+        ls_gp_result-app_name_text     = |{ wa_gpa-name_text } ({ wa_gpa-susid })|.
+        ls_gp_result-app_stat          = wa_gpa-app_stat.
+        ls_gp_result-app_stat_text     = wa_gpa-app_stat_t.
+        ls_gp_result-app_lvl           = wa_gpa-app_lvl.
+        ls_gp_result-app_aedat         = wa_gpa-aedat.
+        ls_gp_result-app_aezet         = wa_gpa-aezet.
+      ENDIF.
+
+      "--> Fetch Item Details.
+      LOOP AT lt_item_final INTO DATA(ls_item).
+        IF ls_item-rgpno = ls_header-zgp_no.
+          ls_gp_result-item           = ls_item-item.
+          ls_gp_result-matnr          = ls_item-matnr.
+          ls_gp_result-maktx          = ls_item-maktx.
+          ls_gp_result-mtart          = ls_item-mtart.
+          ls_gp_result-meins          = ls_item-meins.
+          ls_gp_result-menge          = ls_item-menge.
+          ls_gp_result-reamrks        = ls_item-remarks.
+          ls_gp_result-steuc          = ls_item-steuc.
+          ls_gp_result-netwr          = ls_item-netwr.
+          ls_gp_result-gst_val        = ls_item-gst_val.
+          ls_gp_result-gtotal         = ls_item-gtotal.
+          ls_gp_result-return_qty     = ls_item-recvng_qty.
+          ls_gp_result-pending_qty    = ls_item-pending_qty.
+          ls_gp_result-return_date    = ls_item-gp_indt.
+          ls_gp_result-return_time    = ls_item-gp_intm.
+
+          APPEND ls_gp_result TO lt_gp_result.
+        ENDIF.
+        CLEAR: ls_item,ls_gp_result-item ,ls_gp_result-matnr,
+              ls_gp_result-maktx,ls_gp_result-meins,ls_gp_result-menge,
+              ls_gp_result-reamrks,ls_gp_result-return_qty ,ls_gp_result-pending_qty ,
+              ls_gp_result-return_date,ls_gp_result-return_time .
+      ENDLOOP.
+      CLEAR: ls_header,wa_gpa.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_gp_result BY zgp_no item return_date.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+  PERFORM get_all_catalogs.                         "--> Prepare the Catalog for display formart.
+  PERFORM display_alv_grid_display.                 "--> Display The final Result.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_header_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_rgp_header_data .
+  IF lt_gpno IS NOT INITIAL.
+
+    SELECT zgp_no,zgp_ty,gp_odt,cons_nam,name1,tele,
+           crnam,crdat,crtim,reason,
+           ref_doc,stcd3,city,eway,aenam,vehicle_no
+    FROM zmm_gph
+    INTO TABLE @lt_rgp_header
+    FOR ALL ENTRIES IN @lt_gpno                    "#EC CI_NO_TRANSFORM
+    WHERE zgp_no  = @lt_gpno-zgp_no.
+  ENDIF.
+
+  SORT lt_rgp_header BY zgp_no.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_approver_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_rgp_approver_data .
+  "--> Fetching all gate pass approval status details.
+  SELECT domname,ddlanguage,valpos,domvalue_l,ddtext
+  FROM dd07t INTO TABLE @DATA(lt_aprvl_status)
+  WHERE domname    = 'ZDMAPPSTAT' AND
+        ddlanguage = @sy-langu.
+
+  "--> Fetch all the availbale user details.
+  SELECT  bname,name_textc
+  FROM user_addr
+  INTO TABLE @DATA(lt_user).                            "#EC CI_NOWHERE
+
+  IF lt_rgp_header IS NOT INITIAL.
+    SELECT zgp_no,rel_strg,app_lvl,susid,app_stat,aedat,aezet
+    FROM zmm_gpa
+    FOR ALL ENTRIES IN @lt_rgp_header
+    WHERE zgp_no  = @lt_rgp_header-zgp_no
+    INTO TABLE @DATA(lt_gpa_temp).
+  ENDIF.
+
+  "--> sorting the "Gate Pass Release Strategy" table data in decending
+  "    where the first index record repesent the updated approval status
+  "    and delete the other index record by comparing the gate pass number.
+  SORT lt_gpa_temp DESCENDING BY zgp_no app_lvl.
+  DELETE ADJACENT DUPLICATES FROM lt_gpa_temp COMPARING zgp_no.
+
+  IF  lt_gpa_temp IS NOT INITIAL.
+    SORT lt_gpa_temp BY zgp_no.
+
+    LOOP AT lt_rgp_header INTO DATA(ls_header).
+      READ TABLE lt_gpa_temp INTO DATA(ls_gpa_temp) WITH KEY zgp_no = ls_header-zgp_no BINARY SEARCH.
+      IF ls_gpa_temp IS NOT INITIAL .
+
+        ls_gpa-zgp_no   = ls_header-zgp_no.
+        ls_gpa-zgp_ty   = ls_header-zgp_ty.
+        ls_gpa-rel_strg = ls_gpa_temp-rel_strg.
+        ls_gpa-app_lvl  = ls_gpa_temp-app_lvl.
+        ls_gpa-susid    = ls_gpa_temp-susid.
+        ls_gpa-app_stat = ls_gpa_temp-app_stat.
+        ls_gpa-aedat    = ls_gpa_temp-aedat.
+        ls_gpa-aezet    = ls_gpa_temp-aezet.
+
+        "--> Read Approver name.
+        READ TABLE lt_USER INTO DATA(ls_USER) WITH  KEY bname = ls_gpa-susid.
+        IF ls_USER IS NOT INITIAL.
+          ls_gpa-name_text = ls_user-name_textc .
+        ENDIF.
+
+        "--> Read approval status text.
+        READ TABLE lt_aprvl_status INTO DATA(ls_aprvl_status) WITH  KEY domvalue_l = ls_gpa_temp-app_stat.
+        IF ls_aprvl_status IS NOT INITIAL.
+          ls_gpa-app_stat_t = |{ ls_gpa_temp-app_stat } ({ ls_aprvl_status-ddtext })|.
+        ENDIF.
+
+        APPEND ls_gpa TO lt_gpa.
+      ENDIF.
+      CLEAR : ls_gpa_temp,ls_header,ls_gpa,ls_aprvl_status.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_gpa BY zgp_no.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_item_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_rgp_item_data .
+  IF lt_rgp_header IS NOT INITIAL .
+    SELECT zmm_gpi~zgp_no,zmm_gpi~item,zmm_gpi~matnr,
+           zmm_gpi~maktx,zmm_gpi~meins,zmm_gpi~menge,
+           zmm_gpi~remarks,zmm_gpi~steuc,zmm_gpi~netwr,
+           zmm_gpi~gst_val,zmm_gpi~gtotal,
+           mara~mtart
+    FROM zmm_gpi INNER JOIN mara ON zmm_gpi~matnr = mara~matnr
+    FOR ALL ENTRIES IN @lt_rgp_header
+    WHERE zgp_no = @lt_rgp_header-zgp_no
+    INTO TABLE @lt_rgp_item.
+  ENDIF.
+
+  SORT lt_rgp_item BY zgp_no item .
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_RGP_Return_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_rgp_reciving_data .
+  IF lt_rgp_header IS NOT INITIAL.
+
+    " 1--> Fetching Gate Pass RGP Receiving Header details as per Gate pass No .
+    SELECT rgprno,rgpno,gp_indt,gp_intm
+    FROM zmm_gprh
+    FOR ALL ENTRIES IN @lt_rgp_header
+    WHERE rgpno = @lt_rgp_header-zgp_no
+    INTO TABLE @DATA(lt_gprh).
+
+    SORT lt_gprh BY rgprno gp_indt.
+
+    " 2--> Fetching all the possible Gate Pass RGP Receiving Item details  .
+    IF lt_gprh IS NOT INITIAL.
+      SELECT rgprno,item,recvng_qty,meins
+      FROM zmm_gpri
+      FOR ALL ENTRIES IN @lt_gprh
+      WHERE rgprno = @lt_gprh-rgprno
+      INTO TABLE @DATA(lt_gpri).
+    ENDIF.
+
+    DELETE lt_gpri WHERE recvng_qty LE 0.
+    SORT lt_gpri BY rgprno item.
+
+    " 3--> Preparing the reciving item details.
+    LOOP AT lt_rgp_header INTO DATA(ls_rgp_h).
+      LOOP AT lt_gprh INTO DATA(ls_gprh) WHERE rgpno EQ ls_rgp_h-zgp_no.
+        LOOP AT lt_rgp_item INTO DATA(ls_rgp_i) WHERE zgp_no EQ ls_rgp_h-zgp_no.
+
+          READ TABLE lt_gpri INTO DATA(ls_gpri) WITH KEY rgprno = ls_gprh-rgprno
+                                                         item   = ls_rgp_i-item BINARY SEARCH.
+
+          IF sy-subrc EQ 0.
+            ls_reciving-rgpno      = ls_rgp_h-zgp_no.
+            ls_reciving-rgprno     = ls_gpri-rgprno.
+            ls_reciving-item       = ls_gpri-item.
+            ls_reciving-recvng_qty = ls_gpri-recvng_qty.
+            ls_reciving-meins      = ls_gpri-meins.
+            ls_reciving-gp_indt    = ls_gprh-gp_indt.
+            ls_reciving-gp_intm    = ls_gprh-gp_intm.
+
+            APPEND ls_reciving TO lt_reciving.
+          ENDIF.
+          CLEAR: ls_rgp_i,ls_gpri,ls_reciving.
+        ENDLOOP.
+        CLEAR ls_gprh.
+      ENDLOOP.
+      CLEAR : ls_rgp_h.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_reciving BY rgpno rgprno item gp_indt gp_intm.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_item_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_item_result .
+
+  "--> Local variable.
+  DATA: lv_pending_qty TYPE zderecvngqty.
+
+  IF  lt_rgp_item IS NOT INITIAL.
+
+    LOOP AT lt_rgp_item INTO DATA(ls_item).
+      ls_final_item-rgpno   = ls_item-zgp_no.
+      ls_final_item-item    = ls_item-item.
+      ls_final_item-matnr   = ls_item-matnr.
+      ls_final_item-maktx   = ls_item-maktx.
+      ls_final_item-mtart   = ls_item-mtart.
+      ls_final_item-menge   = ls_item-menge.
+      ls_final_item-meins   = ls_item-meins.
+      ls_final_item-remarks = ls_item-remarks.
+      ls_final_item-steuc   = ls_item-steuc.
+      ls_final_item-netwr   = ls_item-netwr.
+      ls_final_item-gst_val = ls_item-gst_val.
+      ls_final_item-gtotal  = ls_item-gtotal.
+
+      IF line_exists( lt_reciving[ rgpno = ls_item-zgp_no item = ls_item-item ] ).
+        LOOP AT lt_reciving INTO DATA(ls_reciving).
+          IF ls_reciving-rgpno = ls_item-zgp_no AND ls_reciving-item  = ls_item-item.
+
+            ls_final_item-rgprno     = ls_reciving-rgprno.
+            ls_final_item-recvng_qty = ls_reciving-recvng_qty.
+            ls_final_item-gp_indt    = ls_reciving-gp_indt.
+            ls_final_item-gp_intm    = ls_reciving-gp_intm.
+
+            "--> calculating pending quantity.
+            IF lv_pending_qty IS INITIAL.
+              lv_pending_qty = ( ls_item-menge - ls_reciving-recvng_qty ).
+            ELSE.
+              lv_pending_qty = ( lv_pending_qty - ls_reciving-recvng_qty ).
+            ENDIF.
+            ls_final_item-pending_qty    = lv_pending_qty.
+
+            "--> Insert record to internal table.
+            APPEND ls_final_item TO lt_item_final .
+          ENDIF.
+
+          CLEAR: ls_reciving,ls_final_item-rgprno,ls_final_item-recvng_qty,
+                 ls_final_item-gp_indt ,ls_final_item-gp_intm,ls_final_item-pending_qty.
+        ENDLOOP.
+      ELSE.
+        APPEND ls_final_item TO lt_item_final.
+      ENDIF.
+      CLEAR: ls_item,lv_pending_qty.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_item_final BY rgpno item gp_indt gp_indt.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_all_catalogs
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_all_catalogs .
+
+  CLEAR : fcat[].
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'GP_ODT'              'Gate Pass Out Date'          '50'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'NAME1'               'Vandor'                      '35'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'ZGP_NO'              'Gate Pass Number'            '12'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'ZGP_TY_T'            'Gate Pass Type'              '30'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'CONS_NAM'            'Carry Person'                '12'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'VEHICLE_NO'          'Vehicle No'                  '15'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'TELE'                'Telephone No'                '10'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'UPDATOR'             'Updator'                     '50'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'CRTIM'               'Updated Time'                '10'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'APP_NAME_TEXT'       'Approver'                    '50'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'APP_STAT_TEXT'       'Approval Status'             '15'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'APP_LVL'             'Approval Level'              '5'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'APP_AEDAT'           'Approved Date'               '10'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'APP_AEZET'           'Approved Time'               '10'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'REASON'              'Reason'                      '100'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'LOCATION'            'Location'                    '35'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'REF_DOC'             'Ref Doc No.'                 '12'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'GST_NO_VENDOR'       'GST No'                      '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'EWAY_NO'             'E-Way Bill'                  '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'ITEM'                'Line item'                   '5'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'MATNR'               'Material'                    '40'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'MAKTX'               'Material Desc.'              '40'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'MTART'               'Material Type'               '5'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'MENGE'               'Quantity'                    '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'MEINS'               'UOM'                         '5'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'REAMRKS'             'Remarks'                     '100'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'STEUC'               'HSN Code'                    '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'NETWR'               'Taxable Value'               '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'GST_VAL'             'GST Value'                   '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'GTOTAL'              'Grand Total'                 '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'RETURN_QTY'          'Returned Qty'                '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'PENDING_QTY'         'Pending Qty'                 '20'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'RETURN_UPDATOR_NAME' 'Return Updator'              '50'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'RETURN_DATE'         'Ret Updated Date'            '10'.
+  PERFORM get_catalog USING 'LT_GP_RESULT'   'RETURN_TIME'         'Ret Updated Time'            '10'.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form  get_catalog
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_catalog  USING    VALUE(p1)
+                           VALUE(p2)
+                           VALUE(p3)
+                           VALUE(p4).
+  CLEAR :fcat.
+  fcat-tabname    = p1.
+  fcat-fieldname  = p2.
+  fcat-seltext_l  = p3.
+  fcat-outputlen  = p4.
+
+  APPEND fcat.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+
+  DATA: ls_layout TYPE slis_layout_alv.
+
+  CLEAR : ls_layout.
+  ls_layout-colwidth_optimize = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+      is_layout          = ls_layout
+      it_fieldcat        = fcat[]
+      i_save             = 'A'
+    TABLES
+      t_outtab           = lt_gp_result.
+ENDFORM.

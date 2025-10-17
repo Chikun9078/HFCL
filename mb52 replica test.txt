@@ -1,0 +1,95 @@
+ 
+* define a lean table organ
+TYPES : BEGIN OF stype_organ,
+          werks LIKE  t001w-werks,
+          bwkey LIKE  t001w-bwkey,
+          name1 LIKE  t001w-name1,
+          bukrs LIKE  t001-bukrs,
+          waers LIKE  t001-waers,
+        END OF stype_organ,
+
+        stab_organ TYPE STANDARD TABLE OF
+                             stype_organ
+                             WITH DEFAULT KEY.
+
+DATA: g_t_organ TYPE  stab_organ,
+      g_s_organ TYPE  stype_organ.
+
+* read setting of the plants                                   "n1795093
+  SELECT t001w~werks t001w~name1 t001w~bwkey t001k~bukrs t001~waers
+      INTO CORRESPONDING FIELDS OF TABLE g_t_organ
+      FROM t001w
+      INNER JOIN t001k
+      ON t001k~bwkey = t001w~bwkey
+      LEFT JOIN t001
+      ON t001~bukrs = t001k~bukrs
+      WHERE t001w~werks IN werks.
+
+
+
+
+SELECT mchb~matnr, mchb~werks, lgort, mchb~charg,
+                SUM( clabs ) AS labst, SUM( cumlm ) AS umlme, SUM( cinsm ) AS insme,
+                SUM( ceinm ) AS einme, SUM( cspem ) AS speme, SUM( cretm ) AS retme,
+                SUM( /cwm/clabs ) AS /cwm/labst,            "2852503
+                SUM( /cwm/cumlm ) AS /cwm/umlme,            "2852503
+                SUM( /cwm/cinsm ) AS /cwm/insme,            "2852503
+                SUM( /cwm/ceinm ) AS /cwm/einme,            "2852503
+                SUM( /cwm/cspem ) AS /cwm/speme,            "2852503
+                SUM( /cwm/cretm ) AS /cwm/retme,            "2852503
+                mara~/cwm/xcwmat AS /cwm/xcwmat,            "2852503
+                mara~/cwm/valum  AS /cwm/valum,             "2852503
+                mchb~lvorm, mcha~bwtar, mchb~sgt_scat
+                FROM nsdm_e_mchb AS mchb INNER JOIN v_marc_md AS marc "2561903
+                ON mchb~matnr = marc~matnr AND
+                   mchb~werks = marc~werks
+                INNER JOIN mara
+                ON mara~matnr = mchb~matnr
+                LEFT JOIN mcha
+                ON mcha~matnr = mchb~matnr AND
+                   mcha~werks = mchb~werks AND
+                   mcha~charg = mchb~charg
+                WHERE mchb~matnr IN @matnr
+                  AND mchb~werks IN @werks
+                  AND lgort IN @lgort
+                  AND mchb~charg IN @charg
+                  AND xchar = 'X'
+                  AND ( clabs IN @r_stopt
+                   OR   cumlm IN @r_stopt
+                   OR   cinsm IN @r_stopt
+                   OR   ceinm IN @r_stopt
+                   OR   cspem IN @r_stopt
+                   OR   cretm IN @r_stopt
+                   OR /cwm/clabs IN @r_stopt                "2852503
+                   OR /cwm/cumlm IN @r_stopt                "2852503
+                   OR /cwm/cinsm IN @r_stopt                "2852503
+                   OR /cwm/ceinm IN @r_stopt                "2852503
+                   OR /cwm/cspem IN @r_stopt                "2852503
+                   OR /cwm/cretm IN @r_stopt )              "2852503
+               AND marc~ekgrp IN @ekgrup
+               AND mara~matkl IN @matkla
+               AND mara~mtart IN @matart
+               AND mara~mfrpn IN @mfrpn                     "2780299
+               GROUP BY mchb~matnr, mchb~werks, mchb~lgort, mchb~charg, mchb~sgt_scat,
+                        mchb~lvorm, mcha~bwtar,
+                        mara~/cwm/valum, mara~/cwm/xcwmat   "2852503
+                APPENDING CORRESPONDING FIELDS OF TABLE @collector_mchb.
+
+IF collector_mchb[] IS NOT INITIAL.                       "1895376
+    lv_xmbew = 'X'.                                         "1895376
+  ENDIF.                                                    "1895376
+  APPEND LINES OF collector_mchb[] TO collector[].
+  FREE collector_mchb.
+
+
+ DELETE collector WHERE
+       labst = 0 AND einme = 0 AND
+       insme = 0 AND retme = 0 AND
+       speme = 0 AND umlme = 0 AND
+       bwesb = 0 AND trame = 0 AND                          "2852503
+       glgmg = 0 AND umlmc = 0 AND                          "2852503
+       /cwm/labst = 0 AND /cwm/einme = 0 AND                "2852503
+       /cwm/insme = 0 AND /cwm/retme = 0 AND                "2852503
+       /cwm/speme = 0 AND /cwm/umlme = 0 AND                "2852503
+       /cwm/bwesb = 0 AND /cwm/trame = 0 AND                "2852503
+       /cwm/umlmc = 0.

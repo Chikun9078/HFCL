@@ -1,0 +1,846 @@
+*---------------------------------------------------------------------*
+* DESCIPTION:
+* Driver program for Domestic Import Serive PO SF
+*
+* PROGRAM NAME: ZMMEP_DOIMSERVICE_PRINT
+* AUTHOR: Adarsh Sanjay Thakur Wipro
+* DATE  : 25/01/2024
+* RICEFWID: FS_MM_07
+*
+*----------------------------------------------------------------------------------------------------------------------------------------------------------------------*
+* CHANGE HISTORY Details
+*-------------------------------*
+*
+* Date : 2/12/2024  Changed By : AIRDITDEBI       Ticket :28878
+* Change Description : CorreCt the Payment Term issue(Previously the description for Payment turm taking from "tvzbt" table but there is no data present for the PT,
+*                      now I am taking the value from "T052U" Table due to which issue got resolve)).
+*
+* Date : 23/12/2024  Changed By : AIRDITDEBI      Ticket : 30221
+* Change Description : Display the address of Plant when document was created by comparing the document  Create date and plant change history details from
+*                      CDHDR & CDPOS table.
+*
+* Date : 02/01/2025  Changed By : AIRDITDEBI      Ticket : 30222
+* Change Description : Addred Filter condition while fatching Plant address is "LOEKZ NE 'L'."
+*
+*
+* Date : 31/12/2024  Changed By : AIRDITDEBI      Ticket : 30786
+* Change Description : Added  Subline item Long Text in smartform/Print.
+*
+*
+* Date : 20/01/2025  Changed By : AIRDITDEBI      Ticket :
+* Change Description : Display Subline item Service Text in Print.If Service Text is not Present thenSystem Check Line text and if line text is present ,
+*                      in print Line text will show.
+*--------------------------------------------------------------------------------------------------------------------------------------------------------------------------*
+REPORT zmmep_doimservice_print.
+
+TYPES: BEGIN OF ty_ekko,
+         zterm   TYPE ekko-zterm,
+         inco1   TYPE ekko-inco1,
+         inco2_l TYPE ekko-inco2_l,
+       END OF ty_ekko.
+
+TYPES: BEGIN OF ty_gst,
+         ebeln    TYPE ebeln,
+         ebelp    TYPE ebelp,
+         igst     TYPE kbetr,
+         cgst     TYPE kbetr,
+         sgst     TYPE kbetr,
+         igst_per TYPE kbetr_kond,
+         cgst_per TYPE kbetr_kond,
+         sgst_per TYPE kbetr_kond,
+       END OF ty_gst.
+
+TYPES: BEGIN OF ty_gst_collec,
+         ebeln TYPE ebeln,
+         igst  TYPE zde_measure,
+         cgst  TYPE zde_measure,
+         sgst  TYPE zde_measure,
+       END OF ty_gst_collec.
+
+TYPES: BEGIN OF ty_valueofwrk,
+         ebeln TYPE ebeln,
+         netwr TYPE netwr,
+       END OF ty_valueofwrk.
+
+TYPES: BEGIN OF ty_ekpoitms,
+         ebeln TYPE ebeln,
+         ebelp TYPE ebelp,
+         txz01 TYPE txz01,
+         menge TYPE ekpo-menge,
+         meins TYPE meins,
+         mwskz TYPE mwskz,
+         netwr TYPE netwr,
+         netpr TYPE netpr,
+         loekz TYPE loekz,
+       END OF ty_ekpoitms.
+
+TYPES: BEGIN OF ty_konp,
+         knumh TYPE knumh,
+         kschl TYPE kschl,
+         kopos TYPE kopos,
+         kbetr TYPE kbetr,
+       END OF ty_konp.
+
+TYPES: BEGIN OF ty_a003,
+         kschl TYPE kschl,
+         knumh TYPE knumh,
+         mwskz TYPE mwskz,
+       END OF ty_a003.
+
+*........declaring constants........
+CONSTANTS: lc_spras        TYPE spras VALUE 'E',
+           lc_land1        TYPE land1 VALUE 'IN',
+           lc_kappl        TYPE kappl VALUE 'TX',
+           lc_jiig         TYPE char4 VALUE 'JIIG',
+           lc_jicg         TYPE char4 VALUE 'JICG',
+           lc_jisg         TYPE char4 VALUE 'JISG',
+           lc_device       TYPE char4 VALUE 'LP01',
+           lc_sf1name      TYPE tdsfname VALUE 'ZMMSF_DOIMSERVICE_PRINT',
+           lc_sf2name      TYPE tdsfname VALUE 'ZMMSF_DOIMSERVICE_PRINT2',
+           lc_background   TYPE string VALUE 'DRAFT',
+           lc_background_l TYPE string VALUE 'DRAFT_L',
+           lc_blank        TYPE string VALUE 'BLANK'.
+
+*........data declaration.........
+DATA: gs_print_data   TYPE zst_doimservice ##NEEDED,
+      ls_ekko         TYPE ty_ekko  ##NEEDED,
+      lv_sfname       TYPE rs38l_fnam ##NEEDED,
+      lv_sfname1      TYPE rs38l_fnam ##NEEDED,
+*      lt_esll_itm     TYPE STANDARD TABLE OF zst_doimservice_itm ##NEEDED,                   "--> Commented by Airditdebi(Previously "zst_doimservice_itm" structure used for this "lt_esll_itm" Internal table,
+*                                                                                                                       "  but as new field Requirment came and this structure used in multiple other programs
+*                                                                                                                       "  that's why i created a new structure "ZST_DOIMSERVICE_ITM_ZSRV" type in this program).
+      lt_esll_itm     TYPE STANDARD TABLE OF zst_doimservice_itm_zsrv ##NEEDED,               "--> Added By airditdebi
+      lt_eslh_itm     TYPE STANDARD TABLE OF zst_doimservice_hdr ##NEEDED,
+      lt_ekpo_itms    TYPE STANDARD TABLE OF ty_ekpoitms ##NEEDED,
+      lt_gst          TYPE STANDARD TABLE OF ty_gst ##NEEDED,
+      lwa_gst         TYPE ty_gst ##NEEDED,
+      ls_collec       TYPE ty_gst_collec ##NEEDED,
+      lt_collec       TYPE STANDARD TABLE OF ty_gst_collec ##NEEDED,
+      ls_netwr        TYPE ty_valueofwrk ##NEEDED,
+      lt_netwr        TYPE STANDARD TABLE OF ty_valueofwrk ##NEEDED,
+      ls_cparam       TYPE ssfctrlop ##NEEDED,
+      ls_outop        TYPE ssfcompop ##NEEDED,
+      lv_tabix        TYPE sy-tabix ##NEEDED,
+      lv_bin_filesize TYPE i ##NEEDED,
+      lt_otf_data     TYPE ssfcrescl ##NEEDED,
+      lt_pdf          TYPE STANDARD TABLE OF tline ##NEEDED,
+      lt_otf_final    TYPE STANDARD TABLE OF itcoo ##NEEDED,
+      lv_index        TYPE sy-tabix ##NEEDED,
+      lt_konp         TYPE STANDARD TABLE OF ty_konp ##NEEDED,
+      ls_konp         TYPE ty_konp ##NEEDED,
+      lt_a003         TYPE STANDARD TABLE OF ty_a003 ##NEEDED,
+      lv_w_file_name  TYPE string ##NEEDED,
+      lv_w_file_path  TYPE string ##NEEDED,
+      lv_w_full_path  TYPE string ##NEEDED,
+      lv_filename     TYPE string ##NEEDED,
+      lv_back_l       TYPE char20 ##NEEDED,
+      lv_projname     TYPE eknam  ##NEEDED,
+      p_ebeln         TYPE ebeln  ##NEEDED,
+      ls_adrc         TYPE adrc   ##NEEDED,
+      ls_esll_header  TYPE thead  ##NEEDED,
+      lt_esll_line    TYPE TABLE OF tline  ##NEEDED,
+      lv_line_text    TYPE string.
+
+FORM entry_neu USING ent_retco TYPE any ent_screen TYPE any ##CALLED.
+
+  TABLES: nast.
+
+  DATA: l_druvo       TYPE druvo,
+        l_nast        TYPE nast ##NEEDED,
+        l_from_memory  ##TYPE_CHAIN_OK,
+        l_doc         TYPE meein_purchase_doc_print ##NEEDED.
+
+  CLEAR ent_retco.
+
+  IF nast-aende EQ space.
+    l_druvo = '1'.
+  ELSE.
+    l_druvo = '2'.
+  ENDIF.
+
+  CALL FUNCTION 'ME_READ_PO_FOR_PRINTING'
+    EXPORTING
+      ix_nast        = nast
+      ix_screen      = ent_screen
+    IMPORTING
+      ex_retco       = ent_retco
+      ex_nast        = l_nast
+      doc            = l_doc
+    CHANGING
+      cx_druvo       = l_druvo
+      cx_from_memory = l_from_memory.
+
+  CHECK ent_retco EQ 0.
+  p_ebeln = nast-objky.
+
+*........get_data for all the select queries..........
+  PERFORM get_data.
+
+*........to process the data using loop and read......
+  PERFORM process_data.
+
+*........to display the data by calling SF...........
+  PERFORM display_data.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data.
+
+  "fetching version and amendment date from erev table
+  SELECT MAX( revno )                                   "#EC CI_NOORDER
+         FROM erev
+         INTO @DATA(lv_revno)
+         WHERE edokn = @p_ebeln.
+
+  IF lv_revno > 0.
+    SELECT erdat
+      UP TO 1 ROWS                                      "#EC CI_NOORDER
+      FROM erev
+      INTO @DATA(lv_rev_dat)
+      WHERE edokn = @p_ebeln.
+    ENDSELECT.
+  ENDIF.
+
+  IF lv_rev_dat IS NOT INITIAL.
+    gs_print_data-ammendtmnt_date = lv_rev_dat.
+    CLEAR: lv_rev_dat.
+  ENDIF.
+
+*..............start of fetching company name and company address.................
+  "fetching company name
+  SELECT SINGLE bukrs,lifnr,llief, bedat, zterm, waers ,kdatb, kdate, inco1, inco2_l,ekorg,ekgrp, frgke
+    FROM ekko
+    INTO (@DATA(lv_bukrs),@gs_print_data-lifnr,
+          @DATA(lv_gscode),
+          @gs_print_data-aedat,
+          @ls_ekko-zterm,
+          @gs_print_data-waers,
+          @gs_print_data-kdatb,
+          @gs_print_data-kdate,
+          @ls_ekko-inco1,@ls_ekko-inco2_l,
+          @gs_print_data-ekorg,
+          @DATA(lv_ekgrp),
+          @DATA(lv_frgke))
+    WHERE ebeln = @p_ebeln.
+  IF sy-subrc IS INITIAL.
+    SELECT SINGLE butxt
+      FROM t001
+      INTO gs_print_data-butxt
+      WHERE bukrs = lv_bukrs.
+  ENDIF.
+
+*  Begin of Add on 30.May.2024
+
+  IF lv_gscode IS NOT INITIAL.
+    gs_print_data-llief = lv_gscode.
+  ELSE.
+    gs_print_data-llief = gs_print_data-lifnr.
+  ENDIF.
+
+  IF gs_print_data-llief IS NOT INITIAL.
+
+    SELECT SINGLE mindk
+             FROM lfb1 INTO @DATA(gv_msme_indi)
+            WHERE lifnr = @gs_print_data-llief
+              AND bukrs = @lv_bukrs.
+
+  ENDIF.
+
+  CASE gv_msme_indi.
+    WHEN 'MED' OR 'SNM'.
+      gs_print_data-gv_msme_indi = 'YES'.
+    WHEN 'NON'.
+      gs_print_data-gv_msme_indi = 'NO'.
+  ENDCASE.
+
+*  End of Add on 30.May.2024
+
+  IF lv_ekgrp IS NOT INITIAL.
+    SELECT SINGLE eknam FROM t024 INTO @lv_projname WHERE ekgrp = @lv_ekgrp.
+  ENDIF.
+  IF lv_frgke IS INITIAL OR lv_frgke = space.
+    lv_frgke = 'G'.
+  ENDIF.
+  IF  lv_frgke = 'G' OR lv_frgke = 'M' OR lv_frgke = 'R'.
+    gs_print_data-background  = lc_blank.
+    lv_back_l = lc_blank.
+  ELSE.
+    gs_print_data-background = lc_background.
+    lv_back_l = lc_background_l.
+  ENDIF.
+*
+***/-> Start<-/--------------------------------------------------------------------------------------> Added By AIRDITDEBI ON 23-12-2024
+* fetching plant name and address of Plant.
+  SELECT  SINGLE werks FROM ekpo
+     INTO gs_print_data-werks  WHERE ebeln = p_ebeln AND loekz NE 'L'. "#EC CI_NOORDER
+
+*  "--> fetch Cretae date and time of the PO.
+  IF gs_print_data-werks IS NOT INITIAL.
+    SELECT SINGLE objectid,udate,utime FROM cdhdr WHERE objectid EQ @p_ebeln AND change_ind EQ 'I' INTO @DATA(ls_po_create).
+
+    IF  sy-subrc EQ 0.
+      CALL FUNCTION 'ZMMFM_PO_PLANT_ADDRESS'
+        EXPORTING
+          iv_werks = gs_print_data-werks
+          iv_date  = ls_po_create-udate
+          iv_time  = ls_po_create-utime
+        IMPORTING
+          es_adrc  = ls_adrc.
+
+      gs_print_data-street  = ls_adrc-street.
+      gs_print_data-street2 = ls_adrc-str_suppl1.
+      gs_print_data-street3 = ls_adrc-str_suppl2.
+      gs_print_data-street4 =  ls_adrc-str_suppl3.
+      gs_print_data-city    = ls_adrc-city1.
+      gs_print_data-region  = ls_adrc-region.
+      gs_print_data-country = ls_adrc-country.
+
+      IF ls_adrc-region IS NOT INITIAL.
+        SELECT SINGLE bezei FROM t005u INTO @gs_print_data-bezei
+        WHERE bland = @gs_print_data-region AND spras = @sy-langu AND land1 = @ls_adrc-country.
+      ENDIF.
+
+      IF ls_adrc-country IS NOT INITIAL.
+        SELECT  SINGLE landx FROM t005t INTO @gs_print_data-landx
+         WHERE land1 = @gs_print_data-country AND spras = @sy-langu.
+      ENDIF.
+    ENDIF.
+
+    SELECT SINGLE werks,j_1bbranch FROM t001w INTO @DATA(ls_t001w) WHERE werks = @gs_print_data-werks.
+    IF ls_t001w-j_1bbranch IS NOT INITIAL.
+      SELECT SINGLE gstin                               "#EC CI_NOORDER
+      FROM j_1bbranch INTO @gs_print_data-gstin
+      WHERE branch = @ls_t001w-j_1bbranch  AND bukrs = @lv_bukrs.
+    ENDIF.
+
+  ENDIF.
+***/-> End <-/---------------------------------------------------------------------------------------> Added by AIRDITDEBI ON 23-12-2024
+
+***/-> Start <-/---------------------------------------------------------------------------------------> Commented by AIRDITDEBI ON 23-12-2024
+*  "fetching plant name
+*  SELECT werks
+*    UP TO 1 ROWS
+*    FROM ekpo
+*    INTO gs_print_data-werks
+*    WHERE ebeln = p_ebeln.                              "#EC CI_NOORDER
+*  ENDSELECT.
+*
+*  IF  gs_print_data-werks IS NOT INITIAL.
+*    SELECT SINGLE adrnr, j_1bbranch
+*         FROM t001w
+*         INTO @DATA(ls_t001w)
+*         WHERE werks = @gs_print_data-werks.
+*  ENDIF.
+*
+*  IF ls_t001w IS NOT INITIAL.
+*    SELECT   street,                                    "#EC CI_NOORDER
+*             str_suppl1,
+*             str_suppl2,
+*             str_suppl3,
+*             city1,
+*             region,
+*             country
+*      UP TO 1 ROWS
+*        FROM adrc
+*        INTO ( @gs_print_data-street,
+*               @gs_print_data-street2,
+*               @gs_print_data-street3,
+*               @gs_print_data-street4,
+*               @gs_print_data-city,
+*               @gs_print_data-region,
+*               @gs_print_data-country )
+*        WHERE addrnumber = @ls_t001w-adrnr.
+*    ENDSELECT.
+*  ENDIF.
+*
+*  IF gs_print_data-region IS NOT INITIAL.
+*    SELECT bezei
+*           FROM t005u
+*           INTO @gs_print_data-bezei
+*       UP TO 1 ROWS
+*           WHERE bland = @gs_print_data-region
+*           AND spras = @lc_spras
+*           AND land1 = @gs_print_data-country.
+*    ENDSELECT.
+*  ENDIF.
+*
+*  IF gs_print_data-country IS NOT INITIAL.
+*    SELECT landx
+*           FROM t005t
+*           INTO @gs_print_data-landx
+*         UP TO 1 ROWS
+*           WHERE land1 = @gs_print_data-country
+*           AND spras = @lc_spras.
+*    ENDSELECT.
+*  ENDIF.
+*
+*  IF ls_t001w-j_1bbranch IS NOT INITIAL.
+*    SELECT gstin                                        "#EC CI_NOORDER
+*           FROM j_1bbranch
+*           INTO @gs_print_data-gstin
+*         UP TO 1 ROWS
+*           WHERE branch = @ls_t001w-j_1bbranch
+*           AND bukrs = @lv_bukrs.
+*    ENDSELECT.
+*  ENDIF.
+**.....................End of fetching company name and address..........................
+***/-> End <-/---------------------------------------------------------------------------------------> Commented by AIRDITDEBI ON 12-12-2024
+
+*.....................Start of fetching Vendor Name and Address.........................
+
+
+  IF lv_gscode IS NOT INITIAL.
+    gs_print_data-lifnr = lv_gscode.
+    CLEAR: lv_gscode.
+  ENDIF.
+
+  "fetching vendor name by passing vendor number
+  IF gs_print_data-lifnr IS NOT INITIAL.
+    SELECT SINGLE name1, name2, adrnr, stcd3
+      FROM lfa1
+      INTO ( @gs_print_data-name1, @gs_print_data-name2, @DATA(ls_adrnr), @gs_print_data-stcd3  )
+      WHERE lifnr = @gs_print_data-lifnr.
+  ENDIF.
+
+  "fetching street, city, country for vendor
+  IF ls_adrnr IS NOT INITIAL.
+    SELECT   street,                                    "#EC CI_NOORDER
+             str_suppl1,
+             str_suppl2,
+             str_suppl3,
+             city1,
+             region,
+             country,
+             tel_number,
+             fax_number
+      UP TO 1 ROWS
+        FROM adrc
+        INTO ( @gs_print_data-street_v,
+               @gs_print_data-street2_v,
+               @gs_print_data-street3_v,
+               @gs_print_data-street4_v,
+               @gs_print_data-city_v,
+               @gs_print_data-region_v,
+               @gs_print_data-country_v,
+               @gs_print_data-tel_no_v,
+               @gs_print_data-fax_no_v )
+        WHERE addrnumber = @ls_adrnr.
+    ENDSELECT.
+
+    SELECT smtp_addr FROM adr6
+      UP TO 1 ROWS                                      "#EC CI_NOORDER
+    INTO @gs_print_data-email_v
+    WHERE addrnumber = @ls_adrnr.
+    ENDSELECT.
+
+  ENDIF.
+
+  IF gs_print_data-region_v IS NOT INITIAL.
+    SELECT bezei
+           FROM t005u
+           INTO @gs_print_data-bezei_v
+       UP TO 1 ROWS
+           WHERE bland = @gs_print_data-region_v
+           AND spras = @lc_spras
+           AND land1 = @gs_print_data-country_v.
+    ENDSELECT.
+  ENDIF.
+
+  IF gs_print_data-country_v IS NOT INITIAL.
+    SELECT landx
+           FROM t005t
+           INTO @gs_print_data-landx_v
+         UP TO 1 ROWS
+           WHERE land1 = @gs_print_data-country_v
+           AND spras = @lc_spras.
+    ENDSELECT.
+  ENDIF.
+*.....................End of fetching Vendor Name and Address.........................
+
+*.......................start of fetching order item related detials.................
+
+  CONCATENATE ls_ekko-inco1 ls_ekko-inco2_l INTO gs_print_data-delivery_terms.
+
+  IF ls_ekko-zterm IS NOT INITIAL.
+    SELECT SINGLE text1
+      FROM t052u
+      INTO @gs_print_data-payment_terms
+      WHERE zterm = @ls_ekko-zterm
+      AND spras = @lc_spras.
+  ENDIF.
+
+*.......................end of fetching order item related details...................
+
+*.....................start of fetching item details..................................
+
+  SELECT ebeln ebelp txz01 menge meins mwskz netwr netpr loekz
+    FROM ekpo
+    INTO TABLE lt_ekpo_itms
+    WHERE ebeln = p_ebeln.
+
+  DELETE lt_ekpo_itms WHERE loekz = 'L'."DELETION INDICATOR CHECK
+
+  IF lt_ekpo_itms IS NOT INITIAL.
+    SELECT packno knumv ebelp
+    FROM eslh
+    INTO TABLE lt_eslh_itm              ##TOO_MANY_ITAB_FIELDS
+    FOR ALL ENTRIES IN lt_ekpo_itms                "#EC CI_NO_TRANSFORM
+    WHERE ebeln =  lt_ekpo_itms-ebeln
+    AND ebelp = lt_ekpo_itms-ebelp
+    AND  fpackno NE space.
+  ENDIF.
+
+  IF lt_ekpo_itms IS NOT INITIAL.
+    SELECT kschl
+          knumh
+          mwskz
+     FROM a003
+     INTO TABLE lt_a003
+     FOR ALL ENTRIES IN lt_ekpo_itms               "#EC CI_NO_TRANSFORM
+     WHERE mwskz = lt_ekpo_itms-mwskz
+     AND kappl = lc_kappl
+     AND aland = lc_land1.
+  ENDIF.
+
+  IF lt_a003 IS NOT INITIAL.
+    SELECT knumh,
+         kschl,
+         kopos,
+         kbetr
+    FROM konp
+    INTO TABLE @lt_konp
+    FOR ALL ENTRIES IN @lt_a003                    "#EC CI_NO_TRANSFORM
+    WHERE knumh = @lt_a003-knumh.
+  ENDIF.
+
+  IF lt_eslh_itm IS NOT INITIAL.
+    SELECT packno introw extrow srvpos ktext1 taxtariffcode menge meins tbtwr netwr
+      FROM esll
+      INTO TABLE lt_esll_itm
+      FOR ALL ENTRIES IN lt_eslh_itm               "#EC CI_NO_TRANSFORM
+      WHERE packno = lt_eslh_itm-packno.
+
+    IF lt_esll_itm IS NOT INITIAL .
+      LOOP AT  lt_esll_itm ASSIGNING FIELD-SYMBOL(<fs_esll_item>)  .
+
+        "--> First Fetch Subline item Service long Text.
+        SELECT SINGLE tdobject,tdname,tdid,tdspras FROM stxh
+        INTO @DATA(ls_stxh) WHERE tdname = @<fs_esll_item>-srvpos.
+
+        IF sy-subrc EQ 0 AND ls_stxh IS NOT INITIAL.
+          CALL FUNCTION 'READ_TEXT'
+            EXPORTING
+              client                  = sy-mandt
+              id                      = ls_stxh-tdid
+              language                = ls_stxh-tdspras
+              name                    = ls_stxh-tdname
+              object                  = ls_stxh-tdobject
+            IMPORTING
+              header                  = ls_esll_header
+            TABLES
+              lines                   = lt_esll_line
+            EXCEPTIONS
+              id                      = 1
+              language                = 2
+              name                    = 3
+              not_found               = 4
+              object                  = 5
+              reference_check         = 6
+              wrong_access_to_archive = 7
+              OTHERS                  = 8.
+          IF sy-subrc <> 0.
+*            Implement suitable error handling here
+*                     endif.
+          ENDIF.
+          IF lt_esll_line IS NOT INITIAL.
+            LOOP AT lt_esll_line INTO DATA(ls_line).
+              lv_line_text = |{ lv_line_text }{ ls_line-tdline }|.
+            ENDLOOP.
+          ENDIF.
+        ENDIF.
+
+        "--> IF Service long Text is not there then Fetch Line text of Subline item.
+        IF lv_line_text IS INITIAL.
+          DATA(lv_tdname) = |{ <fs_esll_item>-packno }{ <fs_esll_item>-introw }|.
+          SELECT SINGLE tdobject,tdname,tdid,tdspras FROM stxh
+          INTO @ls_stxh WHERE tdname = @lv_tdname.
+          IF sy-subrc EQ 0 AND ls_stxh IS NOT INITIAL.
+            CALL FUNCTION 'READ_TEXT'
+              EXPORTING
+                client                  = sy-mandt
+                id                      = ls_stxh-tdid
+                language                = ls_stxh-tdspras
+                name                    = ls_stxh-tdname
+                object                  = ls_stxh-tdobject
+              IMPORTING
+                header                  = ls_esll_header
+              TABLES
+                lines                   = lt_esll_line
+              EXCEPTIONS
+                id                      = 1
+                language                = 2
+                name                    = 3
+                not_found               = 4
+                object                  = 5
+                reference_check         = 6
+                wrong_access_to_archive = 7
+                OTHERS                  = 8.
+            IF sy-subrc <> 0.
+*            Implement suitable error handling here
+*                     endif.
+            ENDIF.
+            IF lt_esll_line IS NOT INITIAL.
+              LOOP AT lt_esll_line INTO ls_line.
+                lv_line_text = |{ lv_line_text }{ ls_line-tdline }|.
+              ENDLOOP.
+            ENDIF.
+          ENDIF.
+        ENDIF.
+
+        <fs_esll_item>-line_text = lv_line_text.
+        CLEAR lv_line_text.
+      ENDLOOP.
+
+    ENDIF.
+
+    SORT lt_esll_itm ASCENDING.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+
+  SORT lt_ekpo_itms BY ebelp.
+
+  SORT lt_eslh_itm BY packno DESCENDING.
+
+  DELETE ADJACENT DUPLICATES FROM lt_eslh_itm COMPARING ebelp.
+
+  SORT lt_eslh_itm BY ebelp.
+
+  LOOP AT lt_ekpo_itms ASSIGNING FIELD-SYMBOL(<fs_ekpo>).
+    READ TABLE lt_eslh_itm ASSIGNING FIELD-SYMBOL(<fs_eslh>) WITH KEY ebelp = <fs_ekpo>-ebelp BINARY SEARCH.
+    IF sy-subrc = 0.
+      <fs_eslh>-sr_no = sy-tabix.
+      <fs_eslh>-txz01 = <fs_ekpo>-txz01.
+      <fs_eslh>-menge = <fs_ekpo>-menge.
+      <fs_eslh>-meins = <fs_ekpo>-meins.
+      <fs_eslh>-mwskz = <fs_ekpo>-mwskz.
+      <fs_eslh>-netwr = <fs_ekpo>-netwr.
+    ENDIF.
+  ENDLOOP.
+
+  SORT lt_gst BY ebelp.
+  SORT lt_konp BY knumh kschl.
+  SORT lt_a003 BY mwskz.
+
+  LOOP AT lt_ekpo_itms INTO DATA(lwa_ekpo1) ##INTO_OK.
+    ls_netwr-ebeln = lwa_ekpo1-ebeln.
+    ls_netwr-netwr = lwa_ekpo1-netwr.
+    COLLECT ls_netwr INTO lt_netwr.
+
+    READ TABLE lt_a003 INTO DATA(lwa_a003) WITH KEY mwskz = lwa_ekpo1-mwskz BINARY SEARCH  ##NEEDED.
+    CLEAR lv_index.
+    lv_index = sy-tabix.
+    IF sy-subrc = 0.
+      LOOP AT lt_a003 INTO DATA(ls_a003) FROM lv_index.
+        IF lwa_ekpo1-mwskz <> ls_a003-mwskz.
+          EXIT.
+        ELSE.
+          READ TABLE lt_konp INTO ls_konp WITH KEY knumh = ls_a003-knumh kschl = ls_a003-kschl BINARY SEARCH  ##NEEDED.
+          IF sy-subrc = 0.
+            CASE ls_a003-kschl.
+              WHEN lc_jiig.
+                lwa_gst-igst_per =  ls_konp-kbetr / 10.
+                lwa_gst-igst = lwa_ekpo1-netpr * ( ls_konp-kbetr / 1000 ).
+              WHEN lc_jicg.
+                lwa_gst-cgst_per =  ls_konp-kbetr / 10.
+                lwa_gst-cgst = lwa_ekpo1-netpr * ( ls_konp-kbetr / 1000 ).
+              WHEN lc_jisg.
+                lwa_gst-sgst_per =  ls_konp-kbetr / 10.
+                lwa_gst-sgst = lwa_ekpo1-netpr * ( ls_konp-kbetr / 1000 ).
+            ENDCASE.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+
+    lwa_gst-ebeln = lwa_ekpo1-ebeln.
+    lwa_gst-ebelp = lwa_ekpo1-ebelp.
+
+    APPEND lwa_gst TO lt_gst.
+    CLEAR: lwa_gst,ls_konp,ls_a003,lwa_ekpo1.
+  ENDLOOP.
+
+  CLEAR: lwa_gst.
+
+  LOOP AT lt_gst INTO lwa_gst.
+    READ TABLE lt_eslh_itm ASSIGNING <fs_eslh> WITH KEY ebelp = lwa_gst-ebelp BINARY SEARCH.
+    IF sy-subrc = 0.
+      <fs_eslh>-igst = lwa_gst-igst.
+      <fs_eslh>-sgst = lwa_gst-sgst.
+      <fs_eslh>-cgst = lwa_gst-cgst.
+      <fs_eslh>-igst% = lwa_gst-igst_per.
+      <fs_eslh>-sgst% = lwa_gst-sgst_per.
+      <fs_eslh>-cgst% = lwa_gst-cgst_per.
+    ENDIF.
+
+    ls_collec-ebeln = lwa_gst-ebeln.
+    ls_collec-igst = lwa_gst-igst.
+    ls_collec-cgst = lwa_gst-cgst.
+    ls_collec-sgst = lwa_gst-sgst.
+
+    COLLECT ls_collec INTO lt_collec.
+    CLEAR: ls_collec, lwa_gst.
+  ENDLOOP.
+
+  READ TABLE lt_collec INTO ls_collec INDEX 1.
+  READ TABLE lt_netwr INTO ls_netwr INDEX 1.
+
+  gs_print_data-valueofwrk = ls_netwr-netwr.
+  gs_print_data-igst_sum = ls_collec-igst.
+  gs_print_data-sgst_sum = ls_collec-sgst.
+  gs_print_data-cgst_sum = ls_collec-cgst.
+
+  CLEAR: ls_collec,ls_netwr,lt_netwr[],lt_collec[].
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+
+  ls_outop-tddest = lc_device.
+*
+*  ls_cparam-no_dialog = abap_true.
+*
+*  ls_cparam-preview = space.
+*
+*  ls_cparam-getotf = abap_true.
+
+  DATA: gs_control_parameters TYPE ssfctrlop.
+
+  gs_control_parameters-no_open = 'X'.
+  gs_control_parameters-no_close = 'X'.
+
+  CALL FUNCTION 'SSF_OPEN'
+    EXPORTING
+      control_parameters = gs_control_parameters.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lc_sf1name
+    IMPORTING
+      fm_name            = lv_sfname
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+    WITH sy-msgv1 sy-msgv2 sy-msgv3.
+  ENDIF.
+
+  "calling potrait view smartform.
+  CALL FUNCTION lv_sfname
+    EXPORTING
+      control_parameters = gs_control_parameters
+      output_options     = ls_outop
+      user_settings      = 'X'
+      gs_print_data      = gs_print_data
+      gv_order_no        = p_ebeln
+      gv_projnam         = lv_projname
+    EXCEPTIONS
+      formatting_error   = 1
+      internal_error     = 2
+      send_error         = 3
+      user_canceled      = 4
+      OTHERS             = 5.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+    WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+  "calling Smartform 2 landscape view
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lc_sf2name
+    IMPORTING
+      fm_name            = lv_sfname1
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+    WITH sy-msgv1 sy-msgv2 sy-msgv3.
+  ENDIF.
+
+  CALL FUNCTION lv_sfname1
+    EXPORTING
+      control_parameters = gs_control_parameters
+      output_options     = ls_outop
+      user_settings      = 'X'
+      gv_order           = p_ebeln
+      gv_odrdat          = gs_print_data-aedat
+      gv_curr            = gs_print_data-waers
+      gt_hdr_final       = lt_eslh_itm
+      gt_final_itms      = lt_esll_itm
+      gv_ekorg           = gs_print_data-ekorg
+      gv_background      = lv_back_l
+    EXCEPTIONS
+      formatting_error   = 1
+      internal_error     = 2
+      send_error         = 3
+      user_canceled      = 4
+      OTHERS             = 5.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+    WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+  CLEAR: lt_otf_data,
+         gs_print_data,
+         lt_eslh_itm[],
+         lt_esll_itm[],
+         lv_projname,
+         lt_ekpo_itms[],
+         lt_a003[],
+         lt_konp[],
+         lt_gst[].
+
+  CALL FUNCTION 'SSF_CLOSE'
+    IMPORTING
+      job_output_info  = lt_otf_data
+    EXCEPTIONS
+      formatting_error = 1
+      internal_error   = 2
+      send_error       = 3
+      OTHERS           = 4.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+       WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+
+
+
+ENDFORM.

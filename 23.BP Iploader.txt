@@ -1,0 +1,721 @@
+*---------------------------------------------------------------------*
+* DESCIPTION:
+*   Prior to execution of Maintenance activities and to record the
+*   history details,This program execute the Permit Approval Process
+*
+* PROGRAM NAME: ZSDEP_BDC_UPLOAD
+* AUTHOR: GANGULA BALA GOPINADH
+* DATE  : 27/1/24
+* Description : BDC PROGRAM GIVEN BY MOHAN SIR
+*---------------------------------------------------------------------*
+* CHANGE HISTORY
+* Date         Changed By     Defect/RFC    Description
+* 2/02/24      GANGULA BALA GOPINADH        BDC PROGRAM GIVEN BY MOHAN SIR DID CAHANGES ACCORDING TO OUR REQUREMENT
+*---------------------------------------------------------------------*
+* dd/mm/yyyy   User ID         9999         xxxxxxxxxxxxxxxxxxxxxxxx
+*---------------------------------------------------------------------*
+REPORT zsdep_bdc_upload
+       NO STANDARD PAGE HEADING LINE-SIZE 255.
+
+TYPE-POOLS:slis.
+
+DATA:   bdcdata LIKE bdcdata    OCCURS 0 WITH HEADER LINE  ##NEEDED.
+*       messages of call transaction
+DATA:   messtab LIKE bdcmsgcoll OCCURS 0 WITH HEADER LINE  ##NEEDED.
+DATA :  lt_msgtab TYPE TABLE OF bdcmsgcoll ##NEEDED.
+*       error session opened (' ' or 'X')
+DATA:   e_group_opened ##NEEDED .
+**       message texts.
+DATA: peinh(5)   TYPE c ##NEEDED.
+DATA: vernr(10)  TYPE c ##NEEDED.
+DATA: stprs(10) TYPE c ##NEEDED .
+DATA: l_mstring(480) ##NEEDED.
+DATA: l_subrc LIKE sy-subrc ##NEEDED.
+
+TYPES : BEGIN OF t_inttable,
+          creation_group TYPE bus_joel_main-creation_group,
+          partner_role   TYPE bus_joel_main-partner_role,
+          name_co        type ADDR1_DATA-NAME_CO,
+          CITY2          type ADDR1_DATA-city2,
+          name_org1      TYPE but000-name_org1,
+          name_org2      TYPE but000-name_org2,
+          bu_sort1_txt   TYPE bus000flds-bu_sort1_txt,
+          bu_sort2_txt   TYPE bus000flds-bu_sort2_txt,
+          unw_remark     TYPE bp001-unw_remark,   """"""ADDED
+          str_suppl1     TYPE addr1_data-str_suppl1,
+          str_suppl2     TYPE addr1_data-str_suppl2,
+          str_suppl3     TYPE addr1_data-str_suppl3,
+          street         TYPE addr1_data-street,
+
+          post_code1     TYPE addr1_data-post_code1,
+          city1          TYPE addr1_data-city1,
+          country        TYPE addr1_data-country,
+          region         TYPE addr1_data-region,
+          langu          TYPE addr1_data-langu,
+          tel_number     TYPE sza1_d0100-tel_number,
+          mob_number     TYPE sza1_d0100-mob_number,
+          smtp_addr      TYPE sza1_d0100-smtp_addr,
+*------------------------------------------------------------*
+          smtp_addr2     TYPE adsmtp-smtp_addr,
+*------------------------------------------------------------*
+          taxtype        TYPE dfkkbptaxnum-taxtype,
+          taxnumxl       TYPE dfkkbptaxnum-taxnumxl,
+          bukrs          TYPE bs001-bukrs,
+          akont          TYPE knb1-akont,
+          vkorg          TYPE rf02d-vkorg,
+          vtweg          TYPE rf02d-vtweg,
+          spart          TYPE rf02d-spart,
+          bzirk          TYPE knvv-bzirk,
+          kdgrp          TYPE knvv-kdgrp,   " 13.10.2023 ADDED BY DP
+          vkbur          TYPE knvv-vkbur, """"
+          vkgrp          TYPE knvv-vkgrp, """"
+          waers          TYPE knvv-waers,
+          konda          TYPE knvv-konda,
+          kalks          TYPE knvv-kalks,
+          pltyp          TYPE knvv-pltyp, """"
+          versg          TYPE knvv-versg, """"
+          lprio          TYPE knvv-lprio,
+          vwerk          TYPE knvv-vwerk,
+          vsbed          TYPE knvv-vsbed,
+          inco1          TYPE knvv-inco1,
+          inco2_l        TYPE knvv-inco2_l,
+          zterm          TYPE knvv-zterm,
+          ktgrd          TYPE knvv-ktgrd,
+          taxkd          TYPE knvi-taxkd,
+          taxkd2         TYPE knvi-taxkd,
+          taxkd3         TYPE knvi-taxkd,
+          taxkd4         TYPE knvi-taxkd,
+          j_1ipanno      TYPE kna1-j_1ipanno,
+          taxnumxl1      TYPE dfkkbptaxnum-taxnumxl,
+          bpext          TYPE but000-bpext,
+        END OF t_inttable.
+DATA : t_data  TYPE t_inttable OCCURS 0 WITH HEADER LINE ##NEEDED,
+       t_data2 TYPE TABLE OF t_inttable ##NEEDED . "OCCURS 0 WITH HEADER LINE
+DATA: l_intern LIKE alsmex_tabline   OCCURS 0 WITH HEADER LINE ##NEEDED,
+      l_index  TYPE i ##NEEDED.
+DATA : filename_exl TYPE rlgrap-filename ##NEEDED.
+DATA : v_val(17) TYPE c ##NEEDED.
+DATA: BEGIN OF t_table OCCURS 0 ##NEEDED,
+        sr(10)  TYPE c ##NEEDED,
+        msg(90) TYPE c ##NEEDED,
+      END OF t_table ##NEEDED.
+DATA: t_error   LIKE t_table OCCURS 0 WITH HEADER LINE  ##NEEDED,
+      t_success LIKE t_table OCCURS 0 WITH HEADER LINE ##NEEDED,
+      t_report  LIKE t_table OCCURS 0 WITH HEADER LINE ##NEEDED.
+DATA:  use_zav(1) TYPE c ##NEEDED.
+DATA: l_er(10)      TYPE c ##NEEDED,
+      l_ermsg(100)  TYPE c ##NEEDED,
+      l_suc(10)     TYPE c ##NEEDED,
+      l_sucmsg(100) TYPE c ##NEEDED,
+      l_msg(150)    TYPE c ##NEEDED,                "ERROR MESSAGE FORMATTED.
+      l_msg1(150)   TYPE c ##NEEDED,                "ERROR MESSAGE FORMATTED.
+      l_nodata(1) ##NEEDED,
+      ctr           TYPE i VALUE 0 ##NEEDED,
+      filename      TYPE string ##NEEDED,
+      w_ctu_para    TYPE ctu_params ##NEEDED,
+      t_msg         TYPE TABLE OF bdcmsgcoll ##NEEDED,
+      w_msg         TYPE bdcmsgcoll ##NEEDED,
+      w_fnam(20)    TYPE c ##NEEDED,
+      rem(2)        TYPE c ##NEEDED,
+      mode(1)       TYPE c ##NEEDED,
+      l_kunnr       TYPE kna1-kunnr ##NEEDED,
+      l_field       TYPE string ##NEEDED,
+      l_field2      TYPE string ##NEEDED,
+      l_cnt(2)      TYPE n VALUE '00' ##NEEDED,
+      l_cnt3(4)     TYPE n  VALUE '000' ##NEEDED.
+DATA : lv_name      TYPE rlgrap-filename ##NEEDED,
+       bdcmode      TYPE c ##NEEDED,
+       t_bdcmsgcoll LIKE bdcmsgcoll OCCURS 0 WITH HEADER LINE ##NEEDED.
+DATA:field TYPE string ##NEEDED.
+DATA:cnt TYPE n LENGTH 2 ##NEEDED.
+DATA:tcount TYPE i ##NEEDED.
+*  ADDED EXTRA VARIABLES FOR VALIDAITON.
+TYPES : BEGIN OF ty_msg,
+          zmessage TYPE string,
+        END OF ty_msg.
+DATA : lt_msg  TYPE TABLE OF ty_msg  ##NEEDED,
+       lwa_msg TYPE ty_msg ##NEEDED.
+DATA : lv_index  TYPE string  ##NEEDED,
+       lv_conmsg TYPE string ##NEEDED,
+       lv_ermsg  TYPE string ##NEEDED,
+       lv_ssmsg  TYPE string ##NEEDED.
+DATA : lwa_but000 TYPE but000-bpext ##NEEDED.
+FIELD-SYMBOLS : <fs> ##NEEDED.
+PARAMETERS: p_name TYPE rlgrap-filename OBLIGATORY ##NEEDED.
+PARAMETERS p_mode TYPE ctu_mode AS LISTBOX VISIBLE LENGTH 20 ##NEEDED.
+
+AT SELECTION-SCREEN.
+  w_ctu_para-dismode = p_mode.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_name.
+  CALL FUNCTION 'F4_FILENAME'
+    EXPORTING
+      program_name  = syst-cprog
+      dynpro_number = syst-dynnr
+      field_name    = ' '
+    IMPORTING
+      file_name     = p_name.
+  lv_name = p_name.
+  MOVE p_name TO lv_name.
+
+INITIALIZATION.
+  PERFORM refresh.
+
+START-OF-SELECTION.
+  CALL FUNCTION 'ALSM_EXCEL_TO_INTERNAL_TABLE'
+    EXPORTING
+      filename                = lv_name
+      i_begin_col             = '1'
+      i_begin_row             = '4'
+      i_end_col               = '256'
+      i_end_row               = '10000'
+    TABLES
+      intern                  = l_intern
+    EXCEPTIONS
+      inconsistent_parameters = 1
+      upload_ole              = 2.
+  IF sy-subrc NE 0.
+    FORMAT COLOR COL_BACKGROUND INTENSIFIED.
+    WRITE : / 'FILE ERROR'.
+    EXIT.
+  ELSE.
+    SORT l_intern BY row col.
+    LOOP AT l_intern.
+      MOVE l_intern-col TO l_index.
+      ASSIGN COMPONENT l_index OF STRUCTURE  t_data TO <fs>.
+
+      MOVE l_intern-value TO <fs>.
+      AT END OF row.
+        APPEND t_data.
+        CLEAR t_data.
+      ENDAT.
+    ENDLOOP.
+  ENDIF.
+  PERFORM success_file.
+  PERFORM error_file.
+*&---------------------------------------------------------------------*
+*&      Form  PROCESS_BDC
+*&---------------------------------------------------------------------*
+  LOOP AT t_data .
+    REFRESH:bdcdata[].
+    CLEAR:  bdcdata.
+*  THE CODE UPSIDE deleted BEACAUSE OF IT IS NOT a CORRECT RECORDING THIS IS THE NEW RECORDING ACCORIDNG THE THE HITESH (SD FUNTIONAL)
+* checking the old customer is already creaded or not form the database.
+    CLEAR : lwa_but000.
+    SELECT bpext
+      FROM  but000
+      INTO lwa_but000
+      WHERE bpext = t_data-bpext.
+    ENDSELECT.
+    IF lwa_but000 IS NOT INITIAL.
+      DATA(lv_flag) = abap_true ##NEEDED.
+      lv_index = sy-tabix.
+      CONCATENATE TEXT-001 lv_index TEXT-002 lwa_but000 TEXT-003 INTO lwa_msg-zmessage SEPARATED BY space.
+      APPEND lwa_msg TO lt_msg.
+    ENDIF.
+    IF lv_flag IS INITIAL.
+* If it old customer is not there then only it will perform the operation.
+*  ********NEW RECORDING GIVEN BY HITESH ********
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1000_CRE_ORGA'.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1110_CHG_ROLE'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'BUS_JOEL_MAIN-PARTNER_ROLE'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_dynpro      USING 'SAPLSPO1' '0600'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=OPT1'.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=$INT'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'BUT000-NAME_ORG1'
+                                    t_data-name_org1.
+      PERFORM bdc_field       USING 'BUT000-NAME_ORG2'
+                                    t_data-name_org2.
+      PERFORM bdc_field       USING 'BUS000FLDS-BU_SORT1_TXT'
+                                    t_data-bu_sort1_txt.
+      PERFORM bdc_field       USING 'BUS000FLDS-BU_SORT2_TXT'
+                                    t_data-bu_sort2_txt.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'SZA1_D0100-SMTP_ADDR'.
+      PERFORM bdc_field       USING 'ADDR1_DATA-NAME_CO'
+                                    t_data-name_co.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL1'
+                                    t_data-str_suppl1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL2'
+                                    t_data-str_suppl2.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STREET'
+                                    t_data-street.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL3'
+                                    t_data-str_suppl3.
+      PERFORM bdc_field       USING 'ADDR1_DATA-POST_CODE1'
+                                    t_data-post_code1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-CITY1'
+                                    t_data-city1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-CITY2'
+                                    t_data-city2.
+      PERFORM bdc_field       USING 'ADDR1_DATA-COUNTRY'
+                                    t_data-country.
+      PERFORM bdc_field       USING 'ADDR1_DATA-REGION'
+                                    t_data-region.
+      PERFORM bdc_field       USING 'ADDR1_DATA-LANGU'
+                                    t_data-langu.
+      PERFORM bdc_field       USING 'SZA1_D0100-TEL_NUMBER'
+                                    t_data-tel_number.
+      PERFORM bdc_field       USING 'SZA1_D0100-MOB_NUMBER'
+                                    t_data-mob_number.
+      PERFORM bdc_field       USING 'SZA1_D0100-SMTP_ADDR'
+                                    t_data-smtp_addr.
+      PERFORM bdc_dynpro      USING 'SAPLSZA6' '0600'.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'ADSMTP-SMTP_ADDR(01)'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=NEWL'.
+      PERFORM bdc_dynpro      USING 'SAPLSZA6' '0600'.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'ADSMTP-SMTP_ADDR(01)'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=CONT'.
+      PERFORM bdc_field       USING 'ADSMTP-SMTP_ADDR(01)'
+                                    t_data-smtp_addr.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1000_MAIN_P02'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'BUT000-NAME_ORG1'
+                                    t_data-name_org1.
+      PERFORM bdc_field       USING 'BUT000-NAME_ORG2'
+                                    t_data-name_org2.
+      PERFORM bdc_field       USING 'BUS000FLDS-BU_SORT1_TXT'
+                                    t_data-bu_sort1_txt.
+      PERFORM bdc_field       USING 'BUS000FLDS-BU_SORT2_TXT'
+                                    t_data-bu_sort2_txt.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL1'
+                                    t_data-str_suppl1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL2'
+                                    t_data-str_suppl2.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STREET'
+                                    t_data-street.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL3'
+                                    t_data-str_suppl3.
+      PERFORM bdc_field       USING 'ADDR1_DATA-POST_CODE1'
+                                    t_data-post_code1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-CITY1'
+                                    t_data-city1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-COUNTRY'
+                                    t_data-country.
+      PERFORM bdc_field       USING 'ADDR1_DATA-REGION'
+                                    t_data-region.
+      PERFORM bdc_field       USING 'ADDR1_DATA-LANGU'
+                                    t_data-langu.
+      PERFORM bdc_field       USING 'SZA1_D0100-TEL_NUMBER'
+                                    t_data-tel_number.
+      PERFORM bdc_field       USING 'SZA1_D0100-MOB_NUMBER'
+                                    t_data-mob_number.
+      PERFORM bdc_field       USING 'SZA1_D0100-SMTP_ADDR'
+                                    t_data-smtp_addr.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'SZA11_0100-SMTP_ADDR'.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=FSBP_CC_DETAIL'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'BS001-BUKRS'.
+      PERFORM bdc_dynpro      USING 'SAPLBUSS' '0040'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=FSBP_CUSTOMER_CHECK'.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'FSBP_CC_INFO_DYNPRO-CUSTOMER_STATUS(01)'.
+      PERFORM bdc_field       USING 'FSBP_CC_INFO_DYNPRO-COMPANY_CODE(01)'
+                                    t_data-bukrs.
+      PERFORM bdc_dynpro      USING 'SAPLBUSS' '0040'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=FSBP_CC_OKAY'.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'FSBP_CC_INFO_DYNPRO-CUSTOMER_STATUS(01)'.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1000_MAIN_P03'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'GS_KNB1-AKONT'.
+      PERFORM bdc_field       USING 'GS_KNB1-AKONT'
+                                    t_data-akont.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=BUS_MAIN_ENTER'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'RF02D-SPART'.
+      PERFORM bdc_field       USING 'RF02D-VKORG'
+                                    t_data-vkorg.
+      PERFORM bdc_field       USING 'RF02D-VTWEG'
+                                    t_data-vtweg.
+      PERFORM bdc_field       USING 'RF02D-SPART'
+                                    t_data-spart.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1100_TAB_02'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'GS_KNVV-BZIRK'
+                                    t_data-bzirk.
+      PERFORM bdc_field       USING 'GS_KNVV-KDGRP'
+                                    t_data-kdgrp.
+      PERFORM bdc_field       USING 'GS_KNVV-VKBUR'
+                                    t_data-vkbur.
+      PERFORM bdc_field       USING 'GS_KNVV-VKGRP'
+                                    t_data-vkgrp.
+      PERFORM bdc_field       USING 'GS_KNVV-WAERS'
+                                    t_data-waers.
+      PERFORM bdc_field       USING 'GS_KNVV-KONDA'
+                                    t_data-konda.
+      PERFORM bdc_field       USING 'GS_KNVV-KALKS'
+                                    t_data-kalks.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'GS_KNVV-VERSG'.
+      PERFORM bdc_field       USING 'GS_KNVV-PLTYP'
+                                    t_data-pltyp.
+      PERFORM bdc_field       USING 'GS_KNVV-VERSG'
+                                    t_data-versg.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1100_TAB_03'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'GS_KNVV_DYNP-LPRIO'
+                                    t_data-lprio.
+      PERFORM bdc_field       USING 'GS_KNVV-VWERK'
+                                    t_data-vwerk.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'GS_KNVV-VSBED'.
+      PERFORM bdc_field       USING 'GS_KNVV-VSBED'
+                                    t_data-vsbed.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1000_MAIN_P01'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'GS_KNVV-INCO1'
+                                    t_data-inco1.
+      PERFORM bdc_field       USING 'GS_KNVV-INCO2_L'
+                                    t_data-inco2_l.
+      PERFORM bdc_field       USING 'GS_KNVV-ZTERM'
+                                    t_data-zterm.
+      PERFORM bdc_field       USING 'GS_KNVV-KTGRD'
+                                    t_data-ktgrd.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'GT_KNVI_TC-TAXKD(04)'.
+      PERFORM bdc_field       USING 'GT_KNVI_TC-TAXKD(01)'
+                                    t_data-taxkd.
+      PERFORM bdc_field       USING 'GT_KNVI_TC-TAXKD(02)'
+                                    t_data-taxkd2.
+      PERFORM bdc_field       USING 'GT_KNVI_TC-TAXKD(03)'
+                                    t_data-taxkd3.
+      PERFORM bdc_field       USING 'GT_KNVI_TC-TAXKD(04)'
+                                    t_data-taxkd4.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1100_TAB_16'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'BUT000-NAME_ORG1'
+                                    t_data-name_org1.
+      PERFORM bdc_field       USING 'BUT000-NAME_ORG2'
+                                    t_data-name_org2.
+      PERFORM bdc_field       USING 'BUS000FLDS-BU_SORT1_TXT'
+                                    t_data-bu_sort1_txt.
+      PERFORM bdc_field       USING 'BUS000FLDS-BU_SORT2_TXT'
+                                    t_data-bu_sort2_txt.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL1'
+                                    t_data-str_suppl1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL2'
+                                   t_data-str_suppl2.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STREET'
+                                    t_data-street.
+      PERFORM bdc_field       USING 'ADDR1_DATA-STR_SUPPL3'
+                                    t_data-str_suppl3.
+      PERFORM bdc_field       USING 'ADDR1_DATA-POST_CODE1'
+                                    t_data-post_code1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-CITY1'
+                                    t_data-city1.
+      PERFORM bdc_field       USING 'ADDR1_DATA-COUNTRY'
+                                    t_data-country.
+      PERFORM bdc_field       USING 'ADDR1_DATA-REGION'
+                                    t_data-region.
+      PERFORM bdc_field       USING 'ADDR1_DATA-LANGU'
+                                    t_data-langu.
+      PERFORM bdc_field       USING 'SZA1_D0100-TEL_NUMBER'
+                                    t_data-tel_number.
+      PERFORM bdc_field       USING 'SZA1_D0100-MOB_NUMBER'
+                                    t_data-mob_number.
+      PERFORM bdc_field       USING 'SZA1_D0100-SMTP_ADDR'
+                                    t_data-smtp_addr.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'SZA11_0100-SMTP_ADDR'.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=SCREEN_1100_TAB_03'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'GS_KNA1-J_1IPANNO'.
+      PERFORM bdc_field       USING 'GS_KNA1-J_1IPANNO'
+                                    t_data-j_1ipanno.
+      PERFORM bdc_dynpro      USING 'SAPLBUS_LOCATOR' '3000'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=BUS_MAIN_SAVE'.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-CREATION_GROUP'
+                                    t_data-creation_group.
+      PERFORM bdc_field       USING 'BUS_JOEL_MAIN-PARTNER_ROLE'
+                                    t_data-partner_role.
+      PERFORM bdc_field       USING 'BDC_CURSOR'
+                                    'BUT000-BPEXT'.
+      PERFORM bdc_field       USING 'BUT000-BPEXT'
+                                    t_data-bpext.
+      PERFORM bdc_field       USING 'DFKKBPTAXNUM-TAXTYPE(01)'
+                                    t_data-taxtype.
+      PERFORM bdc_field       USING 'DFKKBPTAXNUM-TAXNUMXL(01)'
+                                    t_data-taxnumxl1.
+
+      PERFORM bdc_dynpro      USING 'SAPLSPO1' '0600'.
+      PERFORM bdc_field       USING 'BDC_OKCODE'
+                                    '=OPT2'.
+
+      CALL TRANSACTION 'BP' USING bdcdata OPTIONS FROM w_ctu_para
+                                   MESSAGES INTO messtab.
+      REFRESH : bdcdata[].
+      CLEAR:bdcdata.
+    ENDIF.
+    CLEAR : lv_flag.
+  ENDLOOP.
+
+*perform close_group.
+**-------------------------------------------------------------------
+*  IF sy-subrc = 0.
+*    LOOP AT messtab WHERE msgtyp EQ 'E' .
+*      MESSAGE ID     messtab-msgid
+*      TYPE   messtab-msgtyp
+*      NUMBER messtab-msgnr
+*      INTO l_mstring
+*      WITH messtab-msgv1
+*           messtab-msgv2
+*           messtab-msgv3
+*           messtab-msgv4.
+*      WRITE: / messtab-msgtyp, l_mstring(250).
+*      APPEND l_mstring TO  lt_msgtab.
+*    ENDLOOP.
+*    endif.
+*--------------------------------------------------------------
+  IF lt_msgtab IS INITIAL.
+    IF sy-subrc IS INITIAL .
+
+      LOOP AT messtab
+        WHERE msgtyp EQ 'S' AND
+              msgnr EQ '244'  .
+
+        MESSAGE ID     messtab-msgid
+        TYPE   messtab-msgtyp
+        NUMBER messtab-msgnr
+        INTO l_mstring
+        WITH messtab-msgv1
+             messtab-msgv2
+             messtab-msgv3
+             messtab-msgv4.
+
+        APPEND l_mstring TO  lt_msgtab.
+        DATA(lv_lines12) = lines( lt_msgtab ).
+      ENDLOOP.
+
+      LOOP AT messtab.
+        MESSAGE ID     messtab-msgid
+                TYPE   messtab-msgtyp
+                NUMBER messtab-msgnr
+                INTO l_mstring
+                WITH messtab-msgv1
+                     messtab-msgv2
+                     messtab-msgv3
+                     messtab-msgv4.
+        IF messtab-msgtyp EQ 'S' AND
+              messtab-msgnr EQ '244'  . .
+          WRITE: / messtab-msgtyp, l_mstring(250).
+        ENDIF.
+        IF messtab-msgtyp EQ 'E' .
+          WRITE: / messtab-msgtyp, l_mstring(250).
+        ENDIF.
+      ENDLOOP.
+
+      REFRESH: bdcdata, messtab.
+    ENDIF.
+  ENDIF.
+  LOOP AT lt_msg INTO lwa_msg.
+    WRITE : / lwa_msg-zmessage.
+  ENDLOOP.
+******DISPLAYING THE NO OF RECORDS ARE CREATED AND NO OF RECORDS ARE ALREADY EXISTED...******
+  lv_ermsg = lines( lt_msg ).
+  lv_ssmsg = lv_lines12 ."lines( lt_msgtab ).
+
+*  if msgtyp ne 'E'.
+  IF lv_ermsg IS NOT INITIAL AND lv_ssmsg IS  NOT INITIAL .
+    CONCATENATE lv_ssmsg TEXT-004 lv_ermsg TEXT-005 INTO lv_conmsg   SEPARATED BY space .
+    MESSAGE lv_conmsg TYPE 'I'.
+  ENDIF.
+*  endif.
+
+  CLEAR : lt_msgtab,
+          lv_ssmsg,
+          lv_ermsg,
+          lv_conmsg.
+*ENDFORM.
+*----------------------------------------------------------------------*
+*        Start new screen                                              *
+*----------------------------------------------------------------------*
+FORM bdc_dynpro USING program dynpro.
+  CLEAR bdcdata.
+  bdcdata-program  = program.
+  bdcdata-dynpro   = dynpro.
+  bdcdata-dynbegin = 'X'.
+  APPEND bdcdata.
+ENDFORM.
+
+*----------------------------------------------------------------------*
+*        Insert field                                                  *
+*----------------------------------------------------------------------*
+FORM bdc_field USING fnam fval.
+  IF fval <> space.
+    CLEAR bdcdata.
+    bdcdata-fnam = fnam.
+    bdcdata-fval = fval.
+    CONDENSE bdcdata-fval.
+    APPEND bdcdata.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  SUCCESS_FILE
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM success_file .
+
+  LOOP AT messtab WHERE msgtyp = 'S' AND msgnr = '312'.
+    CLEAR: l_msg1.
+    CALL FUNCTION 'FORMAT_MESSAGE'
+      EXPORTING
+        id        = messtab-msgid
+        lang      = sy-langu
+        no        = messtab-msgnr
+        v1        = messtab-msgv1
+        v2        = messtab-msgv2
+        v3        = messtab-msgv3
+        v4        = messtab-msgv4
+      IMPORTING
+        msg       = l_msg1
+      EXCEPTIONS ##FM_SUBRC_OK
+        not_found = 1
+        OTHERS    = 2.
+    ADD 1 TO l_suc.
+    MOVE l_msg1 TO l_sucmsg.
+
+    t_success-sr  = l_suc.
+    t_success-msg = l_sucmsg.
+    APPEND t_success.
+  ENDLOOP.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  ERROR_FILE
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM error_file .
+  LOOP AT messtab WHERE msgtyp = 'E'.
+    CLEAR: l_msg.
+    CALL FUNCTION 'FORMAT_MESSAGE'
+      EXPORTING
+        id        = messtab-msgid
+        lang      = sy-langu
+        no        = messtab-msgnr
+        v1        = messtab-msgv1
+        v2        = messtab-msgv2
+        v3        = messtab-msgv3
+        v4        = messtab-msgv4
+      IMPORTING
+        msg       = l_msg
+      EXCEPTIONS ##FM_SUBRC_OK
+        not_found = 1
+        OTHERS    = 2.
+    ADD 1 TO l_er.
+    MOVE l_msg TO l_ermsg.
+
+    t_error-sr = l_er.
+    t_error-msg = l_ermsg.
+    APPEND t_error.
+  ENDLOOP.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Form  REFRESH
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+*  -->  p1        text
+*  <--  p2        text
+*----------------------------------------------------------------------*
+FORM refresh .
+
+  REFRESH: bdcdata[],
+             messtab[],
+             t_error[],
+             t_success[],
+             l_intern[],
+             t_report[].
+  CLEAR:   bdcdata,
+           messtab,
+           t_error,
+           t_success,
+           l_intern,
+           t_report,
+           filename_exl,
+           l_er,
+           l_suc,
+           l_ermsg,
+           l_sucmsg.
+ENDFORM.

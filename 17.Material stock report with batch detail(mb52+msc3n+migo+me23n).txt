@@ -1,0 +1,1322 @@
+*----------------------------------------------------------------------*
+* Business Requirement :  Track Stock Age and other characteristics like
+*                         Supplier Name/Code and relevant Invoice reference
+*                         as well as Material Grades  in a single consolidated report .
+*
+* PROGRAM NAME : ZMMEP_STOCK_REPORT
+* AUTHOR       : Debidutta Swain(AIRDITDEBI)  ::AIRDIT SOFTWARE::
+* CREATED DATE : 05.11.2024
+* Ticket NO    : 27794
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Modification:
+*----------------------------------------------------------------------*
+*& Report ZMMEP_STOCK_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmmep_stock_report.
+TABLES: mara,mchb.
+
+"--> Line type for final Report.
+TYPES : BEGIN OF stype_final,
+          matnr          LIKE mara-matnr,       "--> material code
+          werks          LIKE t001w-werks,      "--> Plant
+          lgort          LIKE mchb-lgort ,      "--> Storage Location
+          charg          LIKE mchb-charg,       "--> Batch
+          bwtar          LIKE mcha-bwtar,       "--> Valuation Type
+          ersda          LIKE mchb-ersda,       "--> Created On
+          clabs          LIKE mchb-clabs,       "--> Unresticted
+          val_clabs      LIKE mbew-salk3,       "--> Value Unresticted
+          cinsm          LIKE mchb-cinsm,       "--> Quality Inspction
+          val_cinsm      LIKE mbew-salk3,       "--> Value Quantity inspection
+          cspem          LIKE mchb-cspem,       "--> Blocked
+          val_cspem      LIKE mbew-salk3,       "--> Value Blocked Stock
+          maktx          LIKE makt-maktx,       "--> Matrial Desc.
+          meins          LIKE mara-meins,       "--> Unit of mesure
+          waers          LIKE t001-waers,       "--> currency
+          lifnr          LIKE lfa1-lifnr,       "--> Vendor code
+          name1          LIKE lfa1-name1,       "--> Vendor Name
+          recipt_date    LIKE mseg-budat_mkpf,    "--> Recipt date/age
+          xblnr_mkpf     LIKE mseg-xblnr_mkpf,    "--> Vendor Invoice Number
+          idnlf          LIKE ekpo-idnlf,         "--> MPN
+          racct          LIKE acdoca-racct,       "--> GL Account
+          cuobj_bm       LIKE mch1-cuobj_bm,      "-->internal object no.: Batch classification(cuobj_bm).
+          lwedt          LIKE mch1-lwedt,         "--> Dtae of last goods recipt
+          hsdat          LIKE mch1-hsdat,         "--> Date when Batch Produced
+          vfdat          LIKE mch1-vfdat,         "--> Expiration date/salf life
+          licha          LIKE mch1-licha,         "--> Vandor Batch No
+          old_batch      LIKE ausp-atwrt,
+          vendor_batch   LIKE ausp-atwrt,
+          supplier       LIKE mch1-lifnr,
+          package_type   LIKE ausp-atwrt,
+          material_grade LIKE ausp-atwrt,
+          storage_bin    LIKE ausp-atwrt,
+          gr_doc_no      LIKE mseg-mblnr,         "--> GRN Document Number
+          gr_date        LIKE mseg-budat_mkpf,    "--> GRN DATE
+          elna_idnlf     LIKE ausp-atwrt,         "--> Material Number Used BY Supplier
+          normal_prctr   LIKE marc-prctr,
+          wbs_prctr      LIKE prps-prctr,
+        END OF stype_final.
+
+"--> Line type for  repesent "Material Stocks" detail fields.
+TYPES : BEGIN OF stype_mb52,
+          matnr     LIKE mara-matnr,       "--> material code
+          werks     LIKE t001w-werks,      "--> Plant
+          lgort     LIKE mchb-lgort ,      "--> Storage Location
+          charg     LIKE mchb-charg,       "--> Batch
+          bwtar     LIKE mcha-bwtar,       "--> Valuation Type
+          ersda     LIKE mchb-ersda,       "--> Created On
+          clabs     LIKE mchb-clabs,       "--> Unresticted
+          val_clabs LIKE mbew-salk3,       "--> Value Unresticted
+          cinsm     LIKE mchb-cinsm,       "--> Quality Inspction
+          val_cinsm LIKE mbew-salk3,       "--> Value Quantity inspection
+          cspem     LIKE mchb-cspem,       "--> Blocked
+          val_cspem LIKE mbew-salk3,       "--> Value Blocked Stock
+          maktx     LIKE makt-maktx,       "--> Matrial Desc.
+          meins     LIKE mara-meins,       "--> Unit of mesure
+          bukrs     LIKE t001k-bukrs ,     "--> Company code
+          waers     LIKE t001-waers,       "--> currency
+        END OF stype_mb52,
+
+        "--> Line type for  repesent "Material Valuation" detail fields.
+        BEGIN OF stype_mbew,
+          matnr LIKE mbew-matnr,      "--> Material code
+          bwkey LIKE mbew-bwkey,      "--> Valuation area
+          bwtar LIKE mbew-bwtar,      "--> Valuation area
+          lbkum LIKE mbew-lbkum,      "--> Total Valuated Stock
+          salk3 LIKE mbew-salk3,      "--> Value of Total Valuated Stock
+        END OF stype_mbew.
+
+*-->Line type for represent mseg/GRN Detail fields.
+TYPES : BEGIN OF stype_mseg,
+          mblnr      LIKE mseg-mblnr,
+          bwart      LIKE mseg-bwart,
+          charg      LIKE mseg-charg,
+          matnr      LIKE mseg-matnr,
+          werks      LIKE mseg-werks,
+          lifnr      LIKE lfa1-lifnr,
+          name1      LIKE lfa1-name1,
+          bwtar      LIKE mseg-bwtar,
+          budat_mkpf LIKE mseg-budat_mkpf,
+          xblnr_mkpf LIKE mseg-xblnr_mkpf,
+          ebeln      LIKE ekpo-ebeln,
+          idnlf      LIKE ekpo-idnlf,
+          racct      LIKE acdoca-racct,
+        END OF stype_mseg.
+
+
+*-->Line type for Profit center
+TYPES: BEGIN OF stype_normal_profit_center,
+         matnr TYPE matnr,
+         werks TYPE werks_d,
+         prctr LIKE marc-prctr,
+       END OF stype_normal_profit_center.
+
+TYPES: BEGIN OF stype_WBS_profit_center,
+         matnr TYPE matnr,
+         werks TYPE werks_d,
+         pspne LIKE prps-pspnr,
+         prctr LIKE prps-prctr,
+       END OF stype_WBS_profit_center.
+
+*--> Line type for represent MCH1 fields.
+TYPES : BEGIN OF stype_MCH1,
+          matnr    LIKE mch1-matnr,
+          charg    LIKE mch1-charg,
+          cuobj_bm LIKE mch1-cuobj_bm,
+          lwedt    LIKE mch1-lwedt,
+          hsdat    LIKE mch1-hsdat,
+          vfdat    LIKE mch1-vfdat,
+          licha    LIKE mch1-licha,
+          lifnr    LIKE mch1-lifnr,
+          objek    LIKE ausp-objek,
+        END OF stype_MCH1.
+
+*--> Line type for represnt batch classification details field.
+TYPES : BEGIN OF stype_clasif,
+          matnr          LIKE mch1-matnr,         "--> material code
+          charg          LIKE mch1-charg,         "--> Batch
+          cuobj_bm       LIKE mch1-cuobj_bm,      "-->internal object no.: Batch classification(cuobj_bm).
+          lwedt          LIKE mch1-lwedt,         "--> Dtae of last goods recipt
+          hsdat          LIKE mch1-hsdat,         "--> Date when Batch Produced
+          vfdat          LIKE mch1-vfdat,         "--> Expiration date/salf life
+          licha          LIKE mch1-licha,         "--> Vandor Batch No
+          objek          LIKE ausp-objek,         "--> Key of Object to be Classified
+          old_batch      LIKE ausp-atwrt,
+          vendor_batch   LIKE ausp-atwrt,
+          supplier       LIKE mch1-lifnr,
+          package_type   LIKE ausp-atwrt,
+          material_grade LIKE ausp-atwrt,
+          storage_bin    LIKE ausp-atwrt,
+          elna_idnlf     LIKE ausp-atwrt,         "--> Material Number Used BY Supplier
+        END OF stype_clasif.
+
+DATA: r_stopt   TYPE RANGE OF labst,
+      lsr_stopt LIKE LINE OF r_stopt.
+
+DATA: ls_mb52  TYPE stype_mb52,
+      ls_bcls  TYPE stype_clasif,
+      ls_final TYPE stype_final.
+
+DATA: lt_mb52         TYPE TABLE OF stype_mb52,                       "--> Internal table for store final Mb52 related details.
+      lt_mchb         TYPE TABLE OF stype_mb52,
+      lt_mbew         TYPE TABLE OF stype_mbew,
+      lt_mseg         TYPE TABLE OF stype_mseg,                       "--> Internal table for store final mseg/GRN Detail fields.
+      lt_mch1         TYPE TABLE OF stype_MCH1,
+      lt_bcls         TYPE TABLE OF stype_clasif,                     "--> Internal table for store final Batch Classification details
+      lt_final        TYPE TABLE OF stype_final,                      "--> internal table for store final report details of stock.
+      lt_normat_prctr TYPE TABLE OF stype_normal_profit_center,
+      lt_wbs_prctr    TYPE TABLE OF stype_WBS_profit_center.
+
+DATA: factor TYPE f.
+
+DATA : it_fieldcat  TYPE STANDARD TABLE OF slis_fieldcat_alv ##NEEDED,
+       lwa_fieldcat TYPE slis_fieldcat_alv ##NEEDED.
+
+"--> selection screen for input data.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS: s_matnr FOR mara-matnr,
+                  s_werks FOR mchb-werks OBLIGATORY,
+                  s_lgort FOR mchb-lgort,
+                  s_charg FOR mchb-charg.
+SELECTION-SCREEN END OF BLOCK b1.
+
+*--> Validating Input screen value.-------------------------------------------------------------------------------
+AT SELECTION-SCREEN .
+  "--> check strorage location validation accoding to plant.
+  IF s_lgort IS NOT INITIAL.
+    SELECT werks,lgort,lgobe FROM t001l INTO TABLE @DATA(lt_t001l) WHERE  werks IN @S_werks AND lgort IN @S_lgort. "#EC CI_GENBUFF.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-020 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+  "--> check plant validation.
+  IF s_werks IS NOT INITIAL.
+    SELECT werks,name1 FROM t001w INTO TABLE @DATA(lt_t001w) WHERE t001w~werks IN @S_werks.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-021 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+  "--> Check material validation.
+  IF s_matnr IS NOT INITIAL.
+    SELECT matnr FROM mara INTO TABLE @DATA(lt_matnr) WHERE matnr IN @s_matnr.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-022 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+  "--> Check batch validation corresponding to plant and material.
+  IF s_charg IS NOT INITIAL.
+    SELECT matnr,werks,charg FROM mcha INTO TABLE @DATA(lt_charg) WHERE matnr IN @s_matnr AND
+                                                                        werks IN @s_werks AND
+                                                                        charg IN @s_charg.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-023 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+*---------------------------------------------------------------------------------------------------------------
+START-OF-SELECTION .
+
+  "--> prepare internal table for Grater then AND less then data.
+  lsr_stopt-sign   = 'I'.
+  lsr_stopt-option = 'GT'. "greater than
+  lsr_stopt-low    = '0'.
+  APPEND lsr_stopt TO r_stopt.
+  lsr_stopt-sign   = 'I'.
+  lsr_stopt-option = 'LT'. "less than
+  lsr_stopt-low    = '0'.
+  APPEND lsr_stopt TO r_stopt.
+
+  "--> Check wheather required data is present or not for that get Batch Stocks details from MCHB Table..
+  SELECT mchb~matnr,                                     "--> material code
+         mchb~werks,                                     "--> Plant
+         mchb~lgort,                                     "--> Storage Location
+         mchb~charg,                                     "--> Batch
+         mchb~ersda,                                     "--> Created On
+         mcha~bwtar,                                     "--> Valuation Type
+         mchb~clabs,                                     "--> Unresticted
+         mchb~cinsm,                                     "--> Quality Inspction
+         mchb~cspem,                                     "--> Blocked
+         makt~maktx,                                     "--> Matrial Desc.
+         mara~meins,                                     "--> Unit of mesure
+         t001k~bukrs,                                    "--> Company code
+         t001~waers                                      "--> currency
+    FROM  mchb
+    LEFT OUTER JOIN makt  ON  makt~matnr  = mchb~matnr AND spras      = @sy-langu
+    LEFT OUTER JOIN mcha  ON  mcha~matnr  = mchb~matnr AND
+                              mcha~werks  = mchb~werks AND mcha~charg = mchb~charg
+    LEFT OUTER JOIN mara  ON  mara~matnr  = mchb~matnr
+    LEFT OUTER JOIN t001k ON  t001k~bwkey = mchb~werks "#EC CI_BUFFJOIN
+    LEFT OUTER JOIN t001  ON  t001~bukrs  = t001k~bukrs "#EC CI_BUFFJOIN
+    INTO  CORRESPONDING FIELDS OF TABLE  @lt_mchb
+    WHERE mchb~matnr IN @s_matnr AND
+          mchb~werks IN @s_werks AND
+          mchb~lgort IN @s_lgort AND
+          mchb~charg IN @s_charg AND
+         (
+          mchb~clabs IN @r_stopt OR
+          mchb~cinsm IN @r_stopt OR
+          mchb~cspem IN @r_stopt
+           ).
+
+  IF lt_mchb IS NOT INITIAL.
+    PERFORM get_data.                             "--> Get all the required data.
+    PERFORM process_stock_rept_data.              "--> Process trhe data to get the final result.
+    PERFORM display_report.                       "--> Display the final report.
+
+  ELSE.
+    MESSAGE TEXT-024 TYPE 'E'.
+    LEAVE TO SCREEN 0.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_mb52_final.              "--> Get the final Mb52 related details
+  PERFORM get_mseg_final.              "--> Get the GRN deatils based on batch and Material.
+  PERFORM get_batch_chrts_final.       "--> Get the final Characteristics details of Batch.
+  PERFORM get_material_profit_center.  "--> Get the profit center of  Normal material and WBS material.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_stock_rept_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_stock_rept_data .
+  CLEAR: ls_mb52,ls_bcls.
+  LOOP AT lt_mb52 INTO ls_mb52.
+
+    "--> Prepare MB52 data.
+    ls_final-matnr     = ls_mb52-matnr.
+    ls_final-werks     = ls_mb52-werks.
+    ls_final-charg     = ls_mb52-charg.
+    ls_final-lgort     = ls_mb52-lgort.
+    ls_final-bwtar     = ls_mb52-bwtar.
+    ls_final-ersda     = ls_mb52-ersda.
+    ls_final-clabs     = ls_mb52-clabs.
+    ls_final-val_clabs = ls_mb52-val_clabs.
+    ls_final-cinsm     = ls_mb52-cinsm.
+    ls_final-val_cinsm = ls_mb52-val_cinsm.
+    ls_final-cspem     = ls_mb52-cspem.
+    ls_final-val_cspem = ls_mb52-val_cspem.
+    ls_final-maktx     = ls_mb52-maktx.
+    ls_final-meins     = ls_mb52-meins.
+    ls_final-waers     = ls_mb52-waers.
+
+    "--> Get Profit center details.
+    READ TABLE lt_normat_prctr INTO DATA(ls_nprctr) WITH KEY matnr = ls_mb52-matnr werks = ls_mb52-werks.
+    IF sy-subrc EQ 0.
+      ls_final-normal_prctr = ls_nprctr-prctr.
+    ENDIF.
+    READ TABLE lt_wbs_prctr INTO DATA(ls_wbs_prctr) WITH KEY matnr = ls_mb52-matnr werks = ls_mb52-werks.
+    IF sy-subrc EQ 0.
+      ls_final-wbs_prctr = ls_wbs_prctr-prctr.
+    ENDIF.
+
+    "--> Prepare GRN details.
+    READ TABLE lt_mseg INTO DATA(ls_mseg) WITH KEY matnr = ls_mb52-matnr charg = ls_mb52-charg BINARY SEARCH.
+    IF sy-subrc EQ 0.
+      ls_final-lifnr       = ls_mseg-lifnr .
+      ls_final-name1       = ls_mseg-name1 .
+      ls_final-gr_date     = ls_mseg-budat_mkpf .
+      ls_final-xblnr_mkpf  = ls_mseg-xblnr_mkpf .
+      ls_final-idnlf       = ls_mseg-idnlf .
+      ls_final-racct       = ls_mseg-racct .
+      ls_final-recipt_date = ls_mseg-budat_mkpf .
+      ls_final-gr_doc_no   = ls_mseg-mblnr.
+    ENDIF.
+
+    "--> Prepare Batch Classification Details.
+    READ TABLE lt_bcls INTO ls_bcls WITH  KEY matnr = ls_mb52-matnr charg = ls_mb52-charg BINARY SEARCH.
+    IF sy-subrc EQ 0.
+      ls_final-cuobj_bm     = ls_bcls-cuobj_bm.
+      ls_final-lwedt        = ls_bcls-lwedt.
+      ls_final-hsdat        = ls_bcls-hsdat.
+      ls_final-vfdat        = ls_bcls-vfdat.
+      ls_final-licha        = ls_bcls-licha.
+      ls_final-old_batch    = ls_bcls-old_batch.
+      ls_final-vendor_batch = ls_bcls-vendor_batch.
+      ls_final-supplier     = ls_bcls-supplier.
+      ls_final-package_type = ls_bcls-package_type.
+
+      ls_final-material_grade = ls_bcls-material_grade.
+      ls_final-storage_bin    = ls_bcls-storage_bin.
+      ls_final-elna_idnlf     = ls_bcls-elna_idnlf.
+    ENDIF.
+
+    APPEND ls_final TO lt_final.
+    CLEAR: ls_final,ls_mseg,ls_bcls.
+  ENDLOOP.
+
+  SORT lt_final BY matnr charg.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form display_report
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_report .
+  PERFORM create_catalogs.                          "--> Prepare the Catalog for display formart.
+  PERFORM display_alv_grid_display.                 "--> Display The final Result.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form create_catalogs
+*&---------------------------------------------------------------------*
+FORM create_catalogs .
+  PERFORM get_fieldcat USING  'ERSDA'           'LT_FINAL'  'Created On'                      CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'WERKS'           'LT_FINAL'  'Plant'                           CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'LGORT'           'LT_FINAL'  'Storage Location'                CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'MATNR'           'LT_FINAL'  'Material'                        CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'MAKTX'           'LT_FINAL'  'Material Desc'                   CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'NORMAL_PRCTR'    'LT_FINAL'  'Normal Profit Center'            CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'WBS_PRCTR'       'LT_FINAL'  'WBS Profit Center'               CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'CHARG'           'LT_FINAL'  'Batch'                           CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'CLABS'           'LT_FINAL'  'Unresticted'                     CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'CINSM'           'LT_FINAL'  'Quality Inspection'              CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'CSPEM'           'LT_FINAL'  'Blocked'                         CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'MEINS'           'LT_FINAL'  'Base Unit of Measure'            CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'VAL_CLABS'       'LT_FINAL'  'Value Unrestricted'              CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'VAL_CINSM'       'LT_FINAL'  'Value in Qual. Insp.'              CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'VAL_CSPEM'       'LT_FINAL'  'Value Blocked Stock'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'WAERS'           'LT_FINAL'  'Currency'                        CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'LIFNR'           'LT_FINAL'  'Vendor Code'                     CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'NAME1'           'LT_FINAL'  'Vendor Name'                     CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'XBLNR_MKPF'      'LT_FINAL'  'Vendor Invoice No.'              CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'RACCT'           'LT_FINAL'  'GL Account (FI Inventory GL)'    CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'IDNLF'           'LT_FINAL'  'MPN(Supplier Mat. No./Grade)'    CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'BWTAR'           'LT_FINAL'  'Valuation Type'                  CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'RECIPT_DATE'     'LT_FINAL'  'Receipt Date / Age'              CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'LWEDT'           'LT_FINAL'  'Date of Last Goods Receipt'      CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'HSDAT'           'LT_FINAL'  'Date when Batch Was Produced'    CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'VFDAT'           'LT_FINAL'  'Expiration date, shelf life'     CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'LICHA'           'LT_FINAL'  'Vendor Batch'                    CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'OLD_BATCH'       'LT_FINAL'  'Old Batch Number'                CHANGING it_fieldcat   ##NO_TEXT.
+*  PERFORM get_fieldcat USING  'VENDOR_BATCH'           'LT_FINAL'  'Vendor Batch Number'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'SUPPLIER'        'LT_FINAL'  'Suppplier'                       CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'MATERIAL_GRADE'  'LT_FINAL'  'Material Grade'                  CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'PACKAGE_TYPE'    'LT_FINAL'  'Package Type'                    CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'GR_DOC_NO'       'LT_FINAL'  'GRN Doc No.'                     CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'GR_DATE'         'LT_FINAL'  'GRN Date'                        CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'ELNA_IDNLF'      'LT_FINAL'  'Material code Used by Supplier'  CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'STORAGE_BIN'     'LT_FINAL'  'Storage Bin'                     CHANGING it_fieldcat   ##NO_TEXT.
+
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_fieldcat
+*&---------------------------------------------------------------------*
+FORM get_fieldcat  USING    p_field_name ##PERF_NO_TYPE "Passing Field name
+                            p_tab_name                  "Passing Field name
+                            p_sel_name                  "Passing Field name
+                   CHANGING p_it_fieldcat TYPE slis_t_fieldcat_alv.
+  lwa_fieldcat-fieldname = p_field_name.
+  lwa_fieldcat-tabname   = p_tab_name.
+  lwa_fieldcat-seltext_m = p_sel_name.
+  APPEND lwa_fieldcat TO p_it_fieldcat.
+  CLEAR :  lwa_fieldcat.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+  DATA: ls_layout TYPE slis_layout_alv.
+  CLEAR : ls_layout.
+  ls_layout-colwidth_optimize = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      it_fieldcat        = it_fieldcat[]
+      i_callback_program = sy-repid
+      is_layout          = ls_layout
+      i_save             = 'A'
+    TABLES
+      t_outtab           = lt_final
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 .
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_mb52_data
+*&---------------------------------------------------------------------*
+FORM get_mb52_final .
+
+  "--> Get Material Valuation details from mbew Table for all the available Batch Stocks Detail .
+  IF lt_mchb IS NOT INITIAL.
+    SELECT matnr,                                 "--> Material Code
+           bwkey,                                 "--> Valuation area
+           bwtar,                                 "--> Valuation Type
+           lbkum,                                 "--> Total Valuated Stock
+           salk3                                  "--> Value of Total Valuated Stock
+      FROM mbew
+      INTO TABLE @lt_mbew
+      FOR ALL ENTRIES IN @lt_mchb                  "#EC CI_NO_TRANSFORM
+      WHERE matnr = @lt_mchb-matnr AND
+            bwkey = @lt_mchb-werks AND
+            bwtar = @lt_mchb-bwtar AND
+            lvorm NE 'x'.
+  ENDIF.
+
+  "--> Process the above data to get the final MB52 detail.
+  LOOP AT lt_mchb INTO DATA(ls_mchb).
+    ls_mb52 = CORRESPONDING #( ls_mchb ).
+
+    "--> Calculate the Value field data.
+    READ TABLE lt_mbew INTO DATA(ls_mbew) WITH KEY matnr = ls_mchb-matnr bwkey = ls_mchb-werks bwtar = ls_mchb-bwtar.
+    IF sy-subrc EQ 0.
+      factor = ls_mbew-salk3 / ls_mbew-lbkum.
+    ENDIF.
+
+    ls_mb52-val_clabs = ls_mchb-clabs * factor.
+    ls_mb52-val_cspem = ls_mchb-cspem * factor.
+    ls_mb52-val_cinsm = ls_mchb-cinsm * factor.
+
+    APPEND ls_mb52 TO lt_mb52.
+    CLEAR: ls_mb52,ls_mchb,ls_mbew,factor.
+  ENDLOOP.
+
+  SORT lt_mb52 BY matnr charg.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_mseg_final
+*&---------------------------------------------------------------------*
+FORM get_mseg_final .
+  IF lt_mb52 IS NOT INITIAL.
+    SELECT mseg~mblnr,
+           mseg~bwart,
+           mseg~charg,
+           mseg~matnr,
+           mseg~werks,
+           mseg~lifnr,
+           lfa1~name1,
+           mseg~bwtar,
+           mseg~budat_mkpf,
+           mseg~xblnr_mkpf,
+           mseg~ebeln,
+           ekpo~idnlf,
+           acdoca~racct
+      FROM mseg
+      LEFT OUTER JOIN lfa1   ON lfa1~lifnr   = mseg~lifnr
+      LEFT OUTER JOIN ekpo   ON ekpo~ebeln   = mseg~ebeln AND
+                                ekpo~matnr   = mseg~matnr
+      LEFT OUTER JOIN acdoca ON acdoca~awref = mseg~mblnr AND
+                                acdoca~koart = 'M'
+      FOR ALL ENTRIES IN @lt_mb52
+      WHERE mseg~matnr =  @lt_mb52-matnr AND
+            mseg~werks =  @lt_mb52-werks AND
+            mseg~charg =  @lt_mb52-charg AND
+            mseg~bwart IN ( '101','561' )
+      INTO TABLE @lt_mseg.
+  ENDIF.
+
+  SORT lt_mseg BY matnr charg.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_batch_characteristics
+*&---------------------------------------------------------------------*
+FORM get_batch_chrts_final .
+
+*--> get the detail of Batches (if Batch Management Cross-Plant) from mch1.
+  IF lt_mb52 IS NOT INITIAL.
+    SELECT matnr,charg,cuobj_bm,lwedt,
+           hsdat,vfdat,licha,lifnr
+    FROM mch1 INTO TABLE @lt_mch1
+    FOR ALL ENTRIES IN @lt_mb52
+    WHERE matnr = @lt_mb52-matnr AND
+          charg = @lt_mb52-charg.
+  ENDIF.
+  SORT lt_mch1 BY matnr charg.
+
+  LOOP AT  lt_mch1 ASSIGNING FIELD-SYMBOL(<fs_mch1>).
+    <fs_mch1>-objek = <fs_mch1>-cuobj_bm.
+  ENDLOOP.
+
+*--> get the Batch Classification deatils from AUSP Table based on "Internal object no.: Batch classification(cuobj_bm)."
+  " OLD BATCH                    : 0000000895
+  " VENDOR BATCH                 : 0000000887
+  " PACKAGE TYPE                 : 0000000865
+  " MATERIAL GRADE               : 0000000861
+  " Storage bin                  : 0000001867
+  " GRC DOC NO                   : 0000000859
+  " Material no used by supplier : 0000001865
+
+  IF lt_mch1 IS NOT INITIAL.
+    SELECT objek,atinn,atwrt
+    FROM ausp INTO TABLE @DATA(lt_ausp)
+    FOR ALL ENTRIES IN @lt_mch1
+    WHERE objek EQ @lt_mch1-objek AND
+          atinn IN ('0000000895','0000000887','0000000865','0000000861','0000001867','0000000859','0000001865').
+  ENDIF.
+
+*--> process the above details to fetch final Classification details bassed on BATCH & MATERIAL.
+  LOOP AT lt_mb52 INTO DATA(ls_mb52).
+    READ TABLE lt_mch1 INTO DATA(ls_mch1) WITH KEY matnr = ls_mb52-matnr charg = ls_mb52-charg BINARY SEARCH.
+    IF sy-subrc EQ 0.
+      ls_bcls-matnr     = ls_mb52-matnr.
+      ls_bcls-charg     = ls_mb52-charg.
+      ls_bcls-cuobj_bm  = ls_mch1-cuobj_bm.
+      ls_bcls-lwedt     = ls_mch1-lwedt.
+      ls_bcls-hsdat     = ls_mch1-hsdat.
+      ls_bcls-vfdat     = ls_mch1-vfdat.
+      ls_bcls-licha     = ls_mch1-licha.
+      ls_bcls-objek     = ls_mch1-objek.
+      ls_bcls-supplier  = ls_mch1-lifnr.
+
+      "--> get OLD batch Number.
+      READ TABLE lt_ausp INTO DATA(ls_old_batch) WITH KEY objek = ls_mch1-objek atinn = '0000000895'.
+      IF sy-subrc EQ 0.
+        ls_bcls-old_batch = ls_old_batch-atwrt.
+      ENDIF.
+
+      "--> get Vendor batch Number.
+      READ TABLE lt_ausp INTO DATA(ls_Vendor_batch) WITH KEY objek = ls_mch1-objek atinn = '0000000887'.
+      IF sy-subrc EQ 0.
+        ls_bcls-vendor_batch = ls_vendor_batch-atwrt.
+      ENDIF.
+
+      "--> get package type.
+      READ TABLE lt_ausp INTO DATA(ls_package) WITH KEY objek = ls_mch1-objek atinn = '0000000865'.
+      IF sy-subrc EQ 0.
+        ls_bcls-package_type = ls_package-atwrt.
+      ENDIF.
+
+      "--> get Material Grade.
+      READ TABLE lt_ausp INTO DATA(ls_grade) WITH KEY objek = ls_mch1-objek atinn = '0000000861'.
+      IF sy-subrc EQ 0.
+        ls_bcls-material_grade = ls_grade-atwrt.
+      ENDIF.
+
+      "--> get storage Bin.
+      READ TABLE lt_ausp INTO DATA(ls_bin) WITH KEY objek = ls_mch1-objek atinn = '0000001867'.
+      IF sy-subrc EQ 0.
+        ls_bcls-storage_bin = ls_bin-atwrt.
+      ENDIF.
+
+      "--> get Material Number Used BY Supplier.
+      READ TABLE lt_ausp INTO DATA(ls_mst_supplier) WITH KEY objek = ls_mch1-objek atinn = '0000001865'.
+      IF sy-subrc EQ 0.
+        ls_bcls-elna_idnlf = ls_mst_supplier-atwrt.
+      ENDIF.
+    ENDIF.
+
+    APPEND ls_bcls TO lt_bcls.
+    CLEAR: ls_bcls,ls_old_batch,ls_vendor_batch,ls_package,ls_grade,
+           ls_bin,ls_mst_supplier.
+  ENDLOOP.
+  SORT lt_bcls BY matnr charg.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_material_profit_center
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_material_profit_center .
+
+  "--> GET NORMAL MATERIAL PROFIT CENTER
+  SELECT matnr,werks,prctr FROM marc
+    INTO TABLE @lt_normat_prctr
+    WHERE matnr IN @s_matnr AND werks IN @s_werks.
+
+
+  "-->GET WBS ELEMENT PROFIT CENTER.
+  SELECT mssq~matnr,mssq~werks,mssq~pspnr,prps~prctr
+  FROM mssq
+  LEFT OUTER JOIN prps ON prps~pspnr = mssq~pspnr
+  INTO TABLE @lt_wbs_prctr
+  WHERE mssq~matnr IN @s_matnr AND mssq~werks IN @s_werks.
+
+  SORT: lt_normat_prctr BY matnr werks,
+        lt_wbs_prctr    BY matnr werks.
+ENDFORM.
+
+
+
+
+
+
+_----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+changes later
+-------------------------------------------------------------
+*----------------------------------------------------------------------*
+* Business Requirement :  Track Stock Age and other characteristics like
+*                         Supplier Name/Code and relevant Invoice reference
+*                         as well as Material Grades  in a single consolidated report .
+*
+* PROGRAM NAME : ZMMEP_STOCK_REPORT
+* AUTHOR       : Debidutta Swain(AIRDITDEBI)  ::AIRDIT SOFTWARE::
+* CREATED DATE : 05.11.2024
+* Ticket NO    : 27794
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Modification:
+*----------------------------------------------------------------------*
+*& Report ZMMEP_STOCK_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmmep_stock_report.
+TABLES: mara,mchb.
+
+"--> Line type for final Report.
+TYPES : BEGIN OF stype_final,
+          matnr          LIKE mara-matnr,       "--> material code
+          werks          LIKE t001w-werks,      "--> Plant
+          lgort          LIKE mchb-lgort ,      "--> Storage Location
+          charg          LIKE mchb-charg,       "--> Batch
+          bwtar          LIKE mcha-bwtar,       "--> Valuation Type
+          ersda          LIKE mchb-ersda,       "--> Created On
+          clabs          LIKE mchb-clabs,       "--> Unresticted
+          val_clabs      LIKE mbew-salk3,       "--> Value Unresticted
+          cinsm          LIKE mchb-cinsm,       "--> Quality Inspction
+          val_cinsm      LIKE mbew-salk3,       "--> Value Quantity inspection
+          cspem          LIKE mchb-cspem,       "--> Blocked
+          val_cspem      LIKE mbew-salk3,       "--> Value Blocked Stock
+          maktx          LIKE makt-maktx,       "--> Matrial Desc.
+          meins          LIKE mara-meins,       "--> Unit of mesure
+          waers          LIKE t001-waers,       "--> currency
+          lifnr          LIKE lfa1-lifnr,       "--> Vendor code
+          name1          LIKE lfa1-name1,       "--> Vendor Name
+          recipt_date    LIKE mseg-budat_mkpf,    "--> Recipt date/age
+          xblnr_mkpf     LIKE mseg-xblnr_mkpf,    "--> Vendor Invoice Number
+          idnlf          LIKE ekpo-idnlf,         "--> MPN
+          racct          LIKE acdoca-racct,       "--> GL Account
+          cuobj_bm       LIKE mch1-cuobj_bm,      "-->internal object no.: Batch classification(cuobj_bm).
+          lwedt          LIKE mch1-lwedt,         "--> Dtae of last goods recipt
+          hsdat          LIKE mch1-hsdat,         "--> Date when Batch Produced
+          vfdat          LIKE mch1-vfdat,         "--> Expiration date/salf life
+          licha          LIKE mch1-licha,         "--> Vandor Batch No
+          old_batch      LIKE ausp-atwrt,
+          vendor_batch   LIKE ausp-atwrt,
+          supplier       LIKE mch1-lifnr,
+          package_type   LIKE ausp-atwrt,
+          material_grade LIKE ausp-atwrt,
+          storage_bin    LIKE ausp-atwrt,
+          gr_doc_no      LIKE mseg-mblnr,         "--> GRN Document Number
+          gr_date        LIKE mseg-budat_mkpf,    "--> GRN DATE
+          elna_idnlf     LIKE ausp-atwrt,         "--> Material Number Used BY Supplier
+          normal_prctr   LIKE marc-prctr,
+          wbs_prctr      LIKE prps-prctr,
+        END OF stype_final.
+
+"--> Line type for  repesent "Material Stocks" detail fields.
+TYPES : BEGIN OF stype_mb52,
+          matnr     LIKE mara-matnr,       "--> material code
+          werks     LIKE t001w-werks,      "--> Plant
+          lgort     LIKE mchb-lgort ,      "--> Storage Location
+          charg     LIKE mchb-charg,       "--> Batch
+          bwtar     LIKE mcha-bwtar,       "--> Valuation Type
+          ersda     LIKE mchb-ersda,       "--> Created On
+          clabs     LIKE mchb-clabs,       "--> Unresticted
+          val_clabs LIKE mbew-salk3,       "--> Value Unresticted
+          cinsm     LIKE mchb-cinsm,       "--> Quality Inspction
+          val_cinsm LIKE mbew-salk3,       "--> Value Quantity inspection
+          cspem     LIKE mchb-cspem,       "--> Blocked
+          val_cspem LIKE mbew-salk3,       "--> Value Blocked Stock
+          maktx     LIKE makt-maktx,       "--> Matrial Desc.
+          meins     LIKE mara-meins,       "--> Unit of mesure
+          bukrs     LIKE t001k-bukrs ,     "--> Company code
+          waers     LIKE t001-waers,       "--> currency
+        END OF stype_mb52,
+
+        "--> Line type for  repesent "Material Valuation" detail fields.
+        BEGIN OF stype_mbew,
+          matnr LIKE mbew-matnr,      "--> Material code
+          bwkey LIKE mbew-bwkey,      "--> Valuation area
+          bwtar LIKE mbew-bwtar,      "--> Valuation area
+          lbkum LIKE mbew-lbkum,      "--> Total Valuated Stock
+          salk3 LIKE mbew-salk3,      "--> Value of Total Valuated Stock
+        END OF stype_mbew.
+
+*-->Line type for represent mseg/GRN Detail fields.
+TYPES : BEGIN OF stype_mseg,
+          mblnr      LIKE mseg-mblnr,
+          bwart      LIKE mseg-bwart,
+          charg      LIKE mseg-charg,
+          matnr      LIKE mseg-matnr,
+          werks      LIKE mseg-werks,
+          lifnr      LIKE lfa1-lifnr,
+          name1      LIKE lfa1-name1,
+          bwtar      LIKE mseg-bwtar,
+          budat_mkpf LIKE mseg-budat_mkpf,
+          xblnr_mkpf LIKE mseg-xblnr_mkpf,
+          ebeln      LIKE ekpo-ebeln,
+          idnlf      LIKE ekpo-idnlf,
+          racct      LIKE acdoca-racct,
+        END OF stype_mseg.
+
+
+*-->Line type for Profit center
+TYPES: BEGIN OF stype_normal_profit_center,
+         matnr TYPE matnr,
+         werks TYPE werks_d,
+         prctr LIKE marc-prctr,
+       END OF stype_normal_profit_center.
+
+TYPES: BEGIN OF stype_WBS_profit_center,
+         matnr TYPE matnr,
+         werks TYPE werks_d,
+         pspne LIKE prps-pspnr,
+         prctr LIKE prps-prctr,
+       END OF stype_WBS_profit_center.
+
+*--> Line type for represent MCH1 fields.
+TYPES : BEGIN OF stype_MCH1,
+          matnr    LIKE mch1-matnr,
+          charg    LIKE mch1-charg,
+          cuobj_bm LIKE mch1-cuobj_bm,
+          lwedt    LIKE mch1-lwedt,
+          hsdat    LIKE mch1-hsdat,
+          vfdat    LIKE mch1-vfdat,
+          licha    LIKE mch1-licha,
+          lifnr    LIKE mch1-lifnr,
+          objek    LIKE ausp-objek,
+        END OF stype_MCH1.
+
+*--> Line type for represnt batch classification details field.
+TYPES : BEGIN OF stype_clasif,
+          matnr          LIKE mch1-matnr,         "--> material code
+          charg          LIKE mch1-charg,         "--> Batch
+          cuobj_bm       LIKE mch1-cuobj_bm,      "-->internal object no.: Batch classification(cuobj_bm).
+          lwedt          LIKE mch1-lwedt,         "--> Dtae of last goods recipt
+          hsdat          LIKE mch1-hsdat,         "--> Date when Batch Produced
+          vfdat          LIKE mch1-vfdat,         "--> Expiration date/salf life
+          licha          LIKE mch1-licha,         "--> Vandor Batch No
+          objek          LIKE ausp-objek,         "--> Key of Object to be Classified
+          old_batch      LIKE ausp-atwrt,
+          vendor_batch   LIKE ausp-atwrt,
+          supplier       LIKE mch1-lifnr,
+          package_type   LIKE ausp-atwrt,
+          material_grade LIKE ausp-atwrt,
+          storage_bin    LIKE ausp-atwrt,
+          elna_idnlf     LIKE ausp-atwrt,         "--> Material Number Used BY Supplier
+        END OF stype_clasif.
+
+DATA: r_stopt   TYPE RANGE OF labst,
+      lsr_stopt LIKE LINE OF r_stopt.
+
+DATA: ls_mb52  TYPE stype_mb52,
+      ls_bcls  TYPE stype_clasif,
+      ls_final TYPE stype_final.
+
+DATA: lt_mb52         TYPE TABLE OF stype_mb52,                       "--> Internal table for store final Mb52 related details.
+      lt_mchb         TYPE TABLE OF stype_mb52,
+      lt_mbew         TYPE TABLE OF stype_mbew,
+      lt_mseg         TYPE TABLE OF stype_mseg,                       "--> Internal table for store final mseg/GRN Detail fields.
+      lt_mch1         TYPE TABLE OF stype_MCH1,
+      lt_bcls         TYPE TABLE OF stype_clasif,                     "--> Internal table for store final Batch Classification details
+      lt_final        TYPE TABLE OF stype_final,                      "--> internal table for store final report details of stock.
+      lt_normat_prctr TYPE TABLE OF stype_normal_profit_center,
+      lt_wbs_prctr    TYPE TABLE OF stype_WBS_profit_center.
+
+DATA: factor TYPE f.
+
+DATA : it_fieldcat  TYPE STANDARD TABLE OF slis_fieldcat_alv ##NEEDED,
+       lwa_fieldcat TYPE slis_fieldcat_alv ##NEEDED.
+
+"--> selection screen for input data.
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS: s_matnr FOR mara-matnr,
+                  s_werks FOR mchb-werks OBLIGATORY,
+                  s_lgort FOR mchb-lgort,
+                  s_charg FOR mchb-charg.
+SELECTION-SCREEN END OF BLOCK b1.
+
+*--> Validating Input screen value.-------------------------------------------------------------------------------
+AT SELECTION-SCREEN .
+  "--> check strorage location validation accoding to plant.
+  IF s_lgort IS NOT INITIAL.
+    SELECT werks,lgort,lgobe FROM t001l INTO TABLE @DATA(lt_t001l) WHERE  werks IN @S_werks AND lgort IN @S_lgort. "#EC CI_GENBUFF.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-020 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+  "--> check plant validation.
+  IF s_werks IS NOT INITIAL.
+    SELECT werks,name1 FROM t001w INTO TABLE @DATA(lt_t001w) WHERE t001w~werks IN @S_werks.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-021 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+  "--> Check material validation.
+  IF s_matnr IS NOT INITIAL.
+    SELECT matnr FROM mara INTO TABLE @DATA(lt_matnr) WHERE matnr IN @s_matnr.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-022 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+  "--> Check batch validation corresponding to plant and material.
+  IF s_charg IS NOT INITIAL.
+    SELECT matnr,werks,charg FROM mcha INTO TABLE @DATA(lt_charg) WHERE matnr IN @s_matnr AND
+                                                                        werks IN @s_werks AND
+                                                                        charg IN @s_charg.
+    IF sy-subrc NE 0.
+      MESSAGE TEXT-023 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+*---------------------------------------------------------------------------------------------------------------
+START-OF-SELECTION .
+
+  "--> prepare internal table for Grater then AND less then data.
+  lsr_stopt-sign   = 'I'.
+  lsr_stopt-option = 'GT'. "greater than
+  lsr_stopt-low    = '0'.
+  APPEND lsr_stopt TO r_stopt.
+  lsr_stopt-sign   = 'I'.
+  lsr_stopt-option = 'LT'. "less than
+  lsr_stopt-low    = '0'.
+  APPEND lsr_stopt TO r_stopt.
+
+  "--> Check wheather required data is present or not for that get Batch Stocks details from MCHB Table..
+  SELECT mchb~matnr,                                     "--> material code
+         mchb~werks,                                     "--> Plant
+         mchb~lgort,                                     "--> Storage Location
+         mchb~charg,                                     "--> Batch
+         mchb~ersda,                                     "--> Created On
+         mcha~bwtar,                                     "--> Valuation Type
+         mchb~clabs,                                     "--> Unresticted
+         mchb~cinsm,                                     "--> Quality Inspction
+         mchb~cspem,                                     "--> Blocked
+         makt~maktx,                                     "--> Matrial Desc.
+         mara~meins,                                     "--> Unit of mesure
+         t001k~bukrs,                                    "--> Company code
+         t001~waers                                      "--> currency
+    FROM  mchb
+    LEFT OUTER JOIN makt  ON  makt~matnr  = mchb~matnr AND spras      = @sy-langu
+    LEFT OUTER JOIN mcha  ON  mcha~matnr  = mchb~matnr AND
+                              mcha~werks  = mchb~werks AND mcha~charg = mchb~charg
+    LEFT OUTER JOIN mara  ON  mara~matnr  = mchb~matnr
+    LEFT OUTER JOIN t001k ON  t001k~bwkey = mchb~werks "#EC CI_BUFFJOIN
+    LEFT OUTER JOIN t001  ON  t001~bukrs  = t001k~bukrs "#EC CI_BUFFJOIN
+    INTO  CORRESPONDING FIELDS OF TABLE  @lt_mchb
+    WHERE mchb~matnr IN @s_matnr AND
+          mchb~werks IN @s_werks AND
+          mchb~lgort IN @s_lgort AND
+          mchb~charg IN @s_charg AND
+         (
+          mchb~clabs IN @r_stopt OR
+          mchb~cinsm IN @r_stopt OR
+          mchb~cspem IN @r_stopt
+           ).
+
+  IF lt_mchb IS NOT INITIAL.
+    PERFORM get_data.                             "--> Get all the required data.
+    PERFORM process_stock_rept_data.              "--> Process trhe data to get the final result.
+    PERFORM display_report.                       "--> Display the final report.
+
+  ELSE.
+    MESSAGE TEXT-024 TYPE 'E'.
+    LEAVE TO SCREEN 0.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_mb52_final.              "--> Get the final Mb52 related details
+  PERFORM get_mseg_final.              "--> Get the GRN deatils based on batch and Material.
+  PERFORM get_batch_chrts_final.       "--> Get the final Characteristics details of Batch.
+  PERFORM get_material_profit_center.  "--> Get the profit center of  Normal material and WBS material.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_stock_rept_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_stock_rept_data .
+  CLEAR: ls_mb52,ls_bcls.
+  LOOP AT lt_mb52 INTO ls_mb52.
+
+    "--> Prepare MB52 data.
+    ls_final-matnr     = ls_mb52-matnr.
+    ls_final-werks     = ls_mb52-werks.
+    ls_final-charg     = ls_mb52-charg.
+    ls_final-lgort     = ls_mb52-lgort.
+    ls_final-bwtar     = ls_mb52-bwtar.
+    ls_final-ersda     = ls_mb52-ersda.
+    ls_final-clabs     = ls_mb52-clabs.
+    ls_final-val_clabs = ls_mb52-val_clabs.
+    ls_final-cinsm     = ls_mb52-cinsm.
+    ls_final-val_cinsm = ls_mb52-val_cinsm.
+    ls_final-cspem     = ls_mb52-cspem.
+    ls_final-val_cspem = ls_mb52-val_cspem.
+    ls_final-maktx     = ls_mb52-maktx.
+    ls_final-meins     = ls_mb52-meins.
+    ls_final-waers     = ls_mb52-waers.
+
+    "--> Get Profit center details.
+    READ TABLE lt_normat_prctr INTO DATA(ls_nprctr) WITH KEY matnr = ls_mb52-matnr werks = ls_mb52-werks.
+    IF sy-subrc EQ 0.
+      ls_final-normal_prctr = ls_nprctr-prctr.
+    ENDIF.
+    READ TABLE lt_wbs_prctr INTO DATA(ls_wbs_prctr) WITH KEY matnr = ls_mb52-matnr werks = ls_mb52-werks.
+    IF sy-subrc EQ 0.
+      ls_final-wbs_prctr = ls_wbs_prctr-prctr.
+    ENDIF.
+
+    "--> Prepare GRN details.
+    READ TABLE lt_mseg INTO DATA(ls_mseg) WITH KEY matnr = ls_mb52-matnr charg = ls_mb52-charg BINARY SEARCH.
+    IF sy-subrc EQ 0.
+      ls_final-lifnr       = ls_mseg-lifnr .
+      ls_final-name1       = ls_mseg-name1 .
+      ls_final-gr_date     = ls_mseg-budat_mkpf .
+      ls_final-xblnr_mkpf  = ls_mseg-xblnr_mkpf .
+      ls_final-idnlf       = ls_mseg-idnlf .
+      ls_final-racct       = ls_mseg-racct .
+      ls_final-recipt_date = ls_mseg-budat_mkpf .
+      ls_final-gr_doc_no   = ls_mseg-mblnr.
+    ENDIF.
+
+    "--> Prepare Batch Classification Details.
+    READ TABLE lt_bcls INTO ls_bcls WITH  KEY matnr = ls_mb52-matnr charg = ls_mb52-charg BINARY SEARCH.
+    IF sy-subrc EQ 0.
+      ls_final-cuobj_bm     = ls_bcls-cuobj_bm.
+      ls_final-lwedt        = ls_bcls-lwedt.
+      ls_final-hsdat        = ls_bcls-hsdat.
+      ls_final-vfdat        = ls_bcls-vfdat.
+      ls_final-licha        = ls_bcls-licha.
+      ls_final-old_batch    = ls_bcls-old_batch.
+      ls_final-vendor_batch = ls_bcls-vendor_batch.
+      ls_final-supplier     = ls_bcls-supplier.
+      ls_final-package_type = ls_bcls-package_type.
+
+      ls_final-material_grade = ls_bcls-material_grade.
+      ls_final-storage_bin    = ls_bcls-storage_bin.
+      ls_final-elna_idnlf     = ls_bcls-elna_idnlf.
+    ENDIF.
+
+    APPEND ls_final TO lt_final.
+    CLEAR: ls_final,ls_mseg,ls_bcls.
+  ENDLOOP.
+
+  SORT lt_final BY matnr charg.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form display_report
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_report .
+  PERFORM create_catalogs.                          "--> Prepare the Catalog for display formart.
+  PERFORM display_alv_grid_display.                 "--> Display The final Result.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form create_catalogs
+*&---------------------------------------------------------------------*
+FORM create_catalogs .
+  PERFORM get_fieldcat USING  'ERSDA'           'LT_FINAL'  'Created On'                     '10' .
+  PERFORM get_fieldcat USING  'WERKS'           'LT_FINAL'  'Plant'                          '10' .
+  PERFORM get_fieldcat USING  'LGORT'           'LT_FINAL'  'Storage Location'               '10' .
+  PERFORM get_fieldcat USING  'MATNR'           'LT_FINAL'  'Material'                       '40' .
+  PERFORM get_fieldcat USING  'MAKTX'           'LT_FINAL'  'Material Desc'                  '40' .
+  PERFORM get_fieldcat USING  'NORMAL_PRCTR'    'LT_FINAL'  'Normal Profit Center'           '10' .
+  PERFORM get_fieldcat USING  'WBS_PRCTR'       'LT_FINAL'  'WBS Profit Center'              '10' .
+  PERFORM get_fieldcat USING  'CHARG'           'LT_FINAL'  'Batch'                          '10' .
+  PERFORM get_fieldcat USING  'CLABS'           'LT_FINAL'  'Unresticted'                    '20' .
+  PERFORM get_fieldcat USING  'CINSM'           'LT_FINAL'  'Quality Inspection'             '20' .
+  PERFORM get_fieldcat USING  'CSPEM'           'LT_FINAL'  'Blocked'                        '20' .
+  PERFORM get_fieldcat USING  'MEINS'           'LT_FINAL'  'Base Unit of Measure'           '10' .
+  PERFORM get_fieldcat USING  'VAL_CLABS'       'LT_FINAL'  'Value Unrestricted'             '10' .
+  PERFORM get_fieldcat USING  'VAL_CINSM'       'LT_FINAL'  'Value in Qual. Insp.'           '10' .
+  PERFORM get_fieldcat USING  'VAL_CSPEM'       'LT_FINAL'  'Value Blocked Stock'            '10' .
+  PERFORM get_fieldcat USING  'WAERS'           'LT_FINAL'  'Currency'                       '10' .
+  PERFORM get_fieldcat USING  'LIFNR'           'LT_FINAL'  'Vendor Code'                    '10' .
+  PERFORM get_fieldcat USING  'NAME1'           'LT_FINAL'  'Vendor Name'                    '40' .
+  PERFORM get_fieldcat USING  'XBLNR_MKPF'      'LT_FINAL'  'Vendor Invoice No.'             '20' .
+  PERFORM get_fieldcat USING  'RACCT'           'LT_FINAL'  'GL Account (FI Inventory GL)'   '10' .
+  PERFORM get_fieldcat USING  'IDNLF'           'LT_FINAL'  'MPN(Supplier Mat. No./Grade)'   '40' .
+  PERFORM get_fieldcat USING  'BWTAR'           'LT_FINAL'  'Valuation Type'                 '10' .
+  PERFORM get_fieldcat USING  'RECIPT_DATE'     'LT_FINAL'  'Receipt Date / Age'             '10' .
+  PERFORM get_fieldcat USING  'LWEDT'           'LT_FINAL'  'Date of Last Goods Receipt'     '10' .
+  PERFORM get_fieldcat USING  'HSDAT'           'LT_FINAL'  'Date when Batch Was Produced'   '10' .
+  PERFORM get_fieldcat USING  'VFDAT'           'LT_FINAL'  'Expiration date, shelf life'    '10' .
+  PERFORM get_fieldcat USING  'LICHA'           'LT_FINAL'  'Vendor Batch'                   '20' .
+  PERFORM get_fieldcat USING  'OLD_BATCH'       'LT_FINAL'  'Old Batch Number'               '70' .
+*  PERFORM get_fieldcat USING  'VENDOR_BATCH'           'LT_FINAL'  'Vendor Batch Number'             CHANGING it_fieldcat   ##NO_TEXT.
+  PERFORM get_fieldcat USING  'SUPPLIER'        'LT_FINAL'  'Suppplier'                      '10' .
+  PERFORM get_fieldcat USING  'MATERIAL_GRADE'  'LT_FINAL'  'Material Grade'                 '70' .
+  PERFORM get_fieldcat USING  'PACKAGE_TYPE'    'LT_FINAL'  'Package Type'                   '70' .
+  PERFORM get_fieldcat USING  'GR_DOC_NO'       'LT_FINAL'  'GRN Doc No.'                    '20' .
+  PERFORM get_fieldcat USING  'GR_DATE'         'LT_FINAL'  'GRN Date'                       '10' .
+  PERFORM get_fieldcat USING  'ELNA_IDNLF'      'LT_FINAL'  'Material code Used by Supplier' '40' .
+  PERFORM get_fieldcat USING  'STORAGE_BIN'     'LT_FINAL'  'Storage Bin'                    '10' .
+
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_fieldcat
+*&---------------------------------------------------------------------*
+FORM get_fieldcat  USING   VALUE(p1)
+                           VALUE(p2)
+                           VALUE(p3)
+                           VALUE(p4).
+  lwa_fieldcat-fieldname = p1.
+  lwa_fieldcat-tabname   = p2.
+  lwa_fieldcat-seltext_l = p3.
+  lwa_fieldcat-outputlen = p4.
+  APPEND lwa_fieldcat TO it_fieldcat.
+  CLEAR :  lwa_fieldcat.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+  DATA: ls_layout TYPE slis_layout_alv.
+  CLEAR : ls_layout.
+  ls_layout-colwidth_optimize = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      it_fieldcat        = it_fieldcat[]
+      i_callback_program = sy-repid
+      is_layout          = ls_layout
+      i_save             = 'A'
+    TABLES
+      t_outtab           = lt_final
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 .
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_mb52_data
+*&---------------------------------------------------------------------*
+FORM get_mb52_final .
+
+  "--> Get Material Valuation details from mbew Table for all the available Batch Stocks Detail .
+  IF lt_mchb IS NOT INITIAL.
+    SELECT matnr,                                 "--> Material Code
+           bwkey,                                 "--> Valuation area
+           bwtar,                                 "--> Valuation Type
+           lbkum,                                 "--> Total Valuated Stock
+           salk3                                  "--> Value of Total Valuated Stock
+      FROM mbew
+      INTO TABLE @lt_mbew
+      FOR ALL ENTRIES IN @lt_mchb                  "#EC CI_NO_TRANSFORM
+      WHERE matnr = @lt_mchb-matnr AND
+            bwkey = @lt_mchb-werks AND
+            bwtar = @lt_mchb-bwtar AND
+            lvorm NE 'x'.
+  ENDIF.
+
+  "--> Process the above data to get the final MB52 detail.
+  LOOP AT lt_mchb INTO DATA(ls_mchb).
+    ls_mb52 = CORRESPONDING #( ls_mchb ).
+
+    "--> Calculate the Value field data.
+    READ TABLE lt_mbew INTO DATA(ls_mbew) WITH KEY matnr = ls_mchb-matnr bwkey = ls_mchb-werks bwtar = ls_mchb-bwtar.
+    IF sy-subrc EQ 0.
+      factor = ls_mbew-salk3 / ls_mbew-lbkum.
+    ENDIF.
+
+    ls_mb52-val_clabs = ls_mchb-clabs * factor.
+    ls_mb52-val_cspem = ls_mchb-cspem * factor.
+    ls_mb52-val_cinsm = ls_mchb-cinsm * factor.
+
+    APPEND ls_mb52 TO lt_mb52.
+    CLEAR: ls_mb52,ls_mchb,ls_mbew,factor.
+  ENDLOOP.
+
+  SORT lt_mb52 BY matnr charg.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_mseg_final
+*&---------------------------------------------------------------------*
+FORM get_mseg_final .
+  IF lt_mb52 IS NOT INITIAL.
+    SELECT mseg~mblnr,
+           mseg~bwart,
+           mseg~charg,
+           mseg~matnr,
+           mseg~werks,
+           mseg~lifnr,
+           lfa1~name1,
+           mseg~bwtar,
+           mseg~budat_mkpf,
+           mseg~xblnr_mkpf,
+           mseg~ebeln,
+           ekpo~idnlf,
+           acdoca~racct
+      FROM mseg
+      LEFT OUTER JOIN lfa1   ON lfa1~lifnr   = mseg~lifnr
+      LEFT OUTER JOIN ekpo   ON ekpo~ebeln   = mseg~ebeln AND
+                                ekpo~matnr   = mseg~matnr
+      LEFT OUTER JOIN acdoca ON acdoca~awref = mseg~mblnr AND
+                                acdoca~koart = 'M'
+      FOR ALL ENTRIES IN @lt_mb52
+      WHERE mseg~matnr =  @lt_mb52-matnr AND
+            mseg~werks =  @lt_mb52-werks AND
+            mseg~charg =  @lt_mb52-charg AND
+            mseg~bwart IN ( '101','561' )
+      INTO TABLE @lt_mseg.
+  ENDIF.
+
+  SORT lt_mseg BY matnr charg.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form get_batch_characteristics
+*&---------------------------------------------------------------------*
+FORM get_batch_chrts_final .
+
+*--> get the detail of Batches (if Batch Management Cross-Plant) from mch1.
+  IF lt_mb52 IS NOT INITIAL.
+    SELECT matnr,charg,cuobj_bm,lwedt,
+           hsdat,vfdat,licha,lifnr
+    FROM mch1 INTO TABLE @lt_mch1
+    FOR ALL ENTRIES IN @lt_mb52
+    WHERE matnr = @lt_mb52-matnr AND
+          charg = @lt_mb52-charg.
+  ENDIF.
+  SORT lt_mch1 BY matnr charg.
+
+  LOOP AT  lt_mch1 ASSIGNING FIELD-SYMBOL(<fs_mch1>).
+    <fs_mch1>-objek = <fs_mch1>-cuobj_bm.
+  ENDLOOP.
+
+*--> get the Batch Classification deatils from AUSP Table based on "Internal object no.: Batch classification(cuobj_bm)."
+  " OLD BATCH                    : 0000000895
+  " VENDOR BATCH                 : 0000000887
+  " PACKAGE TYPE                 : 0000000865
+  " MATERIAL GRADE               : 0000000861
+  " Storage bin                  : 0000001867
+  " GRC DOC NO                   : 0000000859
+  " Material no used by supplier : 0000001865
+
+  IF lt_mch1 IS NOT INITIAL.
+    SELECT objek,atinn,atwrt
+    FROM ausp INTO TABLE @DATA(lt_ausp)
+    FOR ALL ENTRIES IN @lt_mch1
+    WHERE objek EQ @lt_mch1-objek AND
+          atinn IN ('0000000895','0000000887','0000000865','0000000861','0000001867','0000000859','0000001865').
+  ENDIF.
+
+*--> process the above details to fetch final Classification details bassed on BATCH & MATERIAL.
+  LOOP AT lt_mb52 INTO DATA(ls_mb52).
+    READ TABLE lt_mch1 INTO DATA(ls_mch1) WITH KEY matnr = ls_mb52-matnr charg = ls_mb52-charg BINARY SEARCH.
+    IF sy-subrc EQ 0.
+      ls_bcls-matnr     = ls_mb52-matnr.
+      ls_bcls-charg     = ls_mb52-charg.
+      ls_bcls-cuobj_bm  = ls_mch1-cuobj_bm.
+      ls_bcls-lwedt     = ls_mch1-lwedt.
+      ls_bcls-hsdat     = ls_mch1-hsdat.
+      ls_bcls-vfdat     = ls_mch1-vfdat.
+      ls_bcls-licha     = ls_mch1-licha.
+      ls_bcls-objek     = ls_mch1-objek.
+      ls_bcls-supplier  = ls_mch1-lifnr.
+
+      "--> get OLD batch Number.
+      READ TABLE lt_ausp INTO DATA(ls_old_batch) WITH KEY objek = ls_mch1-objek atinn = '0000000895'.
+      IF sy-subrc EQ 0.
+        ls_bcls-old_batch = ls_old_batch-atwrt.
+      ENDIF.
+
+      "--> get Vendor batch Number.
+      READ TABLE lt_ausp INTO DATA(ls_Vendor_batch) WITH KEY objek = ls_mch1-objek atinn = '0000000887'.
+      IF sy-subrc EQ 0.
+        ls_bcls-vendor_batch = ls_vendor_batch-atwrt.
+      ENDIF.
+
+      "--> get package type.
+      READ TABLE lt_ausp INTO DATA(ls_package) WITH KEY objek = ls_mch1-objek atinn = '0000000865'.
+      IF sy-subrc EQ 0.
+        ls_bcls-package_type = ls_package-atwrt.
+      ENDIF.
+
+      "--> get Material Grade.
+      READ TABLE lt_ausp INTO DATA(ls_grade) WITH KEY objek = ls_mch1-objek atinn = '0000000861'.
+      IF sy-subrc EQ 0.
+        ls_bcls-material_grade = ls_grade-atwrt.
+      ENDIF.
+
+      "--> get storage Bin.
+      READ TABLE lt_ausp INTO DATA(ls_bin) WITH KEY objek = ls_mch1-objek atinn = '0000001867'.
+      IF sy-subrc EQ 0.
+        ls_bcls-storage_bin = ls_bin-atwrt.
+      ENDIF.
+
+      "--> get Material Number Used BY Supplier.
+      READ TABLE lt_ausp INTO DATA(ls_mst_supplier) WITH KEY objek = ls_mch1-objek atinn = '0000001865'.
+      IF sy-subrc EQ 0.
+        ls_bcls-elna_idnlf = ls_mst_supplier-atwrt.
+      ENDIF.
+    ENDIF.
+
+    APPEND ls_bcls TO lt_bcls.
+    CLEAR: ls_bcls,ls_old_batch,ls_vendor_batch,ls_package,ls_grade,
+           ls_bin,ls_mst_supplier.
+  ENDLOOP.
+  SORT lt_bcls BY matnr charg.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_material_profit_center
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_material_profit_center .
+
+  "--> GET NORMAL MATERIAL PROFIT CENTER
+  SELECT matnr,werks,prctr FROM marc
+    INTO TABLE @lt_normat_prctr
+    WHERE matnr IN @s_matnr AND werks IN @s_werks.
+
+
+  "-->GET WBS ELEMENT PROFIT CENTER.
+  SELECT mssq~matnr,mssq~werks,mssq~pspnr,prps~prctr
+  FROM mssq
+  LEFT OUTER JOIN prps ON prps~pspnr = mssq~pspnr
+  INTO TABLE @lt_wbs_prctr
+  WHERE mssq~matnr IN @s_matnr AND mssq~werks IN @s_werks.
+
+  SORT: lt_normat_prctr BY matnr werks,
+        lt_wbs_prctr    BY matnr werks.
+ENDFORM.

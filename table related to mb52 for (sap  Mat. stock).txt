@@ -1,0 +1,17 @@
+MB52
+-------------
+1	MARD	Storage Location Data for Material	Logistics - Material Master	Transparent Table
+2	MCHB	Batch Stocks	Logistics - Material Master	Transparent Table
+3	MBEW	Material Valuation	Logistics - Material Master	Transparent Table
+4	MARA	General Material Data	Logistics - Material Master	Transparent Table
+5	MARC	Plant Data for Material	Logistics - Material Master	Transparent Table
+6	MCHA	Batches	Logistics - Material Master	Transparent Table
+7	MSEG	Document Segment: Material	MM - Inventory Management	Transparent Table	
+9	MKPF	Header: Material Document	MM - Inventory Management	Transparent Table
+10	MCHBH	Batch Stocks: History	Logistics - Material Master	Transparent Table
+11	MARDH	Material Master Storage Location Segment: History	Logistics - Material Master	Transparent Table
+12	MSPR	Project Stock	Logistics - Material Master	Transparent Table
+13	MSKU	Special Stocks with Customer	Logistics - Material Master	Transparent Table
+14	MKOL	Special Stocks from Vendor	Logistics - Material Master	Transparent Table
+15	MSKA	Sales Order Stock	Logistics - Material Master	Transparent Table
+16	T001L	Storage Locations	Logistics - Material Master	Transparent Table

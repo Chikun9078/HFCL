@@ -1,0 +1,382 @@
+*---------------------------------------------------------------------*
+* DESCRIPTION: Correction of Manual Stock
+* RICEFW ID :
+* PROGRAM NAME: ZMMEP_CUST_STOCK_REVERSAL
+* T-CODE : ZMM0058
+* AUTHOR : <WIPROABAP01>
+* DATE   : 20/06/2024
+*---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* CHANGE HISTORY
+* Date         Changed By     Defect/RFC    Description
+*---------------------------------------------------------------------*
+* 26/06/2024   <WIPROABAP01>         Plant & Storage Location in I/P Screen
+* 20/01/2025   <AIRDITDEBI>          Added Material Description,Vendor Description in Report
+*                                    and Added Vendor code in input screen and value only be entered IF vendor issur reversal process is done.
+*---------------------------------------------------------------------*
+REPORT zmmep_cust_stock_reversal.
+TABLES:t001w,t001l,zmm_stk_entry,zmm_stk_transfer.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS : s_werks  FOR t001w-werks OBLIGATORY,
+                   s_lgort  FOR t001l-lgort,
+                   s_matnr  FOR zmm_stk_entry-matnr,
+                   s_date   FOR sy-datum,
+                   s_vendor FOR zmm_stk_transfer-vendor .
+SELECTION-SCREEN : END OF BLOCK b1.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  PARAMETERS : r_cust   RADIOBUTTON GROUP rg2,
+               r_vendor RADIOBUTTON GROUP rg2.
+SELECTION-SCREEN : END OF BLOCK b2.
+
+
+TYPES : BEGIN OF ty_final,
+          zstk_crt_id TYPE zde_stk_id,
+          item_no     TYPE  zde_itemno,
+          werks       TYPE werks_d,
+          zstrloc     TYPE lgort_d,
+          matnr       TYPE matnr,
+          pspel       TYPE ps_posid,
+          zbusptr     TYPE kunnr,
+          zqty        TYPE zdeqty,
+          uom         TYPE meins,
+          zmode       TYPE zde_mode,
+          remarks     TYPE zremarks,
+          sydate      TYPE datum,
+          maktx       LIKE makt-maktx,
+        END OF ty_final.
+
+"Vendor
+
+TYPES : BEGIN OF ty_final_v,
+          zstk_trf_id   TYPE zde_trf_id,
+          zstk_trf_line TYPE zde_itemno,
+          zstk_crt_id   TYPE zde_stk_id,
+          item_no       TYPE  zde_itemno,
+          werks         TYPE werks_d,
+          zstrloc       TYPE lgort_d,
+          customer      TYPE  kunnr,
+          vendor        TYPE  lifnr,
+          matnr         TYPE matnr,
+          pspel         TYPE ps_posid,
+          qty           TYPE zdeqty,
+          uom           TYPE meins,
+          site_name     TYPE zsite_name,
+          sydate        TYPE datum,
+          maktx         LIKE makt-maktx,
+          Vendor_name   TYPE name1_gp,
+        END OF ty_final_v.
+
+
+DATA : ls_final   TYPE ty_final ##NEEDED,
+       lt_final   TYPE STANDARD TABLE OF ty_final ##NEEDED,
+       lt_final_d TYPE STANDARD TABLE OF ty_final ##NEEDED,
+       ls_final_v TYPE ty_final_v ##NEEDED,
+       lt_final_v TYPE STANDARD TABLE OF ty_final_v ##NEEDED.
+
+DATA : lt_fieldcat  TYPE STANDARD TABLE OF slis_fieldcat_alv  ##NEEDED,
+       lwa_fieldcat TYPE slis_fieldcat_alv  ##NEEDED.
+
+
+START-OF-SELECTION.
+  "--> Checking, When user choose the radio button r_vendor then only user can enter Vendor Code .
+  IF r_CUST EQ 'X' AND s_vendor IS NOT INITIAL .
+    MESSAGE 'Vendor code only entered when "Vendor Issue Reversal" Option is Checked.' TYPE 'E'.
+  ENDIF.
+  PERFORM get_data.
+  PERFORM display_data.
+
+FORM get_data.
+  IF r_cust = 'X'.
+    SELECT    a~zstk_crt_id
+              a~item_no
+              a~werks
+              a~zstrloc
+              a~matnr
+              a~pspel
+              a~zbusptr
+              a~zqty
+              a~uom
+              a~zmode
+              a~remarks
+              a~sydate
+              b~maktx
+        FROM zmm_stk_entry AS a
+        LEFT OUTER JOIN makt AS b ON b~matnr EQ a~matnr AND
+                                     b~spras EQ sy-langu
+        INTO TABLE lt_final
+        WHERE zmode = 'MANUAL'
+        AND a~sydate  IN s_date
+        AND a~werks   IN s_werks
+        AND a~zstrloc IN s_lgort
+        AND a~matnr   IN s_matnr.
+
+  ELSEIF r_vendor = 'X'.
+    SELECT    a~zstk_trf_id
+              a~zstk_trf_line
+              a~zstk_crt_id
+              a~item_no
+              a~werks
+              a~zstrloc
+              a~customer
+              a~vendor
+              a~matnr
+              a~pspel
+              a~qty
+              a~uom
+              a~site_name
+              b~sydate
+              c~maktx
+              d~name1 AS Vendor_name
+       INTO TABLE lt_final_v
+       FROM zmm_stk_transfer AS a
+       INNER JOIN  zmm_stk_entry AS b ON  a~zstk_crt_id = b~zstk_crt_id AND a~item_no =  b~item_no
+       LEFT OUTER JOIN makt AS c ON c~matnr EQ a~matnr AND c~spras EQ sy-langu
+       LEFT OUTER JOIN lfa1 AS d ON d~lifnr EQ a~vendor
+       WHERE b~zmode = 'MANUAL'
+       AND b~sydate  IN s_date
+       AND b~werks   IN s_werks
+       AND b~zstrloc IN s_lgort
+       AND b~matnr   IN s_matnr
+       AND a~vendor  IN s_vendor.
+  ENDIF.
+ENDFORM.
+
+FORM display_data.
+  DATA: gt_events TYPE slis_t_event,
+        gs_events TYPE slis_alv_event.
+  PERFORM create_field_cat.
+
+*  "......Trigger ENTER Event.....
+*  gs_events-name = 'CALLER_EXIT'.
+*  gs_events-form = 'CALLER_EXIT'.
+*  APPEND gs_events TO gt_events.
+*
+  ".....To capture changed data.....
+  gs_events-name = 'DATA_CHANGED'.
+  gs_events-form = 'DATA_CHANGED'.
+  APPEND gs_events TO gt_events.
+
+  IF r_cust = 'X'.
+    IF lt_final IS INITIAL.
+      MESSAGE e083(zmm) DISPLAY LIKE 'I'.
+    ENDIF.
+
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+      EXPORTING
+        i_callback_program       = sy-repid
+        i_callback_pf_status_set = 'ZPF_STATUS'
+        i_callback_user_command  = 'USER_COMMAND'
+        it_events                = gt_events
+        it_fieldcat              = lt_fieldcat[]
+      TABLES
+        t_outtab                 = lt_final
+      EXCEPTIONS
+        program_error            = 1
+        OTHERS                   = 2.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 .
+    ENDIF.
+
+  ELSEIF r_vendor = 'X'.
+
+    IF lt_final_v IS INITIAL.
+      MESSAGE e083(zmm) DISPLAY LIKE 'I'.
+    ENDIF.
+
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+      EXPORTING
+        i_callback_program       = sy-repid
+        i_callback_pf_status_set = 'ZPF_STATUS'
+        i_callback_user_command  = 'USER_COMMAND'
+        it_events                = gt_events
+        it_fieldcat              = lt_fieldcat[]
+      TABLES
+        t_outtab                 = lt_final_v
+      EXCEPTIONS
+        program_error            = 1
+        OTHERS                   = 2.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+              WITH sy-msgv1 sy-msgv2 .
+    ENDIF.
+
+  ENDIF.
+ENDFORM.
+
+FORM get_fieldcat  USING    p_field_name ##PERF_NO_TYPE "Passing Field name
+                            p_tab_name                  "Passing TABLE name
+                            p_sel_name                  "Passing SEL Field name
+                            p_outputlen                 " output length
+                            p_col_fixed
+                   CHANGING p_it_fieldcat TYPE slis_t_fieldcat_alv.
+
+  IF p_field_name = 'ZQTY' OR p_field_name = 'QTY'.
+    lwa_fieldcat-ref_fieldname = 'ZQTY'.
+    lwa_fieldcat-ref_tabname   = 'ZMM_STK_ENTRY'.
+  ENDIF.
+
+  lwa_fieldcat-fieldname = p_field_name.
+  lwa_fieldcat-tabname   = p_tab_name.
+  lwa_fieldcat-seltext_m = p_sel_name.
+  lwa_fieldcat-outputlen = p_outputlen.
+  lwa_fieldcat-edit = p_col_fixed.
+  APPEND lwa_fieldcat TO p_it_fieldcat.
+  CLEAR :  lwa_fieldcat.
+ENDFORM.
+
+
+FORM create_field_cat.
+  CLEAR:lt_fieldcat.
+  CLEAR:lt_fieldcat[].
+  PERFORM get_fieldcat USING  TEXT-033     TEXT-003  TEXT-034    10  ''  CHANGING lt_fieldcat.
+  PERFORM get_fieldcat USING  TEXT-035     TEXT-003  TEXT-036    5   ''  CHANGING lt_fieldcat.
+  PERFORM get_fieldcat USING  TEXT-005     TEXT-003  TEXT-010    10  ''  CHANGING lt_fieldcat.
+  PERFORM get_fieldcat USING  TEXT-006     TEXT-003  TEXT-011    5   ''  CHANGING lt_fieldcat.
+  PERFORM get_fieldcat USING  TEXT-007     TEXT-003  TEXT-012    10  ''  CHANGING lt_fieldcat.
+  PERFORM get_fieldcat USING  TEXT-008     TEXT-003  TEXT-013    25  ''  CHANGING lt_fieldcat.
+  PERFORM get_fieldcat USING  TEXT-037     TEXT-003  TEXT-038    25  ''  CHANGING lt_fieldcat.
+  PERFORM get_fieldcat USING  TEXT-009     TEXT-003  TEXT-014    25  ''  CHANGING lt_fieldcat.
+
+  IF r_cust = 'X'.
+    PERFORM get_fieldcat USING  TEXT-015    TEXT-003  TEXT-019   10  ''  CHANGING lt_fieldcat.
+    PERFORM get_fieldcat USING  TEXT-016    TEXT-003  TEXT-020   10  'X' CHANGING lt_fieldcat.
+    PERFORM get_fieldcat USING  TEXT-017    TEXT-003  TEXT-021   10  ''  CHANGING lt_fieldcat.
+    PERFORM get_fieldcat USING  TEXT-018    TEXT-003  TEXT-022   10  ''  CHANGING lt_fieldcat.
+  ELSEIF r_vendor = 'X'.
+    PERFORM get_fieldcat USING   TEXT-023   TEXT-004 TEXT-028    10  ''  CHANGING lt_fieldcat.
+    PERFORM get_fieldcat USING   TEXT-024   TEXT-004 TEXT-029    10  ''  CHANGING lt_fieldcat.
+    PERFORM get_fieldcat USING   TEXT-039   TEXT-003 TEXT-040    30  ''  CHANGING lt_fieldcat.
+    PERFORM get_fieldcat USING   TEXT-025   TEXT-004 TEXT-030    10  'X' CHANGING lt_fieldcat.
+    PERFORM get_fieldcat USING   TEXT-026   TEXT-004 TEXT-031    10  ''  CHANGING lt_fieldcat.
+    PERFORM get_fieldcat USING   TEXT-027   TEXT-004 TEXT-032    35  ''  CHANGING lt_fieldcat.
+  ENDIF.
+ENDFORM.
+
+
+FORM zpf_status USING rt_extab TYPE slis_t_extab  ##NEEDED.
+  SET PF-STATUS 'ZPF_STATUS'.
+ENDFORM.
+
+
+FORM user_command USING r_ucomm TYPE sy-ucomm rs_selfield TYPE slis_selfield ##CALLED ##NEEDED.
+  DATA: lv_count     TYPE sy-index,
+        lv_error_msg TYPE string.
+
+  CASE r_ucomm.
+    WHEN 'UPDATE_QTY'.
+      MESSAGE 'UPDATE CLICKED' TYPE 'I'.
+      IF r_cust = 'X'.
+        CLEAR: lv_count.
+        "--> Fetch the current Quantity in zmm_stk_entry TABLE.
+        IF lt_final IS NOT INITIAL.
+          SELECT zstk_crt_id,item_no,matnr,zbusptr,zqty,uom
+          FROM zmm_stk_entry INTO TABLE @DATA(Temp_stk)
+          FOR ALL ENTRIES IN @lt_final
+          WHERE zstk_crt_id EQ @lt_final-zstk_crt_id AND item_no EQ @lt_final-item_no.
+        ENDIF.
+
+        "--------->Update if Possible.
+        LOOP AT lt_final INTO ls_final.
+          READ TABLE temp_stk INTO DATA(ls_temp_stk) WITH KEY zstk_crt_id = ls_final-zstk_crt_id item_no = ls_final-item_no.
+          IF ls_final-zqty NE ls_temp_stk-zqty .
+            SELECT SUM( qty ) FROM zmm_stk_transfer INTO @DATA(lv_sumqty) WHERE zstk_crt_id = @ls_final-zstk_crt_id AND item_no = @ls_final-item_no.
+            IF lv_sumqty EQ 0.
+              UPDATE  zmm_stk_entry SET zqty = ls_final-zqty
+                       remarks = ls_final-remarks
+                       WHERE zstk_crt_id = ls_final-zstk_crt_id  AND  item_no    = ls_final-item_no.
+              IF sy-subrc EQ 0.
+                lv_count = lv_count + 1.
+              ENDIF.
+            ELSEIF lv_sumqty GT 0.
+**             DATA(lv_remaining) = ( ls_temp_stk-zqty - lv_sumqty ).
+**              IF ls_final-zqty LE lv_remaining.
+**                UPDATE  zmm_stk_entry SET zqty = ls_final-zqty
+**                                       remarks = ls_final-remarks
+**                                       WHERE zstk_crt_id = ls_final-zstk_crt_id  AND  item_no = ls_final-item_no.
+**                IF sy-subrc EQ 0.
+**                  lv_count = lv_count + 1.
+**                ENDIF.
+**             ELSE.
+              IF lv_error_msg IS INITIAL.
+                lv_error_msg = |{ ls_final-zstk_crt_id }({ ls_final-item_no })|.
+              ELSE.
+                lv_error_msg = |{ lv_error_msg },{ ls_final-zstk_crt_id }({ ls_final-item_no })|.
+              ENDIF.
+            ENDIF.
+          ENDIF.
+
+        ENDLOOP.
+
+        IF lv_count EQ 0 AND lv_error_msg IS INITIAL.
+          MESSAGE 'Please enter quantity for reversal process & Hit Enter Button.' TYPE 'I'.
+        ELSEIF  lv_count GT 0 AND lv_error_msg IS INITIAL.
+          MESSAGE 'Update Successfully' TYPE 'S'.
+        ELSEIF lv_count GT 0 AND lv_error_msg IS NOT INITIAL.
+          DATA(lv_final_msg1) = |Updated Successfully.But For Stock Entry ID(Item No):{ lv_error_msg },Alredy Stock Transter Done to Vendor end Please First Do the reversal from Vendor End to 0.|.
+          MESSAGE lv_final_msg1 TYPE 'I'.
+        ELSEIF lv_count EQ 0 AND lv_error_msg IS NOT INITIAL .
+          lv_FINAL_msg1 = |For Stock Entry ID(Item No):{ lv_error_msg },Alredy Stock Transter Done to Vendor end Please First Do the reversal from Vendor End to 0. |.
+          MESSAGE lv_final_msg1 TYPE 'E'.
+        ENDIF.
+
+*/Start/---------------------------------------------------------------------->commented by AIRDITDEBI ON 18-12-2024
+*        MESSAGE 'UPDATE CLICKED' TYPE 'I'.
+*        IF r_cust = 'X'.
+*          LOOP AT lt_final INTO ls_final.
+*            UPDATE  zmm_stk_entry SET zqty = ls_final-zqty
+*                                      remarks = ls_final-remarks
+*                                      WHERE zstk_crt_id = ls_final-zstk_crt_id
+*                                       AND  item_no    = ls_final-item_no.
+*                  ENDLOOP.
+*/END/---------------------------------------------------------------------->commented by AIRDITDEBI ON 18-12-2024
+      ELSEIF r_vendor = 'X'.
+        LOOP AT lt_final_v INTO ls_final_v.
+          UPDATE  zmm_stk_transfer SET qty = ls_final_v-qty
+                                    WHERE zstk_trf_id = ls_final_v-zstk_trf_id
+                                     AND  zstk_trf_line     = ls_final_v-zstk_trf_line.
+
+        ENDLOOP.
+      ENDIF.
+    WHEN 'DELETE_QTY'.
+      MESSAGE 'DELETE CLICKED' TYPE 'I'.
+  ENDCASE.
+ENDFORM.
+
+
+FORM refresh_grid.
+  " Refresh ALV Grid
+  DATA: g_alv TYPE REF TO cl_gui_alv_grid.
+  CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+    IMPORTING
+      e_grid = g_alv.
+  CALL METHOD g_alv->refresh_table_display.
+ENDFORM.
+
+
+FORM data_changed USING ir_data_changed TYPE REF TO cl_alv_changed_data_protocol  ##NEEDED ##called.
+*  DATA ls_modi TYPE lvc_s_modi.
+*  DATA : lv_flag TYPE string    .
+*
+*  LOOP AT ir_data_changed->mt_mod_cells INTO ls_modi  ##into_ok.
+*
+*    DATA(lv_index) = ls_modi-row_id.
+*    READ TABLE lt_final INTO ls_final INDEX ls_modi-row_id.
+*    IF lv_index = ls_modi-row_id AND lv_flag = abap_true.
+*      CLEAR : lv_flag.
+*    ENDIF.
+*
+**    CASE ls_modi-fieldname.
+**      WHEN 'REMARKS'.
+***        READ TABLE lt_final INTO ls_final INDEX ls_modi-row_id.
+***        IF sy-subrc = 0.
+***          ls_stk_entry-remarks = ls_modi-value.
+***          MODIFY lt_final FROM ls_final INDEX ls_modi-row_id TRANSPORTING remarks.
+***        ENDIF.
+**    ENDCASE.
+*
+*  ENDLOOP.
+  PERFORM refresh_grid.
+ENDFORM.                    "data_changed

@@ -1,0 +1,546 @@
+*&---------------------------------------------------------------------*
+*& Report ZMMEP_SUPPLY_CONTRACT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* DESCIPTION: This Report is to print supply contract details
+* PROGRAM NAME: ZZMMEP_SUPPLY_CONTRACT
+* AUTHOR: <Subhodhinee Raja> <WIPRO>
+* CREATED DATE  : 25/01/2024
+* Taskid        : FS_SD_010
+*---------------------------------------------------------------------*
+* CHANGE HISTORY
+* Changed Date         Changed By     Defect/RFC    Description
+*---------------------------------------------------------------------*
+* 18/07/2024           <WIPROABAP01>               Select * replaced with proper query from EKKO & EKPO
+*                                                  remove unused variables, SCI & SLIN
+*---------------------------------------------------------------------*
+REPORT zmmep_supply_contract.
+
+CONSTANTS:
+  lc_ekko    TYPE tdobject VALUE 'EKKO',
+  id_k01     TYPE tdid VALUE 'K01',
+  id_k18     TYPE tdid VALUE 'K18',
+  id_k19     TYPE tdid VALUE 'K19',
+  lc_bstyp_k TYPE ebstyp VALUE 'K'.
+
+
+TYPES: BEGIN OF lty_ekko,
+         bukrs TYPE bukrs,
+         ebeln TYPE ebeln,
+         aedat TYPE mmpur_erdat,
+         ktwrt TYPE ktwrt,
+         waers TYPE waers,
+         zterm TYPE dzterm,
+         inco1 TYPE inco1,
+         inco2 TYPE inco2,
+         kdatb TYPE kdatb,
+         kdate TYPE kdate,
+         lifnr TYPE elifn,
+         llief TYPE llief,
+         bsart TYPE esart,
+         bstyp TYPE ebstyp,
+         ekgrp TYPE bkgrp,
+       END OF lty_ekko,
+       BEGIN OF lty_ekpo,
+         matnr TYPE matnr,
+         werks TYPE werks_d,
+         txz01 TYPE txz01,
+         ktmng TYPE ktmng,
+         meins TYPE bstme,
+         netpr TYPE bprei,
+       END OF lty_ekpo.
+
+DATA : fm_name              TYPE  rs38l_fnam                   ##NEEDED,
+       lt_ekko              TYPE STANDARD TABLE OF lty_ekko    ##NEEDED,
+       ls_ekko              TYPE lty_ekko                      ##NEEDED,
+       lv_proj_name         TYPE string                        ##NEEDED,
+       lv_ref1              TYPE string                        ##NEEDED,
+       lv_ref2              TYPE string                        ##NEEDED,
+       lt_ekpo              TYPE STANDARD TABLE OF lty_ekpo    ##NEEDED,
+       lt_final_ekpo        TYPE  STANDARD TABLE OF zst_mm_supplycontract_sf_ekpo ##NEEDED,
+       ls_final_ekpo        TYPE zst_mm_supplycontract_sf_ekpo  ##NEEDED,
+       lv_sno               TYPE i VALUE '0'                    ##NEEDED ##STR_NUM,
+       lv_shipping_term1    TYPE ekko-inco1                     ##NEEDED,
+       lv_shipping_term2    TYPE ekko-inco2                     ##NEEDED,
+       lv_con_start_date    TYPE ekko-kdatb                     ##NEEDED,
+       lv_con_end_date      TYPE ekko-kdate                     ##NEEDED,
+       lv_value_of_contract TYPE ekko-ktwrt                     ##NEEDED,
+       ls_amount_in_text    TYPE string                         ##NEEDED,
+       ls_amount_in_words   TYPE char100                        ##NEEDED,
+       ls_text              TYPE char100                        ##NEEDED,
+       lv_payment_term      TYPE ekko-zterm                     ##NEEDED,
+       lv_amendment_date    TYPE erev-erdat                     ##NEEDED,
+       ls_company_name      TYPE char100                        ##NEEDED,
+       gv_waers             TYPE waers                          ##NEEDED,
+       lv_title             TYPE char50                         ##NEEDED,
+       lv_projnam           TYPE eknam                          ##NEEDED,
+       ls_plant_address     TYPE zst_mm_suply_conct_sf_address  ##NEEDED,
+       ls_shipping_address  TYPE zst_mm_suply_conct_sf_address  ##NEEDED,
+       ls_billing_address   TYPE zst_mm_suply_conct_sf_address  ##NEEDED.
+
+
+SELECTION-SCREEN : BEGIN OF  BLOCK b1 WITH FRAME TITLE TEXT-001.
+  PARAMETERS: s_ebeln   TYPE ekko-ebeln .
+SELECTION-SCREEN : END OF BLOCK b1.
+
+
+START-OF-SELECTION.
+  PERFORM get_data.
+  PERFORM process_data.
+
+
+FORM get_data.
+
+  SELECT  bukrs                               "#EC CI_ALL_FIELDS_NEEDED
+          ebeln
+          aedat
+          ktwrt
+          waers
+          zterm
+          inco1
+          inco2
+          kdatb
+          kdate
+          lifnr
+          llief
+          bsart
+          bstyp
+          ekgrp
+    FROM ekko INTO CORRESPONDING FIELDS OF TABLE        "#EC CI_NOORDER
+    lt_ekko
+    WHERE ebeln =  s_ebeln
+    AND bstyp EQ lc_bstyp_k.
+
+
+  READ TABLE lt_ekko INTO ls_ekko WITH KEY ebeln = s_ebeln.
+  gv_waers = ls_ekko-waers.
+
+  IF sy-subrc = 0.
+
+    SELECT SINGLE eknam FROM t024
+      INTO @lv_projnam WHERE ekgrp = @ls_ekko-ekgrp.
+
+    SELECT SINGLE zbtxt
+           INTO @lv_title
+           FROM   zmm_po_doctyp
+           WHERE zbsart = @ls_ekko-bsart AND zbstyp = @ls_ekko-bstyp.
+
+    "to fetch hfcl/htl title
+
+    SELECT SINGLE  butxt                                "#EC CI_NOORDER
+    INTO ls_company_name
+    FROM t001
+    WHERE bukrs EQ ls_ekko-bukrs.
+
+    "plant address deetails.
+
+    SELECT SINGLE werks                                     "#EC WARNOK
+      FROM ekpo INTO
+      @DATA(ls_werks)
+      WHERE ebeln = @ls_ekko-ebeln
+      AND bstyp EQ @lc_bstyp_k.
+
+    SELECT SINGLE
+      adrnr ,
+      name1
+      FROM t001w INTO @DATA(ls_adrno)
+      WHERE werks = @ls_werks.
+
+    SELECT SINGLE                                           "#EC WARNOK
+      name1,
+      name2,
+      street,
+      str_suppl1,
+      str_suppl2 ,
+      str_suppl3,
+      city1,
+      region,
+      country ,
+      post_code1
+      FROM adrc INTO @DATA(ls_address)
+      WHERE addrnumber = @ls_adrno-adrnr.
+
+    SELECT SINGLE  bezei
+      FROM t005u INTO @DATA(ls_state)
+      WHERE bland = @ls_address-region
+      AND spras = @sy-langu
+      AND land1 = @ls_address-country .
+
+    SELECT SINGLE  landx FROM t005t
+       INTO @DATA(ls_country)
+      WHERE land1 = @ls_address-country
+      AND spras = @sy-langu.
+
+    SELECT SINGLE j_1bbranch FROM t001w
+      INTO @DATA(ls_bran_code)
+      WHERE werks = @ls_werks .
+
+    SELECT SINGLE gstin                                     "#EC WARNOK
+       FROM j_1bbranch INTO @ls_plant_address-gstin_no
+      WHERE branch = @ls_bran_code AND bukrs = @ls_ekko-bukrs.
+
+    ls_plant_address-name       = ls_address-name1.
+    ls_plant_address-name2      = ls_address-name2.
+    ls_plant_address-street     = ls_address-street.
+    ls_plant_address-street2    = ls_address-str_suppl1.
+    ls_plant_address-street3    = ls_address-str_suppl2.
+    ls_plant_address-street4    = ls_address-str_suppl3.
+    ls_plant_address-city       = ls_address-city1.
+    ls_plant_address-state      = ls_state.
+    ls_plant_address-country    = ls_country.
+    ls_plant_address-pincode    = ls_address-post_code1.
+
+* added to fetch gs code addres if present
+    IF ls_ekko-llief IS NOT INITIAL.
+      ls_ekko-lifnr = ls_ekko-llief.
+    ENDIF.
+
+    SELECT SINGLE name1,
+                  name2 ,
+                  adrnr,
+                  stcd3 FROM lfa1
+      INTO @DATA(ls_supplier_details)
+      WHERE lifnr = @ls_ekko-lifnr ##NEEDED.
+
+    SELECT SINGLE street,                                   "#EC WARNOK
+           str_suppl1,
+           str_suppl2,
+           str_suppl3,
+           city1,
+           region,
+           country
+      FROM adrc INTO @DATA(ls_supp_address)
+      WHERE addrnumber = @ls_supplier_details-adrnr .
+
+    SELECT SINGLE bezei                                     "#EC WARNOK
+       FROM t005u BYPASSING BUFFER
+       INTO @DATA(ls_supp_region)
+       WHERE bland = @ls_supp_address-region
+       AND spras = @sy-langu .
+
+    SELECT SINGLE landx FROM t005t
+      INTO @DATA(ls_supp_country)
+      WHERE land1 = @ls_supp_address-country
+      AND spras = @sy-langu .
+
+**SHIPPING&BILLING ADDRESS:
+
+    ls_shipping_address-name        = ls_supplier_details-name1.
+    ls_shipping_address-name2       = ls_supplier_details-name2.
+    ls_shipping_address-street      = ls_supp_address-street.
+    ls_shipping_address-street2     = ls_supp_address-str_suppl1.
+    ls_shipping_address-street3     = ls_supp_address-str_suppl2.
+    ls_shipping_address-street4     = ls_supp_address-str_suppl3.
+    ls_shipping_address-city        = ls_supp_address-city1.
+    ls_shipping_address-state       = ls_supp_region.
+
+*LS_SHIPPING_ADDRESS-pincode =
+    ls_shipping_address-country   = ls_supp_country.
+    ls_billing_address-name       = ls_supplier_details-name1.
+    ls_billing_address-name2      = ls_supplier_details-name2.
+    ls_billing_address-street     = ls_supp_address-street.
+    ls_billing_address-street2    = ls_supp_address-str_suppl1.
+    ls_billing_address-street3    = ls_supp_address-str_suppl2.
+    ls_billing_address-street4    = ls_supp_address-str_suppl3.
+    ls_billing_address-city       = ls_supp_address-city1.
+    ls_billing_address-state      = ls_supp_region.
+**LS_BILLING_ADDRESS-pincode
+    ls_billing_address-country    = ls_supp_country.
+
+    PERFORM lv_readtext USING ls_ekko-ebeln id_k01 CHANGING lv_proj_name.
+    PERFORM lv_readtext USING ls_ekko-ebeln id_k18 CHANGING lv_ref1.
+    PERFORM lv_readtext USING ls_ekko-ebeln id_k19 CHANGING lv_ref2.
+
+    SELECT SINGLE erdat                                     "#EC WARNOK
+       FROM erev  INTO  @lv_amendment_date
+      WHERE edokn = @ls_ekko-ebeln ##NEEDED.
+*
+
+    lv_shipping_term1    = ls_ekko-inco1.
+    lv_shipping_term2    = ls_ekko-inco2.
+    lv_con_start_date    = ls_ekko-kdatb.
+    lv_con_end_date      = ls_ekko-kdate.
+    lv_value_of_contract = ls_ekko-ktwrt.
+    lv_payment_term      = ls_ekko-zterm.
+
+
+
+    CALL FUNCTION '/APLX/FM_SPELL_AMOUNT'
+      EXPORTING
+        amount             = ls_ekko-ktwrt
+        currency           = ls_ekko-waers
+*       FILLER             = ' '
+        language           = sy-langu
+      IMPORTING
+        in_words           = ls_amount_in_text
+      EXCEPTIONS
+        spell_amount_error = 1
+        OTHERS             = 2.
+    IF sy-subrc <> 0 ##NEEDED.
+* Implement suitable error handling here
+    ENDIF.
+
+    ls_text = ls_amount_in_text.
+
+    CALL FUNCTION 'FI_CONVERT_FIRSTCHARS_TOUPPER'
+      EXPORTING
+        input_string  = ls_text
+*       SEPARATORS    = ' -.,;:'
+      IMPORTING
+        output_string = ls_amount_in_words.
+
+    CONCATENATE ls_amount_in_words TEXT-002 INTO ls_amount_in_words SEPARATED BY ' '.
+
+  ENDIF.
+
+
+  SELECT matnr
+         werks
+         txz01
+         ktmng
+         meins
+         netpr
+     FROM ekpo INTO TABLE lt_ekpo
+     WHERE ebeln = ls_ekko-ebeln
+     AND   bstyp EQ lc_bstyp_k.
+
+  IF sy-subrc  = 0.
+    SELECT matnr,                                  "#EC CI_NO_TRANSFORM
+           werks,
+           steuc
+      FROM marc INTO  TABLE @DATA(lt_marc)
+      FOR ALL ENTRIES IN @lt_ekpo
+      WHERE matnr = @lt_ekpo-matnr
+      AND werks = @lt_ekpo-werks.
+    SORT lt_marc BY matnr werks.
+
+    LOOP AT lt_ekpo INTO  DATA(ls_ekpo) ##INTO_OK.
+      lv_sno = lv_sno + 1.
+      ls_final_ekpo-s_no = lv_sno.
+      ls_final_ekpo-part_no = ls_ekpo-matnr.
+      ls_final_ekpo-description = ls_ekpo-txz01.
+      ls_final_ekpo-quantity = ls_ekpo-ktmng.
+      ls_final_ekpo-uom = ls_ekpo-meins.
+      ls_final_ekpo-unit_rate = ls_ekpo-netpr.
+      READ TABLE lt_marc INTO DATA(lw_marc) WITH KEY  matnr = ls_ekpo-matnr
+                                                      werks = ls_ekpo-werks.
+      IF sy-subrc = 0.
+        ls_final_ekpo-hsn_code = lw_marc-steuc.
+      ENDIF.
+      APPEND ls_final_ekpo TO lt_final_ekpo.
+      CLEAR ls_final_ekpo.
+    ENDLOOP.
+
+  ENDIF.
+ENDFORM.
+
+
+FORM process_data.
+
+  "Added by Adarsh (wiproabap07) date: 02-09-24
+  "Reason: Dependency on other object (Supply_Contract_Mail)
+  DATA: lv_flag_imp  TYPE c,
+        ls_cparam    TYPE ssfctrlop,
+        ls_outop     TYPE ssfcompop,
+        lt_otf_data  TYPE ssfcrescl,
+        lt_otf_final TYPE STANDARD TABLE OF itcoo.
+  CONSTANTS: lc_device TYPE char4 VALUE 'LP01'.
+
+  IMPORT lv_flag TO lv_flag_imp FROM MEMORY ID 'FLAG'.
+
+  IF lv_flag_imp = 'X'.
+    ls_outop-tddest = lc_device.
+    ls_cparam-no_dialog = abap_true.
+    ls_cparam-preview = space.
+    ls_cparam-getotf = abap_true.
+  ELSE.
+    ls_outop-tddest = lc_device.
+    ls_cparam-no_dialog = space.
+    ls_cparam-preview = abap_true.
+    ls_cparam-getotf = space.
+  ENDIF.
+
+  CONSTANTS : lc_formname TYPE tdsfname VALUE  'ZMMSF_SUPPLY_CONTRACT1'.
+
+*  *  ///NWELY ADDED CODE START////
+  DATA: v_e_devtype    TYPE rspoptype,
+        icntrlparam    TYPE ssfctrlop,
+        output_options TYPE ssfcompop,
+        it_otf         TYPE STANDARD TABLE OF itcoo,
+        ls_job_output  TYPE ssfcrescl.
+
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lc_formname
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+       WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+  DATA : lv_sign TYPE c.
+  CLEAR : lv_sign.
+  IMPORT lv_sign FROM MEMORY ID 'ZDSIGN'.
+
+  IF lv_sign = 'X'.
+
+    CALL FUNCTION 'SSF_GET_DEVICE_TYPE'
+      EXPORTING
+        i_language             = 'E'
+        i_application          = 'SAPDEFAULT'
+      IMPORTING
+        e_devtype              = v_e_devtype
+      EXCEPTIONS
+        no_language            = 1
+        language_not_installed = 2
+        no_devtype_found       = 3
+        system_error           = 4
+        OTHERS                 = 5.
+    IF sy-subrc <> 0.
+      CLEAR:v_e_devtype.
+    ENDIF.
+
+    icntrlparam-preview      = ''.
+    output_options-tdprinter = v_e_devtype.
+    icntrlparam-no_dialog    = abap_true.
+    icntrlparam-getotf       = abap_true.
+
+
+    CALL FUNCTION fm_name
+      EXPORTING
+        control_parameters   = icntrlparam
+        output_options       = output_options
+        user_settings        = space
+        ls_ebeln             = ls_ekko-ebeln
+        ls_aedat             = ls_ekko-aedat
+        ls_companyname       = ls_company_name
+        lt_ekpo              = lt_final_ekpo
+        ls_shipping_term1    = lv_shipping_term1
+        ls_shipping_term2    = lv_shipping_term2
+        lv_con_start_date    = lv_con_start_date
+        lv_con_end_date      = lv_con_end_date
+        lv_value_of_contract = lv_value_of_contract
+        ls_amount_in_words   = ls_amount_in_words
+        lv_payment_term      = lv_payment_term
+        ls_plant_address     = ls_plant_address
+        ls_shipping_address  = ls_shipping_address
+        ls_billing_address   = ls_billing_address
+        lv_proj_name         = lv_projnam
+        lv_ref1              = lv_ref1
+        lv_ref2              = lv_ref2
+        lv_amendment_date    = lv_amendment_date
+        im_waers             = gv_waers
+        gv_title             = lv_title
+      IMPORTING
+        job_output_info      = ls_job_output
+      TABLES
+        lt_ekko              = lt_ekko
+      EXCEPTIONS
+        formatting_error     = 1
+        internal_error       = 2
+        send_error           = 3
+        user_canceled        = 4
+        OTHERS               = 5.
+    IF sy-subrc <> 0.
+      CLEAR:v_e_devtype.
+    ENDIF.
+
+    it_otf[] = ls_job_output-otfdata[].
+
+    EXPORT it_otf[] TO MEMORY ID 'DS_OTF' .
+
+
+  ELSE.
+
+    CALL FUNCTION fm_name
+      EXPORTING
+        control_parameters   = ls_cparam
+        output_options       = ls_outop
+        user_settings        = space
+        ls_ebeln             = ls_ekko-ebeln
+        ls_aedat             = ls_ekko-aedat
+        ls_companyname       = ls_company_name
+        lt_ekpo              = lt_final_ekpo
+        ls_shipping_term1    = lv_shipping_term1
+        ls_shipping_term2    = lv_shipping_term2
+        lv_con_start_date    = lv_con_start_date
+        lv_con_end_date      = lv_con_end_date
+        lv_value_of_contract = lv_value_of_contract
+        ls_amount_in_words   = ls_amount_in_words
+        lv_payment_term      = lv_payment_term
+        ls_plant_address     = ls_plant_address
+        ls_shipping_address  = ls_shipping_address
+        ls_billing_address   = ls_billing_address
+        lv_proj_name         = lv_projnam
+        lv_ref1              = lv_ref1
+        lv_ref2              = lv_ref2
+        lv_amendment_date    = lv_amendment_date
+        im_waers             = gv_waers
+        gv_title             = lv_title
+      IMPORTING
+        job_output_info      = lt_otf_data
+      TABLES
+        lt_ekko              = lt_ekko
+      EXCEPTIONS
+        formatting_error     = 1
+        internal_error       = 2
+        send_error           = 3
+        user_canceled        = 4
+        OTHERS               = 5.
+    IF sy-subrc <> 0 ##NEEDED.
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                  WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+  ENDIF.
+
+  lt_otf_final = lt_otf_data-otfdata[].
+  EXPORT lt_otf_final TO MEMORY ID 'OTF_FINAL'.
+  FREE MEMORY ID 'FLAG'.
+  CLEAR: ls_outop, ls_cparam.
+ENDFORM.
+
+FORM lv_readtext USING ebeln TYPE any t_id CHANGING p_text ##NEEDED ##PERF_NO_TYPE.
+  DATA : read_text_name TYPE thead-tdname.
+  DATA lt_lines TYPE TABLE OF tline.
+
+  read_text_name = ls_ekko-ebeln.
+  CALL FUNCTION 'READ_TEXT'
+    EXPORTING
+      client                  = sy-mandt
+      id                      = t_id
+      language                = sy-langu
+      name                    = read_text_name
+      object                  = lc_ekko
+    TABLES
+      lines                   = lt_lines
+    EXCEPTIONS
+      id                      = 1
+      language                = 2
+      name                    = 3
+      not_found               = 4
+      object                  = 5
+      reference_check         = 6
+      wrong_access_to_archive = 7
+      OTHERS                  = 8.
+  IF sy-subrc <> 0 ##NEEDED.
+* Implement suitable error handling here
+  ENDIF.
+  IF lt_lines IS NOT INITIAL.
+    READ TABLE lt_lines INTO DATA(text) INDEX 1.
+    IF sy-subrc = 0.
+      p_text = TEXT-tdline.
+    ENDIF.
+  ENDIF.
+
+ENDFORM.

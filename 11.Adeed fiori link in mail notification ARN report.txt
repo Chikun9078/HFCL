@@ -1,0 +1,425 @@
+11.Modification (Added ARN Fiori Link)
+-----------------------------------------------
+Here I have added only the fiori link in the Report which will added in the mail body before Send notification to the user for approval.
+
+Benifit : ARN(Advance Request NO) approval time is reduce and approve can directly open fiori app through the link .
+
+Report1 : ZSB_CREATE_ARN          (Create ARN)       --> zmm0052
+Report2 : ZSB_ARN_APPROVAL_SYSTEM (ARN Approval)     -->zmm0052A
+
+
+TR        :  DFHK909789                    TR:ARN(Advance Request No) Modification
+Ticket no : 24443 
+ 
+---------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Reference code.
+-------------------
+*&---------------------------------------------------------------------*
+*& Report ZSB_CREATE_ARN
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zsb_create_arn.
+
+TABLES : ekko,zsb_arn,ekpo,zsb_arn_history,zsb_arn_aprvr_ls,usr21,adr6,ekkn.
+
+DATA : zebeln     LIKE  ekko-ebeln,
+       zlifnr     LIKE  ekko-lifnr,
+       zname1     LIKE  lfa1-name1,
+       zekgrp     LIKE  ekko-ekgrp,
+       zeknam     LIKE  t024-eknam,
+       zwaers     LIKE  ekko-waers,
+       zterm      LIKE  ekko-zterm,
+       po_bpr     LIKE  konv-kwert,
+       po_gpr     LIKE  konv-kwert,
+       zadv_amt   LIKE  zsb_arn-adv_amt,
+       zvtext     LIKE  tvzbt-vtext,
+       cond_tab   TYPE  prcd_elements    OCCURS 0 WITH HEADER LINE,
+       itab       TYPE  zsb_arn          OCCURS 0 WITH HEADER LINE,
+       htab       TYPE  zsb_arn_history  OCCURS 0 WITH HEADER LINE,
+       ztype      LIKE  zsb_arn-type,
+       ztname(25),
+       zmsg       TYPE  string,
+       t_adv_amt  LIKE  zsb_arn-adv_amt,
+       pinvno     LIKE  zsb_arn-pinvno,
+       pinvdt     LIKE  zsb_arn-pinvdt,
+       zprctr     LIKE  ekkn-prctr,
+       fval(10),
+       fnam(25),
+       zrmk(50).
+
+DATA binary_content TYPE solix_tab.
+DATA size           TYPE so_obj_len.
+
+DATA:
+  gc_subject TYPE so_obj_des,
+  gc_raw     TYPE char03 VALUE 'RAW'.
+
+DATA:
+  gv_mlrec         TYPE so_obj_nam,
+  gv_sent_to_all   TYPE os_boolean,
+  gv_email         TYPE adr6-smtp_addr,
+  gv_subject       TYPE so_obj_des,
+  gv_text          TYPE bcsy_text,
+  gr_send_request  TYPE REF TO cl_bcs,
+  gr_bcs_exception TYPE REF TO cx_bcs,
+  gr_recipient     TYPE REF TO if_recipient_bcs,
+  gr_sender        TYPE REF TO cl_sapuser_bcs,
+  gr_document      TYPE REF TO cl_document_bcs,
+  lv_string        TYPE string.
+
+CONSTANTS:lv_fiori_link_prd TYPE char300 VALUE 'https://fiori.sap.hfcl.com/sap/bc/ui5_ui5/sap/ZCA_FIORI_ARNV1/index.html?sap-client=900&spnego=disabled#/',  " line added by Airditdebi on 04-09-2024.
+          lv_fiori_link_qfh TYPE char300 VALUE 'https://fioriqas.sap.hfcl.com/sap/bc/ui5_ui5/sap/ZCA_FIORI_ARNV1/index.html?sap-client=800&spnego=disabled#/'.  " line added by Airditdebi on 04-09-2024.
+
+CONTROLS: tab TYPE TABLEVIEW USING SCREEN 0100,
+          hab TYPE TABLEVIEW USING SCREEN 0100.
+
+START-OF-SELECTION.
+
+  CALL SCREEN '0100'.
+*&---------------------------------------------------------------------*
+*& Module STATUS_0100 OUTPUT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'ZSTATUS'.
+  SET TITLEBAR 'ZTITLE'.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+  CASE sy-ucomm.
+    WHEN 'F3'.
+      LEAVE TO SCREEN 0.
+    WHEN 'SAVE'.
+      PERFORM save_data.
+    WHEN 'DISP'.
+      SET PARAMETER ID 'BES' FIELD zebeln.
+      CALL TRANSACTION 'ME23N'.
+    WHEN 'PICK'.
+      CLEAR : fval,htab[],fnam.
+      GET CURSOR FIELD fnam VALUE fval.
+      SELECT   *
+        INTO   TABLE htab
+        FROM   zsb_arn_history
+        WHERE  arn_no = fval.
+
+      SORT htab BY edate DESCENDING etime DESCENDING.
+  ENDCASE.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  VALIDATE_PURCHASE_ORDER_NO  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE validate_purchase_order_no INPUT.
+  CLEAR : zlifnr,zname1,zekgrp,zeknam,itab[].
+  SELECT     SINGLE   *
+    FROM     ekko
+    WHERE    ebeln = zebeln.
+  IF sy-subrc = 0.
+    zlifnr  = ekko-lifnr.
+    zekgrp  = ekko-ekgrp.
+    zwaers  = ekko-waers.
+    zterm   = ekko-zterm.
+    SELECT    SINGLE  vtext
+      INTO    zvtext
+      FROM    tvzbt
+      WHERE   spras  = 'E'  AND
+              zterm  = zterm.
+    SELECT    SINGLE  name1
+      INTO    zname1
+      FROM    lfa1
+      WHERE   lifnr = zlifnr.
+    SELECT    SINGLE  eknam
+      INTO    zeknam
+      FROM    t024
+      WHERE   ekgrp = zekgrp.
+    PERFORM get_base_n_gross_val.
+    SELECT     *
+      INTO     TABLE itab
+      FROM     zsb_arn
+      WHERE    ebeln = zebeln.
+    SELECT     SINGLE  *
+      FROM     ekkn
+      WHERE    ebeln = zebeln AND
+               ( prctr NE '' OR ps_psp_pnr NE '' ).
+    IF sy-subrc = 0.
+      zprctr  = ekkn-prctr.
+    ENDIF.
+    IF zprctr = ''.
+      SELECT    SINGLE  prctr
+        INTO    zprctr
+        FROM    prps
+        WHERE   pspnr = ekkn-ps_psp_pnr.
+    ENDIF.
+  ELSE.
+    MESSAGE 'Wrong Purchase Order No' TYPE 'E'.
+  ENDIF.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*& Form GET_BASE_N_GROSS_VAL
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_base_n_gross_val .
+
+  CLEAR : po_bpr,po_gpr,cond_tab[].
+
+  IF ekko-bstyp = 'F'.
+    SELECT     *
+      INTO     TABLE cond_tab
+      FROM     prcd_elements
+      WHERE    knumv = ekko-knumv AND
+               kinak = ''.
+    IF sy-subrc = 0.
+      LOOP AT cond_tab.
+        po_gpr = po_gpr + cond_tab-kwert.
+        IF cond_tab-kschl = 'P001'.
+          po_bpr = po_bpr + cond_tab-kwert.
+        ENDIF.
+      ENDLOOP.
+    ENDIF.
+  ELSEIF ekko-bstyp = 'K'.
+    po_bpr = ekko-ktwrt.
+    po_gpr = ekko-ktwrt.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Module  EXIT  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE exit INPUT.
+  CASE  sy-ucomm.
+    WHEN 'F5'.
+      LEAVE TO SCREEN 0.
+  ENDCASE.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  VALIADATE_ADVANCE_AMT  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE valiadate_advance_amt INPUT.
+  IF sy-ucomm = 'SAVE'.
+    IF  zadv_amt = 0.
+      MESSAGE 'Please Enter Advance Amount' TYPE 'E'.
+    ELSE.
+      CLEAR : t_adv_amt.
+      LOOP AT itab WHERE status NE 'R'.
+        t_adv_amt = t_adv_amt + itab-adv_amt.
+      ENDLOOP.
+      t_adv_amt = t_adv_amt + zadv_amt.
+    ENDIF.
+    IF t_adv_amt > po_gpr.
+      MESSAGE 'Total Advance Amount Is Greater Than Total PO Gross Value' TYPE 'E'.
+    ENDIF.
+  ENDIF.
+ENDMODULE.
+
+
+
+MODULE tab_change_tc_attr OUTPUT.
+  DESCRIBE TABLE itab LINES tab-lines.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*& Form SAVE_DATA
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM save_data .
+  CLEAR : zsb_arn,zmsg,itab[],zsb_arn_history.
+  SELECT    SINGLE  *
+    FROM    zsb_arn_aprvr_ls
+    WHERE   ekgrp = zekgrp.
+  IF sy-subrc = 0.
+    SELECT    MAX( arn_no )
+      INTO    zsb_arn-arn_no
+      FROM    zsb_arn.
+    IF zsb_arn-arn_no IS INITIAL.
+      zsb_arn-arn_no = '1000000001'.
+    ELSE.
+      zsb_arn-arn_no = zsb_arn-arn_no + 1.
+    ENDIF.
+    zsb_arn-ebeln     = zebeln.
+    zsb_arn-adv_amt   = zadv_amt.
+    zsb_arn-status    = 'C'.
+    zsb_arn-type      = ztype.
+    zsb_arn-npr       = '1'.
+    zsb_arn-pinvno    = pinvno.
+    zsb_arn-pinvdt    = pinvdt.
+    INSERT zsb_arn.
+    zsb_arn_history-arn_no  = zsb_arn-arn_no.
+    zsb_arn_history-edate   = sy-datum.
+    zsb_arn_history-etime   = sy-uzeit.
+    zsb_arn_history-euser   = sy-uname.
+    zsb_arn_history-status  = 'C'.
+    zsb_arn_history-rmk     = zrmk.
+    INSERT zsb_arn_history.
+
+
+    zmsg = |ARN No { zsb_arn-arn_no } Has Been Successfully Generated|.
+    MESSAGE zmsg TYPE 'I'.
+    SELECT     *
+      INTO     TABLE itab
+      FROM     zsb_arn
+      WHERE    ebeln = zebeln.
+
+    PERFORM send_notification.
+    CLEAR : zadv_amt,ztype,zrmk.
+  ELSE.
+    MESSAGE 'Please Maintain Approval Matrix In Transaction Code ZMM0052E' TYPE 'E'.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Module  VALIDATE_ADVANCE_TYPE  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE validate_advance_type INPUT.
+  IF ztype IS INITIAL AND sy-ucomm = 'SAVE'.
+    MESSAGE 'Please Enter Advance Type' TYPE 'E'.
+  ENDIF.
+ENDMODULE.
+
+
+MODULE hab_change_tc_attr OUTPUT.
+  DESCRIBE TABLE htab LINES hab-lines.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*& Form SEND_NOTIFICATION
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM send_notification .
+  CLEAR : gv_text.
+  SELECT    SINGLE   *
+    FROM    zsb_arn_aprvr_ls
+    WHERE   srno  = zsb_arn-npr  AND
+            ekgrp = zekgrp.
+  IF sy-subrc = 0.
+    SELECT     SINGLE   *
+      FROM     usr21
+      WHERE    bname = zsb_arn_aprvr_ls-ename.
+    IF sy-subrc = 0.
+      SELECT     SINGLE *
+        FROM     adr6
+        WHERE    persnumber = usr21-persnumber  AND
+                 smtp_addr  NE ''.
+      IF sy-subrc = 0.
+        "Create send request
+        gr_send_request = cl_bcs=>create_persistent( ).
+
+        "Email FROM...
+        gr_sender = cl_sapuser_bcs=>create( sy-uname ).
+        "Add sender to send request
+        CALL METHOD gr_send_request->set_sender
+          EXPORTING
+            i_sender = gr_sender.
+        TRY.
+            SELECT     *
+              FROM     adr6
+              WHERE    persnumber = usr21-persnumber  AND
+                       smtp_addr  NE ''.
+              "Email TO...
+              gr_recipient = cl_cam_address_bcs=>create_internet_address( adr6-smtp_addr ).
+              "Add recipient to send request
+              CALL METHOD gr_send_request->add_recipient
+                EXPORTING
+                  i_recipient = gr_recipient
+                  i_express   = 'X'.
+            ENDSELECT.
+            gc_subject = |ARN Notification-{ zsb_arn-arn_no }|.
+
+            "Email BODY
+            CLEAR : ztname.
+            IF ztype = '1'.
+              ztname = 'LC'.
+            ELSEIF ztype = '2'.
+              ztname = 'BG'.
+            ELSEIF ztype = '3'.
+              ztname = 'Advance'.
+            ELSEIF ztype = '4'.
+              ztname = 'PDC'.
+            ENDIF.
+            APPEND |<html><body><p>Sir/Madam.</p>| TO gv_text.
+            APPEND |<html><body><p>Advance request no { zsb_arn-arn_no }, has been created against purchase order no { zsb_arn-ebeln }. Please approve. </p>| TO gv_text.
+            APPEND |<html><body><p>Vendor Name: ({ zlifnr }) { zname1 } </p>| TO gv_text.
+            APPEND |<html><body><p>Type: ({ ztype }) { ztname } </p>| TO gv_text.
+            IF sy-sysid = 'QFH' .
+              APPEND |<html><body><p><a href="{ lv_fiori_link_qfh }">Click here</a> for Navigate to Fiori app.</p>| TO gv_text.                " line added by AIRDITDEBI ON 04-09-2024.
+            ELSEIF sy-sysid = 'PRD' .
+              APPEND |<html><body><p><a href="{ lv_fiori_link_prd }">Click here</a> for Navigate to Fiori app.</p>| TO gv_text.                " line added by AIRDITDEBI ON 04-09-2024.
+            ENDIF.
+            APPEND |<p>(This is an auto generated mail. Please do not reply)</p></body></html>| TO gv_text.
+
+            gr_document = cl_document_bcs=>create_document(
+              i_type    = 'HTM'
+              i_text    = gv_text
+              i_subject = gc_subject ).
+
+            "Add document to send request
+            CALL METHOD gr_send_request->set_document( gr_document ).
+
+            "Send email
+            CALL METHOD gr_send_request->send(
+              EXPORTING
+                i_with_error_screen = 'X'
+              RECEIVING
+                result              = gv_sent_to_all ).
+            IF gv_sent_to_all = 'X'.
+*            message 'Mail Sent Successfully' type 'I'.
+            ENDIF.
+            "Exception handling
+          CATCH cx_bcs INTO gr_bcs_exception.
+*          write:
+*            'Error!',
+*            'Error type:',
+*            gr_bcs_exception->error_type.
+
+        ENDTRY.
+        COMMIT WORK.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Module  VALIDATE_REMARKS  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE validate_remarks INPUT.
+
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  VALIDATE_PERFORMA_INV_DETAIL  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE validate_performa_inv_detail INPUT.
+  IF sy-ucomm = 'SAVE'.
+    IF pinvdt IS NOT INITIAL AND pinvno IS INITIAL.
+      MESSAGE 'Please Enter Performa Invoice No' TYPE 'E' DISPLAY LIKE 'I'.
+    ENDIF.
+    IF pinvno IS NOT INITIAL AND pinvdt IS INITIAL.
+      MESSAGE 'Please Enter Performa Invoice Date' TYPE 'E' DISPLAY LIKE 'I'.
+    ENDIF.
+  ENDIF.
+ENDMODULE.
+  
+ 

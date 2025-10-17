@@ -1,0 +1,936 @@
+*---------------------------------------------------------------------*
+* DESCRIPTION:Receive Stock From Customer
+* RICEFW ID :
+*
+* PROGRAM NAME: ZMMEP_CUST_STOCK_ENTRY
+* T-CODE : ZMM0054
+* AUTHOR: ANKUR JAIN , WIPRO
+* DATE  : 25/03/2023
+*---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* CHANGE HISTORY
+* Date         Changed By     Defect/RFC    Description
+*---------------------------------------------------------------------*
+* dd/mm/yyyy   User ID         9999         xxxxxxxxxxxxxxxxxxxxxxxx
+*
+*---------------------------------------------------------------------*
+REPORT zmmep_cust_stock_entry.
+
+TABLES : lips, vbrp.
+TYPE-POOLS: slis.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-006.
+  PARAMETERS: r_manual RADIOBUTTON GROUP rg2 DEFAULT 'X' USER-COMMAND c1,
+              r_delv   RADIOBUTTON GROUP rg2,
+              r_bill   RADIOBUTTON GROUP rg2.
+SELECTION-SCREEN : END OF BLOCK b1.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  PARAMETERS: r1 TYPE c RADIOBUTTON GROUP rb2 MODIF ID mg1 USER-COMMAND c2,
+              r2 TYPE c RADIOBUTTON GROUP rb2 DEFAULT 'X' MODIF ID mg1.
+SELECTION-SCREEN : END OF BLOCK b2.
+
+SELECTION-SCREEN BEGIN OF BLOCK b3 WITH FRAME TITLE TEXT-003.
+  PARAMETERS: p_file TYPE rlgrap-filename MODIF ID mf1.
+SELECTION-SCREEN END OF BLOCK b3.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b4 WITH FRAME TITLE TEXT-004.
+  PARAMETERS: p_dpath  TYPE string MODIF ID mf2.
+SELECTION-SCREEN : END OF BLOCK b4.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b5 WITH FRAME.
+  SELECT-OPTIONS : so_del FOR lips-vbeln MODIF ID mg2 .
+SELECTION-SCREEN : END OF BLOCK b5.
+
+SELECTION-SCREEN : BEGIN OF BLOCK b6 WITH FRAME.
+  SELECT-OPTIONS : so_bill FOR vbrp-vbeln MODIF ID mg3 .
+SELECTION-SCREEN : END OF BLOCK b6.
+
+TYPES: BEGIN OF ty_template  ##PERF_NO_TYPE,
+         material         TYPE char50,
+         plant            TYPE char5,
+         storage_location TYPE char18,
+         wbs              TYPE char24,
+         customer         TYPE char18,
+         qty              TYPE char15,
+         date             TYPE char10,        "Added on 30.07.2024 after discussion with Shivam
+         uom              TYPE char4,
+         remarks          TYPE char30,
+         customer_name    TYPE kna1-name1,
+       END OF ty_template.
+
+DATA : ls_wa_temp TYPE ty_template  ##NEEDED,
+       lt_temp    TYPE TABLE OF ty_template  ##NEEDED.
+
+TYPES : BEGIN OF lstr_lips,
+          vbeln         TYPE lips-vbeln,
+          posnr         TYPE lips-posnr,
+          matnr         TYPE lips-matnr,
+          werks         TYPE lips-werks,
+          lgort         TYPE lips-lgort,
+          ps_psp_pnr    TYPE lips-ps_psp_pnr,
+          cust          TYPE likp-kunnr,
+          lfimg         TYPE lips-lfimg,
+          meins         TYPE lips-meins,
+          remarks       TYPE char30,
+          customer_name TYPE kna1-name1,
+        END OF lstr_lips.
+
+TYPES : BEGIN OF lstr_vbrp,
+          vbeln         TYPE vbrp-vbeln,
+          posnr         TYPE vbrp-posnr,
+          matnr         TYPE vbrp-matnr,
+          werks         TYPE vbrp-werks,
+          lgort         TYPE vbrp-lgort,
+          ps_psp_pnr    TYPE vbrp-ps_psp_pnr,
+          cust          TYPE vbrk-kunrg,
+          fkimg         TYPE vbrp-fkimg,
+          meins         TYPE vbrp-meins,
+          pstyv         TYPE vbrp-pstyv,
+          remarks       TYPE char30,
+          customer_name TYPE kna1-name1,
+        END OF lstr_vbrp.
+
+DATA : lt_stk_entry TYPE TABLE OF zmm_stk_entry  ##NEEDED,
+       ls_stk_entry TYPE  zmm_stk_entry          ##NEEDED.
+DATA : lt_fieldcat  TYPE STANDARD TABLE OF slis_fieldcat_alv ##NEEDED,
+       lwa_fieldcat TYPE slis_fieldcat_alv       ##NEEDED.
+DATA : lt_lips TYPE TABLE OF lstr_lips           ##NEEDED,
+       ls_lips TYPE lstr_lips                    ##NEEDED.
+DATA : lt_vbrp TYPE TABLE OF lstr_vbrp           ##NEEDED,
+       ls_vbrp TYPE lstr_vbrp                    ##NEEDED.
+DATA : gt_file TYPE TABLE OF ty_template         ##NEEDED,
+       gs_file TYPE ty_template                  ##NEEDED.
+
+DATA: ls_layout TYPE lvc_s_layo                  ##NEEDED.
+DATA: gt_fieldcatalog TYPE lvc_t_fcat            ##NEEDED,
+      gs_fieldcatalog TYPE lvc_s_fcat            ##NEEDED,
+      gt_events       TYPE slis_t_event          ##NEEDED,
+      gs_events       TYPE slis_alv_event        ##NEEDED.
+
+AT SELECTION-SCREEN OUTPUT.
+  LOOP AT SCREEN.
+    IF r_manual = 'X'.
+      IF  r1 = 'X' .
+        IF screen-group1 = 'MF1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MF2'.
+          screen-active = 1.
+          MODIFY SCREEN.
+        ENDIF.
+      ELSEIF r2 = 'X'.
+        IF  screen-group1 = 'MF1'.
+          screen-active = 1.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MF2'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+      ENDIF."IF r1 = 'X'.
+      IF  screen-group1 = 'MG1'.
+        screen-active = 1.
+        MODIFY SCREEN.
+      ELSE.
+        IF  screen-group1 = 'MG2'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MG3'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+      ENDIF.
+    ELSEIF r_delv = 'X'.
+      IF  screen-group1 = 'MG2'.
+        screen-active = 1.
+        MODIFY SCREEN.
+      ELSE.
+        IF  screen-group1 = 'MG1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MG3'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MF1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MF2'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+      ENDIF.
+    ELSEIF r_bill = 'X'.
+      IF  screen-group1 = 'MG3'.
+        screen-active = 1.
+        MODIFY SCREEN.
+      ELSE.
+        IF  screen-group1 = 'MG2'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MG1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MF1'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+        IF  screen-group1 = 'MF2'.
+          screen-active = 0.
+          MODIFY SCREEN.
+        ENDIF.
+      ENDIF.
+    ENDIF." IF r_manual = 'X'.
+  ENDLOOP.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_dpath.
+  CALL METHOD cl_gui_frontend_services=>directory_browse
+    CHANGING
+      selected_folder      = p_dpath
+    EXCEPTIONS ##SUBRC_OK
+      cntl_error           = 1
+      error_no_gui         = 2
+      not_supported_by_gui = 3
+      OTHERS               = 4.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+  CALL FUNCTION 'F4_FILENAME'
+    EXPORTING
+      field_name = 'P_FILE'
+    IMPORTING
+      file_name  = p_file.
+
+  DATA: lw_path TYPE string                         ##NEEDED.
+  lw_path =  p_file.
+  DATA i_tab_raw_data       TYPE truxs_t_text_data   ##NEEDED.
+
+START-OF-SELECTION.
+  IF r_manual = abap_true.
+    IF r1 = abap_true.
+      IF p_dpath IS INITIAL.
+        "MESSAGE 'Pls mention file path' TYPE 'E'.
+      ELSE.
+        PERFORM download_template.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  IF r2 = 'X' AND r_manual = abap_true.
+    DATA i_tab_raw_data       TYPE truxs_t_text_data  ##NEEDED.
+    CALL FUNCTION 'TEXT_CONVERT_XLS_TO_SAP'
+      EXPORTING
+        i_line_header        = 'X'
+        i_tab_raw_data       = i_tab_raw_data
+        i_filename           = p_file
+      TABLES
+        i_tab_converted_data = gt_file
+      EXCEPTIONS ##FM_SUBRC_OK
+        conversion_failed    = 1.
+
+    IF gt_file IS NOT INITIAL.
+      DATA lv_valid_data TYPE c VALUE 'X' ##NEEDED.
+      PERFORM validate_file USING lv_valid_data.
+      IF lv_valid_data = 'X'.
+        PERFORM display_data_manual.
+      ENDIF.
+    ENDIF.
+
+  ENDIF. "  IF r1 = 'X'.
+
+  IF r_delv = abap_true.
+*    IF so_del-low IS INITIAL.
+**      MESSAGE 'Pls Enter Delivery no !' TYPE 'I' DISPLAY LIKE 'I'.
+*    ENDIF.
+    PERFORM process_data_delv.
+    PERFORM display_data_delv.
+  ENDIF.
+
+  IF r_bill = abap_true.
+    PERFORM process_data_billing .
+    PERFORM display_data_billing.
+  ENDIF.
+
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data_delv .
+
+  LOOP AT so_del ASSIGNING FIELD-SYMBOL(<fs_del>).
+    SELECT SINGLE zstk_crt_id FROM zmm_stk_entry INTO @DATA(lv_stk_entry) WHERE zmode = 'DELIVERY' AND del_no = @<fs_del>-low  ##WARN_OK ##NEEDED.
+    IF sy-subrc = 0.
+      DELETE so_del INDEX sy-tabix.
+    ENDIF.
+  ENDLOOP.
+
+  IF so_del[] IS INITIAL.
+    MESSAGE 'Delivery no mentioned are already processed !' TYPE 'I'   ##NO_TEXT.
+  ENDIF.
+
+  IF so_del[] IS NOT INITIAL.
+    SELECT lips~vbeln lips~posnr lips~matnr lips~werks lips~lgort lips~ps_psp_pnr likp~kunnr lips~lfimg lips~meins
+      INTO TABLE lt_lips ##TOO_MANY_ITAB_FIELDS
+       FROM likp INNER JOIN lips
+      ON likp~vbeln = lips~vbeln
+    WHERE lips~vbeln IN so_del AND
+          lips~lgort <> ''.
+
+    IF sy-subrc EQ 0.
+
+      LOOP AT lt_lips ASSIGNING FIELD-SYMBOL(<fs_lips>).
+
+        AUTHORITY-CHECK OBJECT 'ZMMA_CDEV'
+         ID 'WERKS' FIELD <fs_lips>-werks
+         ID 'TCODE' FIELD 'ZMM0054'.
+        IF sy-subrc <> 0.
+          CLEAR:<fs_lips>-werks.
+        ENDIF.
+
+      ENDLOOP.
+
+      DELETE lt_lips WHERE werks IS INITIAL.
+
+      IF lt_lips IS INITIAL.
+        MESSAGE e166(zmm).
+      ENDIF.
+
+    ENDIF.
+
+  ENDIF.
+ENDFORM.
+
+
+FORM display_data_manual.
+
+  PERFORM create_fcat_manual.
+
+  "......Trigger ENTER Event.....
+  gs_events-name = 'CALLER_EXIT'.
+  gs_events-form = 'CALLER_EXIT'.
+  APPEND gs_events TO gt_events.
+
+  ".....To capture changed data.....
+  gs_events-name = 'DATA_CHANGED'.
+  gs_events-form = 'DATA_CHANGED'.
+  APPEND gs_events TO gt_events.
+
+  IF gt_file IS INITIAL.
+    MESSAGE 'No Data to Display' TYPE 'E' DISPLAY LIKE 'I'  ##NO_TEXT.
+  ENDIF.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = sy-repid
+      i_callback_pf_status_set = 'ZPF_STATUS'
+      i_callback_user_command  = 'USER_COMMAND'
+      it_fieldcat              = lt_fieldcat[]
+    TABLES
+      t_outtab                 = gt_file
+    EXCEPTIONS
+      program_error            = 1
+      OTHERS                   = 2.
+  IF sy-subrc <> 0   .
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+  CLEAR : gt_file.
+
+ENDFORM.
+
+FORM display_data_delv.
+
+  PERFORM create_fcat.
+  IF lt_lips IS INITIAL AND so_del[] IS NOT INITIAL.
+    MESSAGE 'No Data to Display' TYPE 'E' DISPLAY LIKE 'I' ##NO_TEXT.
+  ENDIF.
+
+  LOOP AT lt_lips INTO ls_lips.
+    IF ls_lips-cust IS NOT INITIAL.
+      SELECT SINGLE kunnr, name1 FROM kna1 INTO @DATA(lv_kna1) WHERE kunnr = @ls_lips-cust.
+      ls_lips-customer_name = lv_kna1-name1.
+      MODIFY lt_lips FROM ls_lips INDEX sy-tabix TRANSPORTING customer_name.
+    ENDIF.
+  ENDLOOP.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = sy-repid
+      i_callback_pf_status_set = 'ZPF_STATUS'
+      i_callback_user_command  = 'USER_COMMAND'
+      it_fieldcat              = lt_fieldcat[]
+    TABLES
+      t_outtab                 = lt_lips
+    EXCEPTIONS
+      program_error            = 1
+      OTHERS                   = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data_billing .
+
+  IF so_bill IS NOT INITIAL.
+    LOOP AT so_bill ASSIGNING FIELD-SYMBOL(<fs_bill>).
+      SELECT SINGLE zstk_crt_id FROM zmm_stk_entry INTO @DATA(lv_stk_entry) WHERE zmode = 'BILLING' AND bill_no = @<fs_bill>-low  ##WARN_OK ##NEEDED.
+      IF sy-subrc = 0.
+        DELETE so_bill INDEX sy-tabix.
+      ENDIF.
+    ENDLOOP.
+
+    IF so_bill[] IS INITIAL.
+      MESSAGE 'Billing no mentioned are already processed !' TYPE 'I' ##NO_TEXT.
+    ENDIF.
+
+    IF so_bill[] IS NOT INITIAL.
+      SELECT vbrp~vbeln vbrp~posnr vbrp~matnr vbrp~werks vbrp~lgort vbrp~ps_psp_pnr vbrk~kunrg vbrp~fkimg vbrp~meins vbrp~pstyv
+        INTO TABLE lt_vbrp    ##TOO_MANY_ITAB_FIELDS
+        FROM vbrk INNER JOIN vbrp
+        ON vbrk~vbeln = vbrp~vbeln
+      WHERE vbrp~vbeln IN so_bill AND
+            vbrp~lgort <> ''.
+
+      IF sy-subrc EQ 0.
+
+        LOOP AT lt_vbrp ASSIGNING FIELD-SYMBOL(<fs_vbrp>).
+
+          AUTHORITY-CHECK OBJECT 'ZMMA_CDEV'
+           ID 'WERKS' FIELD <fs_vbrp>-werks
+           ID 'TCODE' FIELD 'ZMM0054'.
+          IF sy-subrc <> 0.
+            CLEAR:<fs_vbrp>-werks.
+          ENDIF.
+
+        ENDLOOP.
+
+        DELETE lt_vbrp WHERE werks IS INITIAL.
+
+        IF lt_vbrp IS INITIAL.
+          MESSAGE e166(zmm).
+        ENDIF.
+
+        LOOP AT lt_vbrp INTO ls_vbrp WHERE pstyv = 'ZTPQ'.
+          SELECT SINGLE vbelv, posnv, vbeln, posnn FROM vbfa INTO @DATA(ls_vbfa) ##WARN_OK "#EC CI_NOORDER "#EC CI_NOFIELD
+            WHERE vbtyp_v = 'J' AND
+                  vbeln = @ls_vbrp-vbeln AND
+                  posnn = @ls_vbrp-posnr.
+
+          SELECT vbeln,
+                 posnr,
+                 matnr,
+                 werks,
+                 lgort,
+                 lfimg,
+                 ps_psp_pnr
+            FROM lips INTO TABLE @DATA(it_lips) WHERE vbeln = @ls_vbfa-vbelv AND uepos = '000010'.
+          LOOP AT it_lips INTO DATA(is_lips)  ##INTO_OK.
+            ls_vbrp-vbeln = is_lips-vbeln.
+            ls_vbrp-posnr = is_lips-posnr.
+            ls_vbrp-matnr = is_lips-matnr.
+            ls_vbrp-werks = is_lips-werks.
+            ls_vbrp-lgort = is_lips-lgort.
+            ls_vbrp-ps_psp_pnr = is_lips-ps_psp_pnr.
+            SELECT SINGLE kunnr FROM likp INTO @DATA(lv_kunnr) WHERE vbeln = @is_lips-vbeln.
+            ls_vbrp-cust = lv_kunnr.
+            ls_vbrp-fkimg = is_lips-lfimg.
+            SELECT SINGLE meins FROM mara INTO @DATA(lv_unit) WHERE matnr = @is_lips-matnr.
+            ls_vbrp-meins = lv_unit.
+            ls_vbrp-pstyv = ''.
+            APPEND ls_vbrp TO lt_vbrp.
+          ENDLOOP.
+
+          DELETE lt_vbrp WHERE pstyv = 'ZTPQ'.
+
+        ENDLOOP.
+
+      ENDIF.
+    ENDIF.
+
+  ENDIF.
+ENDFORM.
+
+
+FORM display_data_billing.
+  PERFORM create_fcat.
+
+  "......Trigger ENTER Event.....
+  gs_events-name = 'CALLER_EXIT'.
+  gs_events-form = 'CALLER_EXIT'.
+  APPEND gs_events TO gt_events.
+
+  ".....To capture changed data.....
+  gs_events-name = 'DATA_CHANGED'.
+  gs_events-form = 'DATA_CHANGED'.
+  APPEND gs_events TO gt_events.
+
+  IF lt_vbrp IS INITIAL AND so_bill[] IS NOT INITIAL.
+    MESSAGE 'No Data to Display' TYPE 'E' DISPLAY LIKE 'I'  ##NO_TEXT.
+  ENDIF.
+
+  LOOP AT lt_vbrp INTO ls_vbrp .
+    IF ls_vbrp-cust IS NOT INITIAL.
+      SELECT SINGLE kunnr, name1 FROM kna1 INTO @DATA(lv_kna1) WHERE kunnr = @ls_vbrp-cust.
+      ls_vbrp-customer_name = lv_kna1-name1.
+      MODIFY lt_vbrp FROM ls_vbrp INDEX sy-tabix TRANSPORTING customer_name.
+    ENDIF.
+  ENDLOOP.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program       = sy-repid
+      i_callback_pf_status_set = 'ZPF_STATUS'
+      i_callback_user_command  = 'USER_COMMAND'
+      it_fieldcat              = lt_fieldcat[]
+    TABLES
+      t_outtab                 = lt_vbrp
+    EXCEPTIONS
+      program_error            = 1
+      OTHERS                   = 2.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+                              WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+ENDFORM.
+
+
+FORM get_fieldcat  USING    p_field_name ##PERF_NO_TYPE "Passing Field name
+                            p_tab_name                  "Passing TABLE name
+                            p_sel_name                  "Passing SEL Field name
+                            p_outputlen                 " output length
+                            p_col_fixed
+                   CHANGING p_it_fieldcat TYPE slis_t_fieldcat_alv.
+  lwa_fieldcat-fieldname = p_field_name.
+  lwa_fieldcat-tabname   = p_tab_name.
+  lwa_fieldcat-seltext_m = p_sel_name.
+  lwa_fieldcat-outputlen = p_outputlen.
+  lwa_fieldcat-edit = p_col_fixed.
+  APPEND lwa_fieldcat TO p_it_fieldcat.
+  CLEAR :  lwa_fieldcat.
+ENDFORM.
+
+FORM create_fcat_manual.
+  PERFORM get_fieldcat USING 'MATERIAL' 'GT_FILE' 'Material Number' 30 '' CHANGING lt_fieldcat  ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'PLANT' 'GT_FILE' 'Plant' 10  '' CHANGING lt_fieldcat              ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'STORAGE_LOCATION' 'GT_FILE' 'Storage Location' 18  '' CHANGING lt_fieldcat ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'WBS' 'GT_FILE' 'WBS Element' 30  '' CHANGING lt_fieldcat  ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'CUSTOMER' 'GT_FILE' 'Customer' 30  '' CHANGING lt_fieldcat ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'CUSTOMER_NAME' 'GT_FILE' 'Customer Name' 30  '' CHANGING lt_fieldcat ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'QTY' 'GT_FILE' 'Qty' 10  '' CHANGING lt_fieldcat  ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'DATE' 'GT_FILE' 'DATE' 10  '' CHANGING lt_fieldcat  ##NUMBER_OK ##NO_TEXT.     "Added by Aditya after discussiong with Shivam
+  PERFORM get_fieldcat USING 'UoM' 'GT_FILE' 'UoM' 10  '' CHANGING lt_fieldcat  ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'REMARKS' 'GT_FILE' 'Remarks' 35 'X' CHANGING lt_fieldcat ##NUMBER_OK ##NO_TEXT.
+ENDFORM.
+
+FORM create_fcat.
+  IF r_delv = 'X'.
+    PERFORM get_fieldcat USING 'VBELN' 'LT_LIPS' 'Delivery Number' 30 '' CHANGING lt_fieldcat  ##NUMBER_OK ##NO_TEXT.
+  ELSEIF r_bill = 'X'.
+    PERFORM get_fieldcat USING 'VBELN' 'LT_LIPS' 'Billing Number' 30 '' CHANGING lt_fieldcat   ##NUMBER_OK ##NO_TEXT.
+  ENDIF.
+  PERFORM get_fieldcat USING 'POSNR' 'LT_LIPS' 'Item Number' 12  '' CHANGING lt_fieldcat       ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'MATNR' 'LT_LIPS' 'Material Number' 30  ''  CHANGING lt_fieldcat  ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'WERKS' 'LT_LIPS' 'Plant' 10  ''  CHANGING lt_fieldcat            ##NO_TEXT.
+  PERFORM get_fieldcat USING 'LGORT' 'LT_LIPS' 'Storage Location' 18  ''  CHANGING lt_fieldcat ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'PS_PSP_PNR' 'LT_LIPS' 'WBS Element' 30  '' CHANGING lt_fieldcat  ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'CUST' 'LT_LIPS' 'Customer' 30  ''  CHANGING lt_fieldcat          ##NUMBER_OK ##NO_TEXT.
+  PERFORM get_fieldcat USING 'CUSTOMER_NAME' 'GT_FILE' 'Customer Name' 30  '' CHANGING lt_fieldcat ##NUMBER_OK ##NO_TEXT.
+  IF r_delv = 'X'.
+    PERFORM get_fieldcat USING 'LFIMG' 'LT_LIPS' 'Qty' 10  ''  CHANGING lt_fieldcat             ##NO_TEXT.
+  ELSEIF r_bill = 'X'.
+    PERFORM get_fieldcat USING 'FKIMG' 'LT_LIPS' 'Qty' 10   '' CHANGING lt_fieldcat             ##NO_TEXT.
+  ENDIF.
+
+  PERFORM get_fieldcat USING 'MEINS' 'LT_LIPS' 'UoM' 10   '' CHANGING lt_fieldcat              ##NUMBER_OK  ##NO_TEXT.
+  PERFORM get_fieldcat USING 'REMARKS' 'GT_FILE' 'Remarks' 35  'X' CHANGING lt_fieldcat        ##NUMBER_OK ##NO_TEXT.
+ENDFORM.
+
+
+FORM user_command USING r_ucomm TYPE sy-ucomm rs_selfield TYPE slis_selfield ##NEEDED ##CALLED.
+  DATA lv_ans TYPE c.
+
+  CASE r_ucomm.
+    WHEN 'STOCK'.
+      CALL FUNCTION 'POPUP_TO_CONFIRM'
+        EXPORTING
+          titlebar              = 'Confirmation to Enter Stock.' ##NO_TEXT
+*         DIAGNOSE_OBJECT       = ' '
+          text_question         = 'Do you want to proceed saving stock data ?' ##NO_TEXT
+          text_button_1         = 'Yes'
+*         ICON_BUTTON_1         = ' '
+          text_button_2         = 'No'
+*         ICON_BUTTON_2         = ' '
+          default_button        = '1'
+          display_cancel_button = 'X'
+*         USERDEFINED_F1_HELP   = ' '
+*         START_COLUMN          = 25
+*         START_ROW             = 6
+*         POPUP_TYPE            =
+*         IV_QUICKINFO_BUTTON_1 = ' '
+*         IV_QUICKINFO_BUTTON_2 = ' '
+        IMPORTING
+          answer                = lv_ans
+*       TABLES
+*         PARAMETER             =
+        EXCEPTIONS
+          text_not_found        = 1
+          OTHERS                = 2.
+      IF sy-subrc <> 0.
+        MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+       WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+
+      IF lv_ans IS NOT INITIAL." if lv_ans = 1 :-  YES  ||  if lv_ans = 2 :- NO   ||   if lv_ans = A :- CANCEL
+        IF lv_ans = 'A'.
+        ELSEIF lv_ans = 1. " save data to custom table
+
+          " BILLING DATA SAVING
+          DATA : lv_vbeln TYPE vbrp-vbeln.
+          LOOP AT lt_vbrp INTO ls_vbrp.
+            IF lv_vbeln IS INITIAL.
+              lv_vbeln = ls_vbrp-vbeln.
+              SELECT MAX( zstk_crt_id ) FROM zmm_stk_entry INTO @DATA(lv_count). "#EC CI_NOWHERE
+              lv_count = lv_count + 1. " new id generated
+            ELSE.
+              IF lv_vbeln = ls_vbrp-vbeln.
+              ELSE.
+                SELECT MAX( zstk_crt_id ) FROM zmm_stk_entry INTO lv_count. "#EC CI_NOWHERE
+                lv_count = lv_count + 1. " new id generated
+              ENDIF.
+            ENDIF.
+
+            ls_stk_entry-zstk_crt_id    = lv_count.
+            ls_stk_entry-item_no        = ls_vbrp-posnr.
+            ls_stk_entry-matnr          = ls_vbrp-matnr.
+            ls_stk_entry-zbusptr        = ls_vbrp-cust.
+            ls_stk_entry-werks          = ls_vbrp-werks.
+            ls_stk_entry-zstrloc        = ls_vbrp-lgort.
+            DATA lv_ps_psp_pnr_conv   TYPE char24.
+            CALL FUNCTION 'CONVERSION_EXIT_ABPSP_OUTPUT'
+              EXPORTING
+                input  = ls_vbrp-ps_psp_pnr
+              IMPORTING
+                output = lv_ps_psp_pnr_conv.
+
+            ls_stk_entry-pspel          = lv_ps_psp_pnr_conv.
+            ls_stk_entry-zbusptr        = ls_vbrp-cust.
+            ls_stk_entry-zqty           = ls_vbrp-fkimg.
+            ls_stk_entry-uom            = ls_vbrp-meins.
+
+            IF r_manual = 'X'.
+              ls_stk_entry-zmode = 'MANUAL'.
+              ls_stk_entry-del_no = ''.
+              ls_stk_entry-bill_no = ''.
+            ELSEIF r_delv = 'X'.
+              ls_stk_entry-zmode = 'DELIVERY'.
+              ls_stk_entry-del_no = ''.
+              ls_stk_entry-item_no = ''.
+            ELSEIF r_bill = 'X'.
+              ls_stk_entry-zmode = 'BILLING'.
+              ls_stk_entry-bill_no = ls_vbrp-vbeln.
+            ENDIF.
+            ls_stk_entry-remarks = ls_vbrp-remarks.
+            ls_stk_entry-syuname = sy-uname.
+            ls_stk_entry-sydate = sy-datum.
+            ls_stk_entry-sytime = sy-uzeit.
+            INSERT INTO zmm_stk_entry VALUES ls_stk_entry.
+            IF sy-subrc = 0.
+              CLEAR ls_stk_entry.
+              COMMIT WORK AND WAIT.
+              MESSAGE 'Data updated successfully !' TYPE 'S'  ##NO_TEXT.
+            ELSE.
+              CLEAR : ls_vbrp, ls_stk_entry.
+            ENDIF.
+
+          ENDLOOP. "LOOP AT lt_vbrp INTO ls_vbrp.
+          CLEAR lt_vbrp.
+          PERFORM refresh_grid.
+          "=======================================================================
+          " DELIVERY DATA SAVING
+          DATA : lv_vbeln1 TYPE lips-vbeln.
+          LOOP AT lt_lips INTO ls_lips.
+            IF lv_vbeln1 IS INITIAL.
+              lv_vbeln1 = ls_lips-vbeln.
+              SELECT MAX( zstk_crt_id ) FROM zmm_stk_entry INTO lv_count. "#EC CI_NOWHERE
+              lv_count = lv_count + 1. " new id generated
+            ELSE.
+              IF lv_vbeln1 = ls_lips-vbeln.
+              ELSE.
+                SELECT MAX( zstk_crt_id ) FROM zmm_stk_entry INTO lv_count. "#EC CI_NOWHERE
+                lv_count = lv_count + 1. " new id generated
+              ENDIF.
+            ENDIF.
+
+            ls_stk_entry-zstk_crt_id    = lv_count.
+            ls_stk_entry-item_no        = ls_lips-posnr.
+            ls_stk_entry-matnr          = ls_lips-matnr.
+            ls_stk_entry-zbusptr        = ls_lips-cust.
+            ls_stk_entry-werks          = ls_lips-werks.
+            ls_stk_entry-zstrloc        = ls_lips-lgort.
+
+            DATA ls_ps_psp_pnr_conv   TYPE char24.
+            CALL FUNCTION 'CONVERSION_EXIT_ABPSP_OUTPUT'
+              EXPORTING
+                input  = ls_lips-ps_psp_pnr
+              IMPORTING
+                output = ls_ps_psp_pnr_conv.
+
+            ls_stk_entry-pspel          = ls_ps_psp_pnr_conv   .
+            ls_stk_entry-zqty           = ls_lips-lfimg.
+            ls_stk_entry-uom            = ls_lips-meins.
+
+            IF r_manual = 'X'.
+              ls_stk_entry-zmode = 'MANUAL'.
+              ls_stk_entry-del_no = ''.
+              ls_stk_entry-bill_no = ''.
+            ELSEIF r_delv = 'X'.
+              ls_stk_entry-zmode = 'DELIVERY'.
+              ls_stk_entry-del_no = ls_lips-vbeln.
+              ls_stk_entry-bill_no = ''.
+            ENDIF.
+
+            ls_stk_entry-remarks = ls_lips-remarks.
+            ls_stk_entry-syuname = sy-uname.
+            ls_stk_entry-sydate = sy-datum.
+            ls_stk_entry-sytime = sy-uzeit.
+            INSERT INTO zmm_stk_entry VALUES ls_stk_entry.
+            IF sy-subrc = 0.
+              CLEAR ls_stk_entry.
+              COMMIT WORK AND WAIT.
+              MESSAGE 'Data updated successfully !' TYPE 'S'  ##NO_TEXT.
+            ELSE.
+              CLEAR: ls_lips, ls_stk_entry.
+            ENDIF.
+
+          ENDLOOP. "LOOP AT lt_vbrp INTO ls_vbrp.
+          CLEAR lt_lips.
+          PERFORM refresh_grid.
+          "=======================================================================
+          " EXCEL DATA SAVING
+          LOOP AT gt_file INTO gs_file.
+            SELECT MAX( zstk_crt_id ) FROM zmm_stk_entry INTO lv_count. "#EC CI_NOWHERE
+            lv_count = lv_count + 1. " new id generated
+
+            ls_stk_entry-zstk_crt_id    = lv_count.
+            ls_stk_entry-item_no        = '0010'.
+            CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+              EXPORTING
+                input  = gs_file-material
+              IMPORTING
+                output = gs_file-material.
+            ls_stk_entry-matnr          = gs_file-material.
+            ls_stk_entry-zbusptr        = gs_file-customer.
+            ls_stk_entry-werks          = gs_file-plant.
+            ls_stk_entry-zstrloc        = gs_file-storage_location.
+            ls_stk_entry-pspel          = gs_file-wbs.
+            ls_stk_entry-zqty           = gs_file-qty.
+
+*   Begin of Add on 31.07.2024 after discussion with Shivam
+            CALL FUNCTION 'CONVERT_DATE_TO_INTERNAL'
+              EXPORTING
+                date_external            = gs_file-date
+*                accept_initial_date      =
+              importing
+                date_internal            = ls_stk_entry-upload_date
+              EXCEPTIONS
+                date_external_is_invalid = 1
+                OTHERS                   = 2.
+            IF sy-subrc <> 0.
+* Implement suitable error handling here
+            ENDIF.
+
+*   End of add 31.07.2024 after discussion with Shivam
+            ls_stk_entry-uom            = gs_file-uom.
+            ls_stk_entry-zmode          = 'MANUAL'.
+            ls_stk_entry-del_no         = ''.
+            ls_stk_entry-bill_no        = ''.
+            ls_stk_entry-remarks        = gs_file-remarks.
+            ls_stk_entry-syuname        = sy-uname.
+            ls_stk_entry-sydate         = sy-datum.
+            ls_stk_entry-sytime         = sy-uzeit.
+            INSERT INTO zmm_stk_entry VALUES ls_stk_entry.
+            IF sy-subrc = 0.
+              CLEAR ls_stk_entry.
+              COMMIT WORK AND WAIT.
+              MESSAGE 'Data updated successfully !' TYPE 'S'  ##NO_TEXT.
+            ELSE.
+              CLEAR ls_stk_entry.
+            ENDIF.
+
+          ENDLOOP. "LOOP AT lt_vbrp INTO ls_vbrp.
+          CLEAR gt_file.
+          PERFORM refresh_grid.
+        ENDIF."IF lv_ans = 1.
+      ENDIF. " IF lv_ans IS NOT INITIAL.
+
+  ENDCASE.
+ENDFORM.
+
+FORM zpf_status USING rt_extab TYPE slis_t_extab  ##NEEDED ##CALLED.
+  SET PF-STATUS 'ZPF_STATUS'.
+ENDFORM.
+
+FORM download_template.
+  DATA p_filename TYPE rlgrap-filename  ##NEEDED.
+  CONCATENATE p_dpath '/StockEntryTemplate.xlsx' INTO p_filename.
+  PERFORM create_template.
+  PERFORM download_file.
+ENDFORM.
+
+FORM create_template.
+  CLEAR: ls_wa_temp.
+  ls_wa_temp-material     = 'Material'  ##NO_TEXT.
+  ls_wa_temp-plant        = 'Plant'     ##NO_TEXT.
+  ls_wa_temp-storage_location  = 'Storage_Location' ##NO_TEXT.
+  ls_wa_temp-wbs          = 'WBS'       ##NO_TEXT.
+  ls_wa_temp-customer     = 'Customer'  ##NO_TEXT.
+  ls_wa_temp-qty          = 'Qty'       ##NO_TEXT.
+  ls_wa_temp-date         = 'Date'       ##NO_TEXT.
+  APPEND ls_wa_temp TO lt_temp.
+ENDFORM.
+
+FORM download_file.
+  DATA p_filename TYPE rlgrap-filename .
+  CLEAR p_filename.
+  CONCATENATE p_dpath '\StockEntryTemplate.xlsx' INTO p_filename ##NO_TEXT.
+  CALL FUNCTION 'SAP_CONVERT_TO_XLS_FORMAT'
+    EXPORTING
+      i_filename     = p_filename
+    TABLES
+      i_tab_sap_data = lt_temp.
+  IF sy-subrc <> 0  ##FM_SUBRC_OK.
+* Implement suitable error handling here
+  ELSE.
+    MESSAGE 'Template Downloaded Successfully' TYPE 'I'  ##NO_TEXT.
+  ENDIF.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form validate_file
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM validate_file USING lv_valid  ##PERF_NO_TYPE.
+*  DATA lv_valid_data TYPE c VALUE 'X'.
+  SORT gt_file BY material.
+  DATA : lv_index TYPE i.
+  LOOP AT gt_file INTO gs_file.
+    lv_index = sy-tabix.
+    CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+      EXPORTING
+        input  = gs_file-material
+      IMPORTING
+        output = gs_file-material.
+    SELECT SINGLE matnr, meins FROM mara INTO @DATA(lv_matnr_meins) WHERE matnr = @gs_file-material.
+    IF sy-subrc <> 0.
+      lv_valid = ''.
+      CONCATENATE 'In-correct material no' gs_file-material 'in file' INTO DATA(lv_matmsg) SEPARATED BY ''  ##NO_TEXT.
+      MESSAGE lv_matmsg TYPE 'E'.
+
+    ELSE.
+      gs_file-uom = lv_matnr_meins-meins.
+      MODIFY gt_file FROM gs_file TRANSPORTING uom .
+    ENDIF.
+
+    SELECT SINGLE werks FROM t001w INTO @DATA(lv_plant) WHERE werks = @gs_file-plant  ##NEEDED.
+    IF sy-subrc <> 0.
+      lv_valid = ''.
+      CONCATENATE 'In-correct plant' gs_file-plant 'in file' INTO DATA(lv_plantmsg) SEPARATED BY ''  ##NO_TEXT.
+      MESSAGE lv_plantmsg TYPE 'E'.
+    ENDIF.
+    SELECT SINGLE lgort FROM t001l INTO @DATA(lv_sloc) WHERE werks = @gs_file-plant AND lgort = @gs_file-storage_location   ##NEEDED.
+    IF sy-subrc <> 0.
+      lv_valid = ''.
+      CONCATENATE 'Storage location' gs_file-storage_location 'not mapped with plant' gs_file-plant 'in file' INTO DATA(lv_slocmsg) SEPARATED BY ''  ##NO_TEXT.
+      MESSAGE lv_slocmsg TYPE 'E'.
+    ENDIF.
+
+    "--------------- validate WBS------------------
+    DATA: lv_wbs_ele_conv TYPE char24  ##NEEDED.
+    CALL FUNCTION 'CONVERSION_EXIT_ABPSP_INPUT'
+      EXPORTING
+        input  = gs_file-wbs
+      IMPORTING
+        output = lv_wbs_ele_conv.
+    SELECT SINGLE pspnr FROM prps INTO @DATA(lv_pspnr) WHERE pspnr = @lv_wbs_ele_conv  ##NEEDED.
+    IF sy-subrc <> 0.
+      lv_valid = ''.
+      CONCATENATE 'In-correct wbs' gs_file-wbs 'in file' INTO DATA(lv_wbsmsg) SEPARATED BY '' ##NO_TEXT.
+      MESSAGE lv_wbsmsg TYPE 'E'.
+    ENDIF.
+
+    CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+      EXPORTING
+        input  = gs_file-customer
+      IMPORTING
+        output = gs_file-customer.
+    SELECT SINGLE kunnr, name1 FROM kna1 INTO @DATA(lv_kunnr) WHERE kunnr = @gs_file-customer+8(10).
+    IF sy-subrc <> 0.
+      lv_valid = ''.
+      CONCATENATE 'In-correct customer id' gs_file-customer+8(10) 'in file' INTO DATA(lv_custmsg) SEPARATED BY ''   ##NO_TEXT.
+      MESSAGE lv_custmsg TYPE 'E'.
+    ELSE.
+      gs_file-customer_name = lv_kunnr-name1.
+      MODIFY gt_file FROM gs_file INDEX lv_index TRANSPORTING customer_name.
+    ENDIF.
+
+  ENDLOOP.
+ENDFORM.
+
+FORM refresh_grid.
+  " Refresh ALV Grid
+  DATA: g_alv TYPE REF TO cl_gui_alv_grid.
+  CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+    IMPORTING
+      e_grid = g_alv.
+  CALL METHOD g_alv->refresh_table_display.
+ENDFORM.
+
+
+FORM data_changed USING ir_data_changed TYPE REF TO cl_alv_changed_data_protocol   ##called.
+  DATA ls_modi TYPE lvc_s_modi.
+  DATA : lv_flag TYPE string    .
+  LOOP AT ir_data_changed->mt_mod_cells INTO ls_modi  ##into_ok.
+
+    DATA(lv_index) = ls_modi-row_id.
+    READ TABLE gt_file INTO gs_file INDEX ls_modi-row_id.
+    IF lv_index = ls_modi-row_id AND lv_flag = abap_true.
+      CLEAR : lv_flag.
+    ENDIF.
+
+    CASE ls_modi-fieldname.
+      WHEN 'REMARKS'.
+        READ TABLE gt_file INTO gs_file INDEX ls_modi-row_id.
+        IF sy-subrc = 0.
+          ls_stk_entry-remarks = ls_modi-value.
+          MODIFY gt_file FROM gs_file INDEX ls_modi-row_id TRANSPORTING remarks.
+        ENDIF.
+    ENDCASE.
+
+  ENDLOOP.
+  PERFORM refresh_grid.
+ENDFORM.                    "data_changed

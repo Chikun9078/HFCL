@@ -1,0 +1,47 @@
+Here i Have added a cudstom firld Alternative Reference Number(XBLNR_ALT) in standaerd report by Enhacement.
+please follow the steps:
+----------------------------
+1.
+
+
+
+
+
+
+
+
+
+Implementation code
+-----------------------------------------
+*---------------------------------------------------------------------*
+* BADI Imp.   : ZIMP_FI_ITEM_CH_DATA
+* Imp. Class  : ZCL_IM_IMP_FI_ITEM_CH_DATA
+* Auth        : AIRDITDEBI
+* Date        : 27/11/2024
+* Ticket no   :
+* Change desc : Request for add new custom field "XBLNR_ALT(Alternative
+*               Reference Number)". so this code is to polpulate the
+*               value in Xblnr_alt after Append structure in RFPOSXEXT structure.
+*---------------------------------------------------------------------*
+* Change History
+*-----------------*
+* 1.
+*---------------------------------------------------------------------*
+  METHOD if_ex_fi_items_ch_data~change_items.
+
+    "--> Fetch the Alt Reference Number of Existing documents.
+    IF ct_items IS NOT INITIAL.
+      SELECT belnr,bukrs,gjahr,xblnr_alt FROM bkpf INTO TABLE @DATA(lt_xblnr_alt)
+      FOR ALL ENTRIES IN @ct_items
+      WHERE belnr = @ct_items-belnr AND bukrs = @ct_items-bukrs AND gjahr = @ct_items-gjahr.
+    ENDIF.
+    SORT lt_xblnr_alt BY bukrs gjahr belnr.
+
+    LOOP AT ct_items ASSIGNING FIELD-SYMBOL(<fs_item>).
+      READ TABLE lt_xblnr_alt INTO DATA(ls_xblnr_alt) WITH KEY bukrs = <fs_item>-bukrs
+                                                       gjahr = <fs_item>-gjahr belnr = <fs_item>-belnr BINARY SEARCH.
+      IF sy-subrc EQ 0.
+        <fs_item>-xblnr_alt = ls_xblnr_alt-xblnr_alt.
+      ENDIF.
+    ENDLOOP.
+  ENDMETHOD.

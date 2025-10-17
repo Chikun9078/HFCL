@@ -1,0 +1,939 @@
+Development -8 : Self invoice
+-----------------------------------------------------------------------------------------------------------------------------------
+purpose    :
+Benifit    :
+
+Package                        :ZFI
+TR:                            : DFHK909641                     FI:TR:Self Invoice          (04-09-2024 qfh)
+                                 DFHK909806       AIRDITDEBI   FI:Self Invoice Print         (21-10-2024 qfh)
+
+Dr. Program                    : ZFI_SELF_INVOICE_PRINT         FI:PRNT:Self Invoice 
+header structure               : ZFI_SELF_INVOICE_HEADER_S      FI: Self Invoice Header Structure
+item Structure                 : ZFI_SELF_INVOICE_ITEM_S        FI: Self Invoice Item Structure  
+
+Smartform                      : ZFISF_SELF_INVOICE_FORM        FI:SMFM:Self Invoice
+smartstyle                     : ZFISF_SELF_INVOICE_STYLE       Style: Self Invoice
+Tcode                          : ZFI0049
+"-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ZFI_SELF_INVOICE_HEADER_S      FI: Self Invoice Header Structure
+-----------------------------------------------------------------
+REF_DOC_NO	1 Types	BELNR_D
+BUKRS	1 Types	BUKRS
+GJAHR	1 Types	GJAHR
+FORM_TITEL1	1 Types	CHAR20
+FORM_TITLE2	1 Types	CHAR30
+WEBSITE	1 Types	CHAR30
+EMAIL	1 Types	CHAR30
+CIN	1 Types	CHAR30
+PAN	1 Types	CHAR30
+COMPANY_GSTIN	1 Types	J_1IGSTCD3
+SUPPLY_STATE	1 Types	BEZEI
+SUPPLY_STATE_CODE	1 Types	REGIO
+INVOICE_NO	1 Types	XBLNR_ALT
+INVOICE_DATE	1 Types	BUDAT
+BILL_NAME1	1 Types	NAME1_GP
+BILL_STREET	1 Types	AD_STREET
+BILL_STR_SUPPL1	1 Types	AD_STRSPP1
+BILL_STR_SUPPL1	1 Types	AD_STRSPP1
+BILL_STR_SUPPL2	1 Types	AD_STRSPP2
+BILL_STR_SUPPL3	1 Types	AD_STRSPP3
+BILL_PIN	1 Types	AD_PSTCD1
+BILL_STATE	1 Types	BEZEI20
+BILL_STATE_CODE	1 Types	REGIO
+BILL_PAN	1 Types	J_1IPANNO
+BILL_GST	1 Types	STCD3
+WAER	1 Types	WAERS
+GT_TOTAL_AMOUNT	1 Types	DMBTR
+GT_DISCOUNT	1 Types	KBETR_TAX
+GT_TAXABLE_AMOUNT	1 Types	DMBTR
+GT_CGST_AMOUNT	1 Types	HWSTE
+GT_SGST_AMOUNT	1 Types	HWSTE
+GT_IGST_AMOUNT	1 Types	HWSTE
+GT_UGST_AMOUNT	1 Types	HWSTE
+GT_UGST_AMOUNT	1 Types	HWSTE
+GT_TL_AMOUNT_IT	1 Types	HWSTE
+GT_GST_AMOUNT	1 Types	HWSTE
+GT_TL_AMOUNT_IT_WORD	1 Types	CHAR300
+GT_GST_AMOUNT_WORD	1 Types	CHAR300
+HEAD_OFFICE	1 Types	CHAR100
+REG_OFFICE	1 Types	CHAR100
+FOOTER_COMPANY_FULL	1 Types	CHAR100
+
+
+ZFI_SELF_INVOICE_ITEM_S        FI: Self Invoice Item Structure  
+---------------------------------------------------------------------------
+SL_NO	1 Types	INT2
+REF_DOC_NO	1 Types	BELNR_D
+SRV_DESC	1 Types	CHAR300
+HSN_SAC	1 Types	STEUC
+WAER	1 Types	WAERS
+QTY	1 Types	SMENG
+UNIT	1 Types	MEINS
+RATE	1 Types	KBETR_TAX
+TOTAL_AMOUNT	1 Types	DMBTR
+DISCOUNT	1 Types	KBETR_TAX
+TAXABLE_AMOUNT	1 Types	DMBTR
+CGST_RATE	1 Types	KBETR_TAX
+CGST_AMOUNT	1 Types	DMBTR
+SGST_RATE	1 Types	KBETR_TAX
+SGST_AMOUNT	1 Types	DMBTR
+IGST_RATE	1 Types	KBETR_TAX
+IGST_AMOUNT	1 Types	DMBTR
+UGST_RATE	1 Types	KBETR_TAX
+UGST_AMOUNT	1 Types	DMBTR
+TOTAL_TAX	1 Types	DMBRT
+TOTAL_AMOUNT_IT	1 Types	DMBRT
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+*----------------------------------------------------------------------*
+* DESCIPTION: This Driver Program/Report is to Print Self invoice
+*             Sartform/Print.
+* PROGRAM NAME: ZFI_SELF_INVOICE_Print
+* AUTHOR: Debidutta Swain(AIRDITDEBI) <AIRDIT>
+* CREATED DATE: 27/08/2024
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Description :
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Report ZFI_SELF_INVOICE
+*&---------------------------------------------------------------------*
+REPORT zfi_self_invoice_print.
+
+*--> Sturucture Type Declaration .
+TYPES: BEGIN OF ty_bseg_header,
+         bukrs LIKE bseg-bukrs,
+         belnr LIKE bseg-belnr,
+         gjahr LIKE bseg-gjahr,
+         buzei LIKE bseg-buzei,
+         koart LIKE bseg-koart,
+         mwskz LIKE bseg-mwskz,
+         bupla LIKE bseg-bupla,
+         lifnr LIKE bseg-lifnr,
+       END OF ty_bseg_header.
+
+TYPES: BEGIN OF ty_supply_gst,
+         bukrs  LIKE j_1bbranch-bukrs,
+         branch LIKE j_1bbranch-branch,
+         adrnr  LIKE j_1bbranch-adrnr,
+         gstin  LIKE j_1bbranch-gstin,
+         city1  LIKE adrc-city1,
+         region LIKE adrc-region,
+       END OF ty_supply_gst.
+
+TYPES: BEGIN OF ty_invoice,
+         bukrs     LIKE bkpf-bukrs,
+         belnr     LIKE bkpf-belnr,
+         gjahr     LIKE bkpf-gjahr,
+         budat     LIKE bkpf-budat,
+         xblnr_alt LIKE bkpf-xblnr_alt,
+       END OF ty_invoice.
+
+TYPES: BEGIN OF ty_bill_to_address,
+         lifnr      LIKE lfa1-lifnr,
+         land1      LIKE lfa1-land1,
+         adrnr      LIKE lfa1-adrnr,
+         regio      LIKE lfa1-regio,
+         j_1ipanno  LIKE lfa1-j_1ipanno,
+         stcd3      LIKE lfa1-stcd3,
+         bezei      LIKE t005u-bezei,
+         name1      LIKE adrc-name1,
+         street     LIKE adrc-street,
+         str_suppl1 LIKE adrc-str_suppl1,
+         str_suppl2 LIKE adrc-str_suppl2,
+         str_suppl3 LIKE adrc-str_suppl3,
+         post_code1 LIKE adrc-post_code1,
+       END OF ty_bill_to_address.
+
+TYPES: BEGIN OF ty_srv_desc,
+         belnr    TYPE belnr_d,
+         tdobject TYPE tdobject,
+         tdname   TYPE tdobname,
+         tdid     TYPE tdid,
+         tdspras  TYPE spras,
+         tdline   TYPE char300,
+       END OF ty_srv_desc.
+
+TYPES: BEGIN OF ty_hsn_amount,
+         bukrs   LIKE bseg-bukrs,
+         belnr   LIKE bseg-belnr,
+         gjahr   LIKE bseg-gjahr,
+         buzel   LIKE bseg-buzei,
+         buzid   LIKE bseg-buzid,
+         koart   LIKE bseg-koart,
+         dmbtr   LIKE bseg-dmbtr,
+         hsn_sac LIKE bseg-hsn_sac,
+       END OF ty_hsn_amount.
+
+TYPES : BEGIN OF ty_gst_rate,
+          bukrs LIKE bset-bukrs,
+          belnr LIKE bset-belnr,
+          gjahr LIKE bset-gjahr,
+          buzei LIKE bset-buzei,
+          mwskz LIKE bset-mwskz,
+          txgrp LIKE bset-txgrp,
+          kschl LIKE bset-kschl,
+          kbetr LIKE bset-kbetr,
+        END OF ty_gst_rate.
+
+TYPES : BEGIN OF ty_gst_amount,
+          bukrs LIKE bset-bukrs,
+          belnr LIKE bset-belnr,
+          gjahr LIKE bset-gjahr,
+          buzei LIKE bset-buzei,
+          mwskz LIKE bset-mwskz,
+          txgrp LIKE bset-txgrp,
+          ktosl LIKE bset-ktosl,
+          hwste LIKE bset-hwste,
+        END OF ty_gst_amount.
+
+*-->Data object Declaration .
+DATA: lv_belnr   LIKE bseg-belnr,
+      lv_message TYPE char300,
+      lv_count   TYPE sy-index,
+      lv_tdname  TYPE tdobname,
+      lv_word    TYPE char50,
+      lv_result  TYPE char300.
+
+DATA: lv_gt_cgst                 TYPE	dmbrt,
+      lv_gt_sgst                 TYPE dmbrt,
+      lv_gt_igst                 TYPE dmbrt,
+      lv_gt_ugst                 TYPE dmbrt,
+      lv_discount                TYPE kbetr_tax,
+      lv_gt_total_amount         TYPE dmbrt,
+      lv_gt_taxable_amount       TYPE dmbrt,
+      lv_gt_tax_amount           TYPE dmbrt,
+      lv_gt_total_amount_it      TYPE dmbrt,
+      lv_gt_tax_amount_word      TYPE char300,
+      lv_gt_total_amount_it_word TYPE char300.
+
+DATA : lv_fm_name            TYPE  rs38l_fnam,
+       ls_output_options     TYPE  ssfcompop,
+       ls_control_parameters TYPE  ssfctrlop,
+       ls_job_output_info    TYPE  ssfcrescl,
+       ls_FNL_output_info    TYPE  ssfcrescl.
+
+DATA: es_header TYPE zfi_self_invoice_header_s,
+      et_item   TYPE zfi_self_invoice_item_t.
+
+"--> Smartform Name..
+CONSTANTS: lv_formname TYPE  tdsfname VALUE 'ZFISF_SELF_INVOICE_FORM'.
+
+*--> Ware area/Structure Declaration.
+DATA: ls_srv_desc TYPE  ty_srv_desc,
+      ls_header   TYPE ZFI_SELF_INVOICE_Header_S,
+      ls_item     TYPE zfi_self_invoice_item_s.
+
+*--> Internal table Declaration.
+DATA:lt_tax          TYPE TABLE OF zsi_rmc_tax,
+     lt_bseg_header  TYPE TABLE OF ty_bseg_header,
+     lt_supply_gstin TYPE TABLE OF ty_supply_gst,
+     lt_invoice      TYPE TABLE OF ty_invoice,
+     lt_bill         TYPE TABLE OF ty_bill_to_address,
+     lt_srv_desc     TYPE TABLE OF ty_srv_desc,
+     lt_tab          TYPE TABLE OF tline,
+     lt_hsn_amount   TYPE TABLE OF ty_hsn_amount,
+     lt_gst_rate     TYPE TABLE OF ty_gst_rate,
+     lt_gst_amount   TYPE TABLE OF ty_gst_amount,
+     lt_header_final TYPE TABLE OF ZFI_SELF_INVOICE_header_S,
+     lt_item_final   TYPE TABLE OF zfi_self_invoice_item_s.
+
+*--> Selection Screen / User Input screen.
+SELECTION-SCREEN BEGIN OF BLOCK  b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS s_belnr FOR  lv_belnr OBLIGATORY .
+  PARAMETERS: p_bukrs TYPE bseg-bukrs OBLIGATORY,
+              p_gjahr TYPE bseg-gjahr OBLIGATORY.
+SELECTION-SCREEN END OF BLOCK b1.
+
+*--> Validating the User Input.
+AT SELECTION-SCREEN.
+
+  "--> Validating Document Number and showing invalid document number .
+  LOOP AT s_belnr ASSIGNING FIELD-SYMBOL(<fs_belnr>).
+    SELECT SINGLE belnr FROM bkpf INTO @DATA(ls_belnr) WHERE belnr = @<fs_belnr>-low.
+    IF sy-subrc NE 0.
+      lv_count = lv_count + 1.
+      IF lv_message IS INITIAL.
+        lv_message = |{ <fs_belnr>-low }|.
+      ELSE.
+        lv_message = |{ lv_message },{ <fs_belnr>-low }|.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+  IF lv_count > 0.
+    lv_message = |{ lv_message }{ TEXT-002 }|.
+    MESSAGE lv_message TYPE 'I' DISPLAY LIKE 'I'.
+    LEAVE PROGRAM.
+  ENDIF.
+
+  "--> Validating Company Codeand showing invalid Company code.
+  SELECT SINGLE werks FROM t001w INTO @DATA(ls_t001w) WHERE werks  = @p_bukrs .
+  IF sy-subrc NE 0.
+    MESSAGE TEXT-003 TYPE 'I' DISPLAY LIKE 'I'.
+    LEAVE PROGRAM.
+  ENDIF.
+
+START-OF-SELECTION.
+*--> Filtering Document Relataed to self invoice.
+  SELECT bukrs,belnr,gjahr,buzei,koart,mwskz,bupla,lifnr
+  FROM bseg INTO TABLE @DATA(lt_bseg_temp)
+  WHERE belnr IN  @s_belnr AND
+        gjahr = @p_gjahr AND
+        bukrs = @p_bukrs AND
+        koart = 'K'.
+
+  "--> Fetching the Tax code Related to Self Invoive from ZSI_RMC_TAX(Self Invoice: RMS Tax Code) Datbase table .
+  SELECT si_tax_code
+  FROM zsi_rmc_tax INTO TABLE lt_tax.                "#EC CI_NOWHERE
+
+  "--> Here if the Document's MWSKZ field Value lies in this Self Invoive tax code table,
+  "    then only those document valid for Self Invoice print.
+  LOOP AT  lt_bseg_temp INTO DATA(ls_data).
+    IF line_exists( lt_tax[ si_tax_code = ls_data-mwskz ] ).
+      APPEND ls_data TO lt_bseg_header.
+    ENDIF.
+  ENDLOOP.
+  SORT lt_bseg_header BY belnr.
+
+  IF lt_bseg_header IS NOT INITIAL .
+    PERFORM get_data.                         " Subroutine To fetch all the Required Data.
+    PERFORM process_data.                     " Subroutine to Prepare the final Result.
+    PERFORM display_data.                     " Subroutine to Print the Smartform as ann output.
+
+  ELSE.
+    DESCRIBE TABLE lt_bseg_temp LINES DATA(count).
+    IF lv_count LE 1.
+      MESSAGE TEXT-004 TYPE 'E' DISPLAY LIKE 'I'.
+    ELSE.
+      MESSAGE TEXT-005 TYPE 'E' DISPLAY LIKE 'I'.
+    ENDIF.
+  ENDIF.
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_header_data.               " Subroutine to Fetch all the Header related data.
+  PERFORM get_item_data.                 " Subroutine to  Fetch all the item related Data.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+  PERFORM get_header_result.             " Subroutine to prepare final Header Result.
+  PERFORM get_item_result.               " Subroutine to prepare final Item Result.
+
+  CLEAR : ls_header.
+  LOOP AT lt_header_final INTO ls_header.
+
+    CLEAR:lv_gt_cgst ,lv_gt_sgst,lv_gt_igst,lv_gt_ugst,
+          lv_gt_total_amount,lv_gt_taxable_amount,lv_gt_total_amount_it,
+          lv_gt_tax_amount,lv_gt_total_amount_it_word,lv_gt_tax_amount_word.
+
+    "--> calculate the Grand total of total amount,taxable amount,cgst,sgst,igst,ugst,total tax,total amount(inc tax).
+    LOOP AT  lt_item_final INTO DATA(ls_item).
+      IF ls_item-ref_doc_no EQ ls_header-ref_doc_no.
+        lv_gt_total_amount    = lv_gt_total_amount    + ls_item-total_amount.
+        lv_gt_taxable_amount  = lv_gt_taxable_amount  + ls_item-taxable_amount.
+        lv_discount           = lv_discount           + ls_item-discount.
+        lv_gt_cgst            = lv_gt_cgst            + ls_item-cgst_amount.
+        lv_gt_sgst            = lv_gt_sgst            + ls_item-sgst_amount.
+        lv_gt_igst            = lv_gt_igst            + ls_item-igst_amount.
+        lv_gt_ugst            = lv_gt_ugst            + ls_item-ugst_amount.
+        lv_gt_total_amount_it = lv_gt_total_amount_it + ls_item-total_amount_it.
+        lv_gt_tax_amount      = lv_gt_tax_amount      + ls_item-total_tax.
+      ENDIF.
+      CLEAR: ls_item.
+    ENDLOOP.
+
+    "--> convert Total Tax Tmount & Total Amount(Incl. Tax) in word.
+    CALL FUNCTION 'HR_IN_CHG_INR_WRDS'
+      EXPORTING
+        amt_in_num         = CONV pc207-betrg( lv_gt_tax_amount )
+      IMPORTING
+        amt_in_words       = lv_gt_tax_amount_word
+      EXCEPTIONS
+        data_type_mismatch = 1
+        OTHERS             = 2.
+    IF sy-subrc <> 0.
+      " Implement suitable error handling here
+    ENDIF.
+
+    TRANSLATE lv_gt_tax_amount_word TO LOWER CASE .
+    SPLIT lv_gt_tax_amount_word AT space INTO TABLE DATA(itab) .
+    LOOP AT itab ASSIGNING  FIELD-SYMBOL(<temp>) .
+      lv_word = <temp> .
+      TRANSLATE lv_word+0(1) TO UPPER CASE .
+      CONCATENATE lv_result lv_word INTO lv_result SEPARATED BY space .
+    ENDLOOP .
+    CLEAR lv_gt_tax_amount_word.
+    lv_gt_tax_amount_word = lv_result.
+    CLEAR: lv_word,lv_result,itab.
+
+    CALL FUNCTION 'HR_IN_CHG_INR_WRDS'
+      EXPORTING
+        amt_in_num         = CONV pc207-betrg( lv_gt_total_amount_it )
+      IMPORTING
+        amt_in_words       = lv_gt_total_amount_it_word
+      EXCEPTIONS
+        data_type_mismatch = 1
+        OTHERS             = 2.
+    IF sy-subrc <> 0.
+      " Implement suitable error handling here
+    ENDIF.
+
+    TRANSLATE lv_gt_total_amount_it_word TO LOWER CASE .
+    SPLIT lv_gt_total_amount_it_word AT space INTO TABLE itab .
+    LOOP AT itab ASSIGNING <temp> .
+      lv_word = <temp> .
+      TRANSLATE lv_word+0(1) TO UPPER CASE .
+      CONCATENATE  lv_result lv_word INTO lv_result SEPARATED BY space .
+    ENDLOOP .
+    CLEAR lv_gt_total_amount_it_word.
+    lv_gt_total_amount_it_word = lv_result.
+    CLEAR: lv_word,lv_result,itab.
+
+    ls_header-gt_total_amount      = lv_gt_total_amount.
+    ls_header-gt_discount          = lv_discount.
+    ls_header-gt_taxable_amount    = lv_gt_taxable_amount.
+    ls_header-gt_cgst_amount       = lv_gt_cgst.
+    ls_header-gt_sgst_amount       = lv_gt_sgst.
+    ls_header-gt_igst_amount       = lv_gt_igst.
+    ls_header-gt_ugst_amount       = lv_gt_ugst.
+    ls_header-gt_tl_amount_it      = lv_gt_total_amount_it.
+    ls_header-gt_gst_amount        = lv_gt_tax_amount.
+    ls_header-gt_tl_amount_it_word = COND #( WHEN lv_gt_total_amount_it IS INITIAL THEN 'NIL'
+                                          ELSE |{ lv_gt_total_amount_it_word } only|
+                                        ).
+    ls_header-gt_gst_amount_word   = COND #( WHEN lv_gt_tax_amount IS INITIAL THEN 'NIL'
+                                          ELSE |{ lv_gt_tax_amount_word } only|
+                                        ).
+
+    MODIFY lt_header_final FROM ls_header.
+  ENDLOOP.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+
+  CLEAR :lv_fm_name,ls_output_options,
+        ls_control_parameters,ls_fnL_output_info.
+
+*  ls_output_options-tdcopies = 5.
+  ls_output_options-tddest   = 'LOCL'.
+
+  ls_control_parameters-preview   = 'X'.
+  ls_control_parameters-getotf    = 'X'.
+  ls_control_parameters-no_dialog = 'X'.
+*  ls_control_parameters-no_open   = 'X'.
+*  ls_control_parameters-no_close  = 'X'.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lv_formname
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = lv_fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+
+  IF sy-subrc <> 0.
+* Implement suitable error handling here
+  ENDIF.
+
+  IF lt_header_final IS NOT INITIAL.
+    CLEAR:es_header,ls_item.
+    LOOP AT lt_header_final INTO Ls_header.
+      es_header = ls_header.
+      LOOP AT lt_item_final INTO ls_item.
+        IF  ls_item-ref_doc_no EQ ls_header-ref_doc_no.
+          APPEND ls_item TO et_item.
+          CLEAR ls_item.
+        ENDIF.
+      ENDLOOP.
+
+      CALL FUNCTION lv_fm_name
+        EXPORTING
+          control_parameters = ls_control_parameters
+          output_options     = ls_output_options
+          user_settings      = ' '
+          ls_header          = es_header
+          lt_item            = et_item
+        IMPORTING
+          job_output_info    = ls_job_output_info
+        EXCEPTIONS
+          formatting_error   = 1
+          internal_error     = 2
+          send_error         = 3
+          user_canceled      = 4
+          OTHERS             = 5.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      CALL FUNCTION 'SSF_CLOSE'
+        IMPORTING
+          job_output_info  = ls_job_output_info
+        EXCEPTIONS
+          formatting_error = 1
+          internal_error   = 2
+          send_error       = 3
+          OTHERS           = 4.
+      IF sy-subrc <> 0.
+* Implement suitable error handling here
+      ENDIF.
+
+      APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+      CLEAR: ls_header,es_header,et_item,ls_job_output_info.
+    ENDLOOP.
+  ENDIF.
+
+  "//--> Print Form.
+  CALL FUNCTION 'HR_IT_DISPLAY_WITH_PDF'
+    TABLES
+      otf_table = ls_fnL_output_info-otfdata.
+
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_header_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_data .
+  PERFORM get_gstin_supply_data.                   " Subroutine to fetch  GSTIN and Place of supply Details for the Document Number.
+  PERFORM get_invoice_data.                        " Subroutine To fetch Invoice Details.
+  PERFORM get_billto_data.                         " Subroutine to Fetch Bill to aaddress.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_item_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_item_data .
+  PERFORM get_des_service_data.                       " Subroutine to Fetch Value of 'Description of goods/sevice' field.
+  PERFORM get_hsn_totl_tax_amount_data.               " Subroutine to fetch Value of 'HSN_SRC ,Total Amount,Taxable Amount' Field.
+  PERFORM get_gst_rate.                               " Subroutine to Fetch GST Rate   details from BSET table Where KTOSL :'JICG,JISG,JIIG,JIUG'.
+  PERFORM get_gat_amount.                             " Subroutine to Fetch GST Amount details from BSET table Where KSCHL :'JRC,JRS,JRI,JRU'.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_gstin_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_gstin_supply_data .
+  IF lt_bseg_header IS NOT INITIAL.
+    SELECT j_1bbranch~bukrs,j_1bbranch~branch,j_1bbranch~adrnr,j_1bbranch~gstin,
+           adrc~city1,adrc~region
+    FROM j_1bbranch
+    LEFT OUTER JOIN adrc ON j_1bbranch~adrnr = adrc~addrnumber                              "#EC CI_BUFFJOIN
+    FOR ALL ENTRIES IN @lt_bseg_header
+                    WHERE j_1bbranch~bukrs  = @lt_bseg_header-bukrs AND
+                          j_1bbranch~branch = @lt_bseg_header-bupla
+    INTO TABLE @lt_supply_gstin.
+  ENDIF.
+  SORT lt_supply_gstin BY bukrs branch.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_invoice_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_invoice_data .
+  IF lt_bseg_header IS NOT INITIAL.
+    SELECT bukrs,belnr,gjahr,budat,xblnr_alt
+    FROM bkpf
+    FOR ALL ENTRIES IN @lt_bseg_header
+                    WHERE bukrs  = @lt_bseg_header-bukrs AND
+                          belnr  = @lt_bseg_header-belnr AND
+                          gjahr  = @lt_bseg_header-gjahr
+    INTO TABLE @lt_invoice.
+  ENDIF.
+  SORT lt_invoice BY belnr.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_billto_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_billto_data .
+  IF lt_bseg_header IS NOT INITIAL.
+    SELECT lfa1~lifnr,lfa1~land1,lfa1~adrnr,lfa1~regio,lfa1~j_1ipanno,lfa1~stcd3,
+           t005u~bezei,
+           adrc~name1,adrc~street,adrc~str_suppl1,adrc~str_suppl2,
+           adrc~str_suppl3,adrc~post_code1
+      FROM lfa1
+      LEFT OUTER JOIN t005u ON lfa1~land1  = t005u~land1 AND
+                               lfa1~regio  = t005u~bland AND
+                               t005u~spras = @sy-langu
+      LEFT OUTER JOIN adrc  ON lfa1~adrnr  = adrc~addrnumber                                     "#EC CI_BUFFJOIN
+      FOR ALL ENTRIES IN @lt_bseg_header
+      WHERE lfa1~lifnr = @lt_bseg_header-lifnr
+      INTO TABLE @lt_bill.
+  ENDIF.
+
+  SORT lt_bill BY lifnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_des_service_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_des_service_data .
+  SELECT tdobject,tdname,tdid,tdspras                  "#EC CI_NOWHERE.
+   FROM stxh INTO TABLE @DATA(lt_stxh).
+
+  IF lt_bseg_header IS NOT INITIAL .
+    LOOP AT lt_bseg_header INTO DATA(ls_bseg).
+      lv_tdname = |{ p_bukrs }{ ls_bseg-belnr }{ p_gjahr }001|.
+
+      SELECT SINGLE * FROM @lt_stxh AS stxh
+             WHERE stxh~tdname = @lv_tdname
+             INTO @DATA(ls_stxh).
+
+      IF sy-subrc EQ 0.
+        ls_srv_desc-belnr    = ls_bseg-belnr.
+        ls_srv_desc-tdid     = ls_stxh-tdid.
+        ls_srv_desc-tdname   = ls_stxh-tdname.
+        ls_srv_desc-tdobject = ls_stxh-tdobject.
+        ls_srv_desc-tdspras  = ls_stxh-tdspras.
+
+        CALL FUNCTION 'READ_TEXT' ##FM_SUBRC_OK
+          EXPORTING
+            client                  = sy-mandt                       " Client
+            id                      = ls_stxh-tdid                   " Text ID of text to be read
+            language                = ls_stxh-tdspras                " Language of text to be read
+            name                    = lv_tdname                      " Name of text to be read
+            object                  = ls_stxh-tdobject               " Object of text to be read
+          TABLES
+            lines                   = lt_tab                         " Lines of text read
+          EXCEPTIONS
+            id                      = 1                              " Text ID invalid
+            language                = 2                              " Invalid language
+            name                    = 3                              " Invalid text name
+            not_found               = 4                              " Text not found
+            object                  = 5                              " Invalid text object
+            reference_check         = 6                              " Reference chain interrupted
+            wrong_access_to_archive = 7                              " Archive handle invalid for access
+            OTHERS                  = 8.
+
+        IF sy-subrc <> 0.
+          " Implement suitable error handling here
+        ENDIF.
+
+        IF lt_tab IS NOT INITIAL.
+          LOOP AT lt_tab INTO DATA(ls_tab).
+            ls_srv_desc-tdline = |{ ls_srv_desc-tdline } { ls_tab-tdline }|.
+          ENDLOOP.
+        ENDIF.
+      ENDIF.
+      APPEND ls_srv_desc TO lt_srv_desc.
+      CLEAR :ls_srv_desc,ls_bseg,ls_stxh,lv_tdname.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_srv_desc BY belnr .
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_hsn_totl_tax_amount_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_hsn_totl_tax_amount_data .
+  IF lt_bseg_header IS NOT INITIAL.
+
+    SELECT bukrs,belnr,gjahr,buzei,
+           buzid,koart,dmbtr,hsn_sac
+    FROM bseg
+    FOR ALL ENTRIES IN @lt_bseg_header
+    WHERE bukrs = @lt_bseg_header-bukrs AND
+          belnr = @lt_bseg_header-belnr AND
+          gjahr = @lt_bseg_header-gjahr AND
+          buzid NE 'T' AND
+          koart NE 'K'
+    INTO TABLE @lt_hsn_amount .
+  ENDIF.
+
+  SORT lt_hsn_amount BY belnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_gst_rate
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_gst_rate .
+  IF lt_bseg_header IS NOT INITIAL.
+    SELECT bukrs,belnr,gjahr,buzei,
+           mwskz,txgrp,kschl,kbetr
+    FROM bset
+    FOR ALL ENTRIES IN @lt_bseg_header
+    WHERE bukrs = @lt_bseg_header-bukrs AND
+          belnr = @lt_bseg_header-belnr AND
+          gjahr = @lt_bseg_header-gjahr AND
+          mwskz = @lt_bseg_header-mwskz AND
+          txgrp = @lt_bseg_header-buzei AND
+          kschl IN ('JICG','JISG','JIIG','JIUG')
+    INTO TABLE @lt_gst_rate.
+  ENDIF.
+
+  SORT lt_gst_rate BY belnr buzei.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_gat_amount
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_gat_amount .
+  IF lt_bseg_header IS NOT INITIAL.
+    SELECT bukrs,belnr,gjahr,buzei,
+           mwskz,txgrp,ktosl,hwste
+    FROM bset
+    FOR ALL ENTRIES IN @lt_bseg_header
+    WHERE bukrs = @lt_bseg_header-bukrs AND
+          belnr = @lt_bseg_header-belnr AND
+          gjahr = @lt_bseg_header-gjahr AND
+          mwskz = @lt_bseg_header-mwskz AND
+          txgrp = @lt_bseg_header-buzei AND
+          ktosl IN ('JRC','JRS','JRI','JRU')
+    INTO TABLE @lt_gst_amount.
+  ENDIF.
+
+  SORT lt_gst_amount BY belnr buzei.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_header_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_result .
+  IF lt_bseg_header IS NOT INITIAL.
+    LOOP AT lt_bseg_header INTO DATA(ls_bseg_header).
+
+      "-->  Reference Document Number,Smartform Titel.
+      ls_header-ref_doc_no  = ls_bseg_header-belnr.
+      ls_header-form_titel1 = TEXT-006.
+      ls_header-form_title2 = TEXT-007.
+
+      "--> bukrs,website,email,CIN,PAN,Head office,
+      IF ls_bseg_header-bukrs EQ '1100'.
+        ls_header-bukrs            = ls_bseg_header-bukrs.
+        ls_header-website          = 'www.hfcl.com'.                                                              "##NO_TEXT
+        ls_header-email            = 'sales.hfcl@hfcl.com'.                                                       "##NO_TEXT
+        ls_header-cin              = 'L64200HP1987PLC007466'.                                                     "##NO_TEXT
+        ls_header-pan              = 'AAACH4041D'.                                                                "##NO_TEXT
+        ls_header-head_office      = '8,Commercial Complex,Masjid Moth,Greater Kailash II,New Delhi,110048'.      "##NO_TEXT
+        ls_header-reg_office       = '8,Electronics Complex,Chambaghat,Solan # 173 213[H.P]'.                     "##NO_TEXT                                                                        "##NO_TEXT
+        ls_header-footer_company_full = 'For Himachal Futuristic Communications Limited'.                         "##NO_TEXT
+
+      ELSEIF ls_bseg_header-bukrs  EQ '1200'.
+        ls_header-bukrs            = ls_bseg_header-bukrs.
+        ls_header-website          = 'www.htllimited.com'.                                                         "##NO_TEXT
+        ls_header-email            = 'sales.htl@htllimited.com'.                                                   "##NO_TEXT
+        ls_header-cin              = 'U93090TN1960PLC004355'.                                                      "##NO_TEXT
+        ls_header-pan              = 'AAACH5516'.                                                                  "##NO_TEXT                                                                            "##NO_TEXT
+        ls_header-head_office      = |G.S.T. Road Guindy,Chennai,600032|.                                          "##NO_TEXT
+        ls_header-reg_office       = ''.                                                                           "##NO_TEXT
+        ls_header-footer_company_full  = 'For Hindustan Teleprinters Limited '.                                    "##NO_TEXT
+      ENDIF.
+
+      "--> Fetch compant GSTIN,Place of Supply details.
+      READ TABLE lt_supply_gstin INTO DATA(ls_supply_gstin) WITH KEY branch = ls_bseg_header-bupla
+                                                                    bukrs  = ls_bseg_header-bukrs.
+      IF ls_supply_gstin IS NOT INITIAL.
+        ls_header-company_gstin     = ls_supply_gstin-gstin.
+        ls_header-supply_state      = ls_supply_gstin-city1.
+        ls_header-supply_state_code = ls_supply_gstin-region.
+      ENDIF.
+      CLEAR ls_supply_gstin.
+
+      "--> fetch invoice no and date.
+      READ TABLE lt_invoice INTO DATA(ls_invoice) WITH KEY belnr = ls_bseg_header-belnr .
+      IF ls_invoice IS NOT INITIAL.
+        ls_header-invoice_no   = ls_invoice-xblnr_alt.
+        ls_header-invoice_date = ls_invoice-budat.
+      ENDIF.
+      CLEAR ls_invoice.
+
+      "--> Fetch Bill-To Address .
+      READ TABLE  lt_bill INTO DATA(ls_bill) WITH KEY lifnr = ls_bseg_header-lifnr.
+      IF ls_bill IS NOT INITIAL.
+        ls_header-bill_name1      = ls_bill-name1.
+        ls_header-bill_street     = ls_bill-street.
+        ls_header-bill_str_suppl1 = ls_bill-str_suppl1.
+        ls_header-bill_str_suppl2 = ls_bill-str_suppl2.
+        ls_header-bill_str_suppl3 = ls_bill-str_suppl3.
+        ls_header-bill_pin        = ls_bill-post_code1.
+        ls_header-bill_state      = ls_bill-bezei.
+        ls_header-bill_state_code = ls_bill-regio.
+        ls_header-bill_pan        = ls_bill-j_1ipanno.
+        ls_header-bill_gst        = ls_bill-stcd3.
+      ENDIF.
+      CLEAR ls_bill.
+
+      "--> Store in Internal Table .
+      APPEND ls_header TO lt_header_final.
+      CLEAR: ls_header,ls_bseg_header.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_header_final BY  ref_doc_no .
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_item_result
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_item_result .
+  DATA: lv_serial TYPE sy-index.
+
+  IF lt_bseg_header IS NOT INITIAL.
+    LOOP AT lt_bseg_header INTO DATA(ls_bseg).
+      LOOP AT lt_hsn_amount INTO DATA(ls_hsn).
+        IF  ls_hsn-belnr = ls_bseg-belnr AND ls_hsn-bukrs = ls_bseg-bukrs AND ls_hsn-gjahr = ls_bseg-gjahr.
+
+          lv_serial          = lv_serial + 1.
+          ls_item-sl_no      = lv_serial.                   " Serial Number.
+          ls_item-ref_doc_no = ls_bseg-belnr.               " Reference Document Number.
+
+          READ TABLE lt_srv_desc INTO DATA(ls_srv_desc) WITH KEY belnr = ls_hsn-belnr BINARY SEARCH.
+          IF sy-subrc EQ 0.
+            ls_item-srv_desc = ls_srv_desc-tdline.          " Description Of Goods/Service
+          ENDIF.
+
+          ls_item-hsn_sac        = ls_hsn-hsn_sac.            " HSN_SRC
+*          ls_item-qty            =                             " Here quantity value fetched.Always the Qantity is 'NA' ,accoding to Funtional.
+*          ls_item-unit           =                             " Here Unit value fetched.Always the unit value is ' '/Blank ,accoding to Funtional.
+          ls_item-rate           = 100.                         " Here "Rate value" Always 100 ,accoding to Funtional.
+          ls_item-total_amount   = ls_hsn-dmbtr.              " Total Amount.
+*          ls_item-discount       =  '0.00'.                    " Here discount value Always 0.00, accoding to Funtional.
+          ls_item-taxable_amount = ls_hsn-dmbtr.              " Taxable Amount.
+
+          "/--> Fetch CGST Rate and Amount details.
+          READ TABLE lt_gst_rate INTO DATA(ls_cgst_rate) WITH KEY belnr = ls_hsn-belnr
+                                                                  kschl = 'JICG'.
+          IF sy-subrc EQ 0.
+            ls_item-cgst_rate = ls_cgst_rate-kbetr DIV 10.
+          ENDIF.
+          READ TABLE lt_gst_amount INTO DATA(ls_cgst_amount) WITH KEY belnr = ls_hsn-belnr
+                                                        ktosl = 'JRC'.
+          IF sy-subrc EQ 0.
+            ls_item-cgst_amount = ls_cgst_amount-hwste.
+          ENDIF.
+
+          "/--> Fetch SGST Rate and Amount details.
+          READ TABLE lt_gst_rate INTO DATA(ls_sgst_rate) WITH KEY belnr = ls_hsn-belnr
+                                                                  kschl = 'JISG'.
+          IF sy-subrc EQ 0.
+            ls_item-sgst_rate = ls_sgst_rate-kbetr DIV 10.
+          ENDIF.
+          READ TABLE lt_gst_amount INTO DATA(ls_sgst_amount) WITH KEY belnr = ls_hsn-belnr
+                                                                      ktosl = 'JRS'.
+          IF sy-subrc EQ 0.
+            ls_item-sgst_amount = ls_cgst_amount-hwste.
+          ENDIF.
+          CLEAR ls_sgst_amount.
+
+          "--> Fetch IGST Rate and Amount details.
+          READ TABLE lt_gst_rate INTO DATA(ls_igst_rate) WITH KEY belnr = ls_hsn-belnr
+                                                                  kschl = 'JIIG'.
+          IF sy-subrc EQ 0.
+            ls_item-igst_rate = ls_igst_rate-kbetr DIV 10.
+          ENDIF.
+          READ TABLE lt_gst_amount INTO DATA(ls_igst_amount) WITH KEY belnr = ls_hsn-belnr
+                                                                      ktosl = 'JRI'.
+          IF sy-subrc EQ 0.
+            ls_item-igst_amount = ls_igst_amount-hwste.
+          ENDIF.
+
+          "--> Fetch UGST Rate and Amount details.
+          READ TABLE lt_gst_rate INTO DATA(ls_ugst_rate) WITH KEY belnr = ls_hsn-belnr
+                                                                  kschl = 'JIUG'.
+          IF sy-subrc EQ 0.
+            ls_item-ugst_rate = ls_ugst_rate-kbetr DIV 10.
+          ENDIF.
+          READ TABLE lt_gst_amount INTO DATA(ls_ugst_amount) WITH KEY belnr = ls_hsn-belnr
+                                                                      ktosl = 'JRU'.
+          IF sy-subrc EQ 0.
+            ls_item-ugst_amount = ls_ugst_amount-hwste.
+          ENDIF.
+
+          "/--> Prepare "Total Amount Including Tax" and "Total Tax" for the line item.
+          ls_item-total_tax       = ( ls_item-cgst_amount + ls_item-sgst_amount + ls_item-igst_amount + ls_item-ugst_amount ).
+          ls_item-total_amount_it = ( ls_item-total_amount + ls_item-total_tax ).
+
+          " Insert Record into final item internal table.
+          APPEND ls_item TO lt_item_final.
+
+          CLEAR: ls_item,ls_srv_desc,ls_cgst_rate,ls_cgst_amount,
+                 ls_sgst_rate,ls_sgst_amount,ls_igst_rate,ls_igst_amount,ls_ugst_rate,ls_ugst_amount.
+        ENDIF.
+        CLEAR: ls_hsn.
+      ENDLOOP.
+      CLEAR: lv_serial,ls_bseg.
+    ENDLOOP.
+  ENDIF.
+
+  SORT lt_item_final BY sl_no ref_doc_no.
+ENDFORM.	                                                                                                                                                                                                                                                               	______________________________
+
+
+
+
+
+
+

@@ -1,0 +1,134 @@
+Modification:  Check Wheather item's Delivery completed or not.
+               if completed then through error mesage 'Delivery Completed for this item', else continue the flow.
+
+purpose     : Restrict The GRN for the purchase order item , if delivery complete indicator is checked.
+benifit     : Business user is assuming purchase order line item closed and complete, so they will not allow for the good for GRN.
+
+BADI                  : MB_MIGO_BADI
+BADI Implementation   : ZMB_MIGO_BADI
+Implementation Class  : ZCL_IM_MB_MIGO_BADI
+Implementation Method : IF_EX_MB_MIGO_BADI~CHECK_ITEM
+
+CREATED DATE          : 06-09-2024
+Ticket No             : 24537
+
+TR                    :  DFHK909817       AIRDITDEBI   MM:Enhancement:MIGO Validation For Delivery Compl. Item
+TOC                   :  DFHK909853              DEBI:MM:TOC:MIGO Validation
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+  METHOD if_ex_mb_check_line_badi~check_line.
+*----------------------------------------------------------------------*
+* DESCIPTION: 1. Check Wheather item's Delivery completed or not.
+*                if completed then through error mesage 'Delivery Completed
+*                for this item', else continue the flow.
+*
+* BADI Implementation   : ZMB_CHECK_LINE_BADI
+* Implementation Class  : ZCL_IM_MB_CHECK_LINE_BADI                                     24811
+* Implementation Method : IF_EX_MB_CHECK_LINE_BADI~CHECK_LINE
+* AUTHOR                : Debidutta Swain(AIRDITDEBI) <AIRDIT>
+* CREATED DATE          : 06-09-2024
+* Ticket No             : 1. 24537
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Modification:
+*&---------------------------------------------------------------------*
+*-----------------------------------------------------------------------------------------"
+* 1--> Checking Wheather the Delivery completed for that item or not.
+*------------------------------------------------------------------------------------------"
+    CONSTANTS : lc_bwart    TYPE bwart VALUE '101',                          "--> Movement Type.
+                lc_refdoc   TYPE refdoc VALUE 'R01',                         "--> Document Reference.
+                lc_godynpro TYPE fieldname VALUE'(SAPLMIGO)GODYNPRO'.
+
+    FIELD-SYMBOLS:<lfs_godynpro> TYPE godynpro.
+
+    DATA: ls_mseg TYPE mseg.
+
+    ls_mseg = CORRESPONDING #( is_mseg ).
+    ASSIGN :(lc_godynpro) TO <lfs_godynpro> .
+
+    SELECT SINGLE ebeln,ebelp,elikz
+    FROM ekpo
+    INTO @DATA(ls_ekpo)
+    WHERE ebeln = @ls_mseg-ebeln AND
+          ebelp = @ls_mseg-ebelp.
+    IF sy-subrc EQ 0.
+      IF ls_mseg-bwart EQ lc_bwart AND <lfs_godynpro>-refdoc EQ lc_refdoc.
+        IF ls_ekpo IS NOT INITIAL.
+          IF ls_ekpo-elikz NE ' '.
+            MESSAGE |Delivery completed for item Number:{ ls_ekpo-ebelp }.| TYPE 'E'.
+          ENDIF.
+        ENDIF.
+      ENDIF.
+
+      CLEAR :ls_mseg,ls_ekpo.
+    ENDIF.
+*------------------------------------------------------------------------------------------"
+  ENDMETHOD.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+WRONG PLACE
+*----------------------------------------------------------------------*
+* DESCIPTION: 1. Check Wheather item's Delivery completed or not.
+*                if completed then through error mesage 'Delivery Completed
+*                for this item', else continue the flow.
+*
+* BADI Implementation   : ZMB_MIGO_BADI
+* Implementation Class  : ZCL_IM_MB_MIGO_BADI
+* Implementation Method : IF_EX_MB_MIGO_BADI~CHECK_ITEM
+* AUTHOR                : Debidutta Swain(AIRDITDEBI) <AIRDIT>
+* CREATED DATE          : 06-09-2024
+* Ticket No             : 1. 24537
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Modification:
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+ METHOD if_ex_mb_migo_badi~check_item.
+
+*-----------------------------------------------------------------------------------------"
+* 1--> Checking Wheather the Delivery completed for that item or not.
+*------------------------------------------------------------------------------------------"
+   "--> Data Object Declaration
+   FIELD-SYMBOLS : <fs_ebeln> TYPE ebeln,
+                   <fs_ebelp> TYPE ebelp.
+
+   "--> Fetching the field Value.
+   ASSIGN ('(SAPLMIGO)GOITEM-EBELN') TO <fs_ebeln>.
+   ASSIGN ('(SAPLMIGO)GOITEM-EBELP') TO <fs_ebelp>.
+
+   SELECT SINGLE ebeln,ebelp,elikz                      " elikz = Delivery Completed Indicator
+   FROM ekpo
+   INTO @DATA(ls_ekpo)
+   WHERE ebeln EQ @<fs_ebeln> AND
+         ebelp EQ @<fs_ebelp>.
+
+   IF ls_ekpo IS NOT INITIAL.
+     IF ls_ekpo-elikz NE ' '.
+       MESSAGE |Delivery completed for item Number:{ ls_ekpo-ebelp }.| TYPE 'E'.
+     ENDIF.
+   ENDIF..
+*-------------------------------------------------------------------------------------------------"
+ ENDMETHOD.
+
+
+
+

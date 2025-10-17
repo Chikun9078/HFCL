@@ -1,0 +1,136 @@
+  METHOD if_ex_me_process_req_cust~check.
+*----------------------------------------------------------------------*
+* DESCIPTION: Business Area Validation                                 *
+* PROGRAM NAME  : IF_EX_ME_PROCESS_REQ_CUST~CHECK                      *
+* AUTHOR        : Debidutta Swain (Airditdebi)                         *
+* CREATED DATE  : 26/12/2024                                           *
+*----------------------------------------------------------------------*
+*-- Validation for Checking the following
+*--    1. Profit Center must be Equal for Each Line item Of PR. please check..
+*----------------------------------------------------------------------------*
+    CONSTANTS : lc_me51n TYPE syst_tcode VALUE 'ME51N',
+                lc_me52n TYPE syst_tcode VALUE 'ME52N',
+                lc_SAVE  TYPE syst_ucomm VALUE 'MESAVE',
+                lc_CHECK TYPE syst_ucomm VALUE 'MECHECKDOC'.
+
+*    IF sy-tcode = lc_me51n OR sy-tcode = lc_me52n AND
+*       sy-ucomm = lc_save  OR sy-ucomm = lc_check.
+*      TYPES:BEGIN OF TY_item_profit,
+*              bnfpo TYPE bnfpo,
+*              prctr TYPE prctr,
+*            END OF ty_item_profit.
+*
+*      DATA: lS_ITEM_PROFIT TYPE ty_item_profit,
+*            lt_item_profit TYPE TABLE OF ty_item_profit,
+*            lv_error_KNTTP TYPE string,
+*            lv_KNTTP       TYPE knttp,
+*            lv_bnfpo       TYPE bnfpo.
+*
+*      CLEAR:ls_item_profit,lv_error_KNTTP,lv_knttp.
+*      FREE lt_item_profit.
+*      DATA(lo_items) = im_header->get_items( ).
+*
+*      LOOP AT lo_items INTO DATA(lo_item).
+*        DATA(ls_item) = lo_item-item->get_data( ).
+*        DATA(lo_accts) = lo_item-item->if_acct_container_mm~get_items( ).
+*        LOOP AT lo_accts INTO DATA(lo_acct).
+*          DATA(ls_exkn) = lo_acct-model->get_exkn( ).
+*          ls_ITEM_PROFIT-bnfpo = ls_item-bnfpo.
+*          ls_item_profit-prctr = ls_exkn-prctr.
+*          APPEND ls_item_profit TO lt_item_profit.
+*          CLEAR ls_item_profit.
+*        ENDLOOP.
+*      ENDLOOP.
+*
+*      IF lt_item_profit IS NOT INITIAL.
+*        SORT lt_item_profit BY prctr .
+*        DELETE ADJACENT DUPLICATES FROM lt_item_profit COMPARING prctr.
+*        DATA(lv_count) = lines( lt_item_profit ).
+*      ENDIF.
+*      IF lv_count GT 1.
+*        MESSAGE 'Line items Must have Same Profit Center. please check.' TYPE 'E' .
+*      ENDIF.
+*    ENDIF.
+*    ENDMETHOD.
+
+
+    IF sy-tcode = lc_me51n OR sy-tcode = lc_me52n AND
+       sy-ucomm = lc_save  OR sy-ucomm = lc_check.
+      TYPES:BEGIN OF TY_item_profit,
+              bnfpo TYPE bnfpo,
+              prctr TYPE prctr,
+            END OF ty_item_profit.
+
+      DATA: lS_ITEM_PROFIT TYPE ty_item_profit,
+            lt_item_profit TYPE TABLE OF ty_item_profit,
+            lv_error_KNTTP TYPE string,
+            lv_KNTTP       TYPE knttp,
+            lv_bnfpo       TYPE bnfpo.
+
+      CLEAR:ls_item_profit,lv_error_KNTTP,lv_knttp.
+      FREE lt_item_profit.
+      DATA(lo_items) = im_header->get_items( ).
+
+*--> Check Account Assignment Category  Must be equal.
+      LOOP AT lo_items INTO DATA(lo_item).
+        DATA(ls_item) = lo_item-item->get_data( ).
+        IF lv_KNTTP IS INITIAL AND lv_bnfpo IS INITIAL .
+          lv_knttp = ls_item-knttp.
+          lv_bnfpo = ls_item-bnfpo.
+        ELSE.
+          IF lv_knttp NE ls_item-knttp.
+            lv_error_knttp = |Account Assignment Category of item no:{ ls_item-bnfpo } is different from Item no:{ lv_bnfpo }.Please check the other Line item also. |.
+            MESSAGE lv_error_knttp TYPE 'E'.
+          ENDIF.
+        ENDIF.
+      ENDLOOP.
+
+
+*      LOOP AT lo_items INTO DATA(lo_item).
+*        DATA(ls_item) = lo_item-item->get_data( ).
+*        IF lv_KNTTP IS INITIAL AND lv_bnfpo IS INITIAL .
+*          lv_knttp = ls_item-knttp.
+*          lv_bnfpo = ls_item-bnfpo.
+*        ELSE.
+*          IF lv_knttp NE ls_item-knttp.
+*            lv_error_knttp = COND #( WHEN lv_error_KNTTP IS INITIAL THEN ls_item-bnfpo
+*                                     ELSE |{ lv_error_KNTTP },{ ls_item-bnfpo }| ).
+*          ENDIF.
+*        ENDIF.
+*      ENDLOOP.
+*      IF lv_error_knttp IS NOT INITIAL.
+*        lv_error_knttp = |Item No:{ lv_error_KNTTP } having different Account Assignment Category compair to Item no-{ lv_bnfpo }. |.
+*        MESSAGE lv_error_knttp TYPE 'E'.
+*      ENDIF.
+
+*--> Check Profit Center must be Equal for Each Line item Of PR ,if the Account Assignment Category  is 'Q'.
+      CLEAR : lo_item,ls_item.
+      lo_item = lo_items[ 1 ].
+      ls_item = lo_item-item->get_data( ).
+
+      IF ls_item-knttp EQ 'Q'.
+        CLEAR : lo_item,ls_item.
+
+        LOOP AT lo_items INTO lo_item.
+          ls_item = lo_item-item->get_data( ).
+          DATA(lo_accts) = lo_item-item->if_acct_container_mm~get_items( ).
+          LOOP AT lo_accts INTO DATA(lo_acct).
+            DATA(ls_exkn) = lo_acct-model->get_exkn( ).
+            ls_ITEM_PROFIT-bnfpo = ls_item-bnfpo.
+            ls_item_profit-prctr = ls_exkn-prctr.
+            APPEND ls_item_profit TO lt_item_profit.
+            CLEAR ls_item_profit.
+          ENDLOOP.
+        ENDLOOP.
+
+        IF lt_item_profit IS NOT INITIAL.
+          SORT lt_item_profit BY prctr .
+          DELETE ADJACENT DUPLICATES FROM lt_item_profit COMPARING prctr.
+          DATA(lv_count) = lines( lt_item_profit ).
+        ENDIF.
+        IF lv_count GT 1.
+          MESSAGE 'Line items Must have Same Profit Center. please check.' TYPE 'E'.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+endmethod.

@@ -1,0 +1,386 @@
+*&---------------------------------------------------------------------*
+*& Report ZMM_SES_MASS_RELEASE
+*&---------------------------------------------------------------------*
+*&CHANGE History
+*----------------
+* 1. Adding Posting Dtae in Report
+*    AIRDITDEBI-------------------------(3/12/2024)
+*&---------------------------------------------------------------------*
+REPORT zmm_ses_mass_release.
+TABLES: essr.
+TYPE-POOLS : vrm,slis.
+
+DATA : zcount LIKE sy-tabix.
+
+TYPES: BEGIN OF ty_final,
+         chk   TYPE c,
+         lblni TYPE lblni,
+         lblne TYPE lblne,
+         ernam TYPE ernam,
+         erdat TYPE erdat,
+         txz01 TYPE txz01,
+         ebeln TYPE ebeln,
+         ebelp TYPE ebelp,
+         lifnr TYPE lifnr,
+         name1 TYPE name1_gp,
+         lwert TYPE lwert,
+         frgsx TYPE frgsx,
+         frgzu TYPE frgzu,
+         ekgrp TYPE ekgrp,
+         eknam TYPE eknam,
+         bldat TYPE bldat_srv,
+         budat TYPE budat_srv,
+       END OF ty_final,
+
+       BEGIN OF ty_temp,
+         lblni TYPE lblni,
+         lblne TYPE lblne,
+         ernam TYPE ernam,
+         erdat TYPE erdat,
+         txz01 TYPE txz01,
+         ebeln TYPE ebeln,
+         ebelp TYPE ebelp,
+         frgsx TYPE frgsx,
+         frgzu TYPE frgzu,
+         bldat TYPE bldat_srv,
+         budat TYPE budat_srv,
+       END OF ty_temp.
+
+DATA:it_t16fs TYPE STANDARD TABLE OF t16fs,
+     wa_t16fs TYPE t16fs,
+     it_temp  TYPE TABLE OF ty_temp,
+     wa_temp  TYPE ty_temp,
+     it_final TYPE TABLE OF ty_final,
+     wa_final TYPE ty_final,
+     wa_sum   TYPE ty_final,
+     v_frgco  TYPE frgco,
+     v_FRGSX  TYPE frgsx.
+
+DATA: it_lout   TYPE slis_layout_alv  , "WORK AREA FOR PARAMETER i_layout
+      it_fcat   TYPE slis_t_fieldcat_alv , "FIELD CATALOGUE INTERNAL table
+      wa_fcat   TYPE slis_fieldcat_alv       , "FIELD CATATOGUE WORAK AREA
+      it_header TYPE slis_t_listheader, " Internal Table for Header
+      wa_header TYPE slis_listheader. "Work Area for Header
+
+DATA:it_return TYPE TABLE OF bapireturn1,
+     wa_return TYPE bapireturn1.
+
+SELECTION-SCREEN: BEGIN OF BLOCK blo1 WITH FRAME TITLE TEXT-001.
+  PARAMETERS    : s_frggr LIKE  t16fs-frggr DEFAULT 'SR' OBLIGATORY.
+  SELECT-OPTIONS: s_frgco FOR v_frgco OBLIGATORY NO INTERVALS NO-EXTENSION,
+                  s_FRGSX FOR v_FRGSX,
+                  s_lblni FOR essr-lblni,
+                  s_ernam FOR essr-ernam,
+                  s_erdat FOR essr-erdat,
+                  s_ebeln FOR essr-ebeln.
+SELECTION-SCREEN: END OF BLOCK blo1.
+
+CLEAR:it_final,wa_final,it_lout,it_fcat,it_return,wa_return.
+
+START-OF-SELECTION.
+  BREAK deepak.
+
+  SELECT * FROM t16fs
+    INTO TABLE it_t16fs
+    WHERE frggr = s_frggr   AND
+          frgsx IN s_FRGSX    AND
+        ( frgc1 = s_frgco-low OR
+          frgc2 = s_frgco-low OR
+          frgc3 = s_frgco-low OR
+          frgc4 = s_frgco-low OR
+          frgc5 = s_frgco-low )
+    ORDER BY PRIMARY KEY.
+  IF it_t16fs IS NOT INITIAL.
+
+    SELECT lblni, lblne, ernam, erdat, txz01, ebeln, ebelp, frgsx, frgzu, bldat, budat
+      FROM essr INTO TABLE @DATA(it_essr)
+      FOR ALL ENTRIES IN @it_t16fs
+      WHERE lblni IN @s_lblni AND
+            ernam IN @s_ernam AND
+            erdat IN @s_erdat AND
+            loekz = '' AND      "Not deleted
+            ebeln IN @s_ebeln AND
+            frgkl NE 'B' AND    "Not fully released
+            frgsx = @it_t16fs-frgsx AND
+            frggr = @it_t16fs-frggr.
+
+    IF sy-subrc = 0 AND it_essr IS NOT INITIAL.
+
+      LOOP AT it_essr INTO DATA(wa_essr) .
+        READ TABLE it_t16fs INTO wa_t16fs WITH KEY  frgsx = wa_essr-frgsx           "Level1 pending
+                                                    frgc1 = s_frgco-low.
+        IF sy-subrc = 0.
+          IF wa_essr-frgzu = ''.
+            APPEND wa_essr TO it_temp.
+          ENDIF.
+        ELSE.
+          READ TABLE it_t16fs INTO wa_t16fs WITH KEY  frgsx = wa_essr-frgsx         "Level2 pending
+                                                      frgc2 = s_frgco-low.
+          IF sy-subrc = 0.
+            IF wa_essr-frgzu = 'X'.
+              APPEND wa_essr TO it_temp.
+            ENDIF.
+          ELSE.
+            READ TABLE it_t16fs INTO wa_t16fs WITH KEY  frgsx = wa_essr-frgsx       "Level3 pending
+                                                        frgc3 = s_frgco-low.
+            IF sy-subrc = 0.
+              IF wa_essr-frgzu = 'XX'.
+                APPEND wa_essr TO it_temp.
+              ENDIF.
+            ELSE.
+              READ TABLE it_t16fs INTO wa_t16fs WITH KEY  frgsx = wa_essr-frgsx     "Level4 pending
+                                                          frgc4 = s_frgco-low.
+              IF sy-subrc = 0.
+                IF wa_essr-frgzu = 'XXX'.
+                  APPEND wa_essr TO it_temp.
+                ENDIF.
+              ELSE.
+                READ TABLE it_t16fs INTO wa_t16fs WITH KEY  frgsx = wa_essr-frgsx   "Level5 pending
+                                                            frgc5 = s_frgco-low.
+                IF sy-subrc = 0.
+                  IF wa_essr-frgzu = 'XXXX'.
+                    APPEND wa_essr TO it_temp.
+                  ENDIF.
+                ENDIF.
+
+              ENDIF.
+
+            ENDIF.
+
+          ENDIF.
+
+        ENDIF.
+
+      ENDLOOP.
+
+    ENDIF.
+  ENDIF.
+
+  IF it_temp IS NOT INITIAL.
+
+    it_final = CORRESPONDING #( it_temp ).
+
+    LOOP AT it_final INTO wa_final.
+      CLEAR : zcount,wa_final-lifnr, wa_final-name1, wa_final-lwert.
+      zcount =  sy-tabix.
+      SELECT   SINGLE  lifnr ekgrp
+        INTO   ( wa_final-lifnr, wa_final-ekgrp )
+        FROM   ekko
+        WHERE  ebeln = wa_final-ebeln.
+      SELECT   SINGLE  eknam
+        INTO   wa_final-eknam
+        FROM   t024
+        WHERE  ekgrp = wa_final-ekgrp.
+      SELECT   SINGLE  name1
+        INTO   wa_final-name1
+        FROM   lfa1
+        WHERE  lifnr = wa_final-lifnr.
+      SELECT   SINGLE lwert
+        INTO   wa_final-lwert
+        FROM   essr
+        WHERE  lblni = wa_final-lblni.
+      MODIFY it_final FROM wa_final INDEX zcount TRANSPORTING lifnr name1 lwert ekgrp eknam.
+    ENDLOOP.
+
+    wa_fcat-tabname = 'IT_FINAL'.
+    wa_fcat-fieldname = 'CHK'.
+    wa_fcat-seltext_l = 'Release'.
+    wa_fcat-checkbox = 'X'.
+    wa_fcat-icon  = 'X'.             "Icons
+    wa_fcat-outputlen = 1.
+    wa_fcat-edit = 'X'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'LBLNI'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Entry Sheet No.'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'LBLNE'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Item'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'ERNAM'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '15'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Created By'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'ERDAT'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '25'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Created Date'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'TXZ01'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '40'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Reference'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'EBELN'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'PO Number'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'EBELP'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'PO Item'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'LIFNR'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Vendor Code'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'NAME1'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '25'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Vendor Name'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'LWERT'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Value'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'FRGSX'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '2'.
+    wa_fcat-just = 'C'.
+    wa_fcat-reptext_ddic = 'Rel Strategy'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+
+    wa_fcat-fieldname = 'BLDAT'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-reptext_ddic = 'Invoice Date'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'EKGRP'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-reptext_ddic = 'Purchasing Group'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'EKNAM'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-reptext_ddic = 'Purchasing Group Desc'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    wa_fcat-fieldname = 'BUDAT'.
+    wa_fcat-tabname  = 'IT_FINAL'.
+    wa_fcat-outputlen  = '10'.
+    wa_fcat-reptext_ddic = 'Posting Date'.
+    APPEND wa_fcat TO it_fcat.
+    CLEAR wa_fcat.
+
+    it_lout-colwidth_optimize = 'X'.
+
+
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+      EXPORTING
+        i_callback_program      = sy-repid
+*       i_callback_top_of_page  = 'TOP'
+        is_layout               = it_lout
+        it_fieldcat             = it_fcat
+        i_callback_user_command = 'USER_COMMAND'
+        i_save                  = 'A' "g_save
+*       IT_SORT                 = IT_SORT
+      TABLES
+        t_outtab                = it_final
+      EXCEPTIONS
+        program_error           = 1
+        OTHERS                  = 2.
+
+    IF sy-subrc <> 0.
+    ENDIF.
+  ELSE.
+    MESSAGE 'No Data Found' TYPE 'S' DISPLAY LIKE 'E'.
+    LEAVE LIST-PROCESSING.
+  ENDIF.
+
+FORM user_command USING p_comm LIKE sy-ucomm
+                        rs_selfield TYPE slis_selfield.
+
+  DATA ref1 TYPE REF TO cl_gui_alv_grid.
+  DATA: lv_seconds TYPE sytabix.
+  CLEAR:lv_seconds.
+
+  DATA: lv_sec TYPE i ."VALUE 3685.
+  DATA: lv_hh(2) TYPE n.
+  DATA: lv_mm(2) TYPE n.
+  DATA: lv_ss(2) TYPE n.
+  DATA: lv_time(10),
+        lv_val      TYPE char25,
+        lv_tm       TYPE tvro-fahztd.
+
+  BREAK deepak.
+  CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+    IMPORTING
+      e_grid = ref1.
+  CALL METHOD ref1->check_changed_data.
+
+
+
+  CASE p_comm.
+
+    WHEN '&DATA_SAVE'.
+      LOOP AT it_final INTO wa_final WHERE chk = 'X'.
+
+        CALL FUNCTION 'BAPI_ENTRYSHEET_RELEASE'
+          EXPORTING
+            entrysheet = wa_final-lblni
+            rel_code   = s_frgco-low
+          TABLES
+            return     = it_return.
+        IF it_return IS NOT INITIAL.
+          LOOP AT it_return INTO wa_return WHERE type = 'E'.
+            MESSAGE  wa_return-message TYPE 'E'.
+          ENDLOOP.
+        ELSE.
+          CALL FUNCTION 'BAPI_TRANSACTION_COMMIT'
+            EXPORTING
+              wait = 'X'.
+          WAIT UP TO 1 SECONDS.
+        ENDIF.
+      ENDLOOP.
+      LEAVE TO SCREEN 0.
+
+  ENDCASE.
+
+ENDFORM.

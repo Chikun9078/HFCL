@@ -1,0 +1,1116 @@
+*&---------------------------------------------------------------------*
+*& Report ZFI_PAYMENT_ADVICE_TO_VENDOR
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zfi_payment_advice_to_vendor.
+TABLES: bseg,bkpf.
+
+TYPES:BEGIN OF sty_validation,
+        belnr TYPE bkpf-belnr,
+        bukrs TYPE bkpf-bukrs,
+        gjahr TYPE bkpf-gjahr,
+        blart TYPE bkpf-blart,
+        budat TYPE bkpf-budat,
+      END OF sty_validation.
+
+TYPES:BEGIN OF sty_bsak,
+        bukrs TYPE bukrs,
+        augbl TYPE augbl,
+        gjahr TYPE gjahr,
+        belnr TYPE belnr_d,
+        xblnr TYPE xblnr,
+        budat TYPE budat,
+        blart TYPE blart,
+        shkzg TYPE shkzg,
+        dmbtr TYPE dmbtr,
+        qbshb TYPE qbshb,
+        waers TYPE waers,
+        umskz TYPE umskz,
+      END OF sty_bsak.
+
+TYPES:BEGIN OF sty_bset,
+        bukrs TYPE bukrs,
+        belnr TYPE belnr_d,
+        gjahr TYPE gjahr,
+        buzei TYPE buzei,
+        hwbas TYPE hwbas,
+        hwste TYPE hwste,
+        ktosl TYPE ktosl,
+        shkzg TYPE shkzg,
+      END OF sty_bset.
+
+DATA: lv_flag             TYPE char1,
+      lv_dmbtr_s          TYPE dmbtr,
+      lv_dmbtr_h          TYPE dmbtr,
+      lv_gst              TYPE dmbtr,
+      LV_AMOUNT_PAYABLE_t TYPE dmbtr,
+      lv_gst_amount_t     TYPE dmbtr,
+      lv_tds_amount_t     TYPE dmbtr,
+      lv_payment_less_t   TYPE dmbtr,
+      lv_shkzg_note_t     TYPE dmbtr,
+      lv_net_paid_t       TYPE dmbtr.
+
+DATA: ls_final_header TYPE zfi_payment_advice_vendor_Hst,
+      ls_final_item   TYPE zfi_payment_advice_vendor_ist,
+      es_header       TYPE ZFI_PAYMENT_ADVICE_VENDOR_hST.
+
+DATA:lT_bkpf         TYPE TABLE OF sty_validation,
+     lt_header_final TYPE TABLE OF zfi_payment_advice_vendor_Hst,
+     lt_final_item   TYPE TABLE OF zfi_payment_advice_vendor_ist,
+     et_item         TYPE TABLE OF zfi_payment_advice_vendor_ist,
+     lt_bsak1        TYPE TABLE OF sty_bsak,
+     lt_bsak2        TYPE TABLE OF sty_bsak,
+     lt_bset         TYPE TABLE OF sty_bset.
+
+DATA : lv_fm_name            TYPE  rs38l_fnam,
+       ls_output_options     TYPE  ssfcompop,
+       ls_control_parameters TYPE  ssfctrlop,
+       ls_job_output_info    TYPE  ssfcrescl,
+       ls_FNL_output_info    TYPE  ssfcrescl.
+
+CONSTANTS: lc_formname TYPE tdsfname VALUE 'ZFISF_PAYMENT_ADVICE_VENDOR'.
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE TEXT-001.
+  PARAMETERS : p_belnr TYPE belnr_d OBLIGATORY,
+               p_bukrs TYPE bukrs OBLIGATORY,
+               p_gjahr TYPE gjahr OBLIGATORY.
+SELECTION-SCREEN END OF BLOCK b1.
+SELECTION-SCREEN BEGIN OF BLOCK b2 WITH FRAME TITLE TEXT-002.
+  PARAMETERS:r_print RADIOBUTTON GROUP r1,
+             r_mail  RADIOBUTTON GROUP r1.
+SELECTION-SCREEN END OF BLOCK b2.
+
+START-OF-SELECTION.
+  IF lv_flag NE 'X'.
+    DATA(lv_belnr) = p_belnr.
+    DATA(lv_bukrs) = p_bukrs.
+    DATA(lv_gjahr) = p_gjahr.
+  ELSEIF lv_flag EQ 'X' .
+
+  ENDIF.
+
+  "--> Check Valid Document or not.
+  SELECT  belnr,bukrs,gjahr,blart,budat
+  FROM bkpf INTO TABLE @lT_bkpf
+  WHERE belnr EQ @LV_belnr AND bukrs EQ @LV_bukrs AND gjahr EQ @LV_gjahr AND blart EQ 'KZ'.
+
+  IF lT_bkpf IS NOT INITIAL.
+    PERFORM get_header_Final_details.
+    PERFORM get_item_final_details.
+    PERFORM Process_data.
+    PERFORM call_sf_mail.
+  ELSE.
+    MESSAGE 'No Record Found.' TYPE 'E' DISPLAY LIKE 'I'.
+  ENDIF.
+*&---------------------------------------------------------------------*
+*& Form get_header_details
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_header_final_details .
+  IF lt_bkpf IS NOT INITIAL.
+    "--> Fetch Vendor Details.
+    SELECT bseg~bukrs,
+           bseg~belnr,
+           bseg~gjahr,
+           bseg~koart,
+           bseg~lifnr,
+           lfa1~adrnr,
+           adrc~name1,
+           adrc~street,
+           adrc~str_suppl1,
+           adrc~str_suppl2,
+           adrc~str_suppl3,
+           adrc~post_code1,
+           adrc~city1,
+           adrc~region,
+           adrc~country,
+           t005u~bezei,
+           lfbk~bankl,
+           lfbk~bankn
+    FROM bseg
+    INNER JOIN lfa1 ON lfa1~lifnr EQ bseg~lifnr
+    LEFT OUTER JOIN adrc ON adrc~addrnumber EQ lfa1~adrnr
+    LEFT OUTER JOIN t005u ON t005u~bland EQ adrc~region AND
+                             t005u~land1 EQ adrc~country AND
+                             t005u~spras EQ @sy-langu
+    LEFT OUTER JOIN lfbk ON lfbk~lifnr EQ bseg~lifnr AND "#EC CI_BUFFJOIN
+                            lfbk~banks EQ adrc~country
+    INTO TABLE @DATA(lt_vendor)
+    FOR ALL ENTRIES IN @lt_bkpf
+    WHERE bseg~belnr EQ @lt_bkpf-belnr AND
+          bseg~bukrs EQ @lt_bkpf-bukrs AND
+          bseg~gjahr EQ @lt_bkpf-gjahr AND
+          bseg~koart EQ 'K'.
+    SORT lt_vendor BY belnr.
+
+    "--> Get Payment Amount Detail.
+    ""--> from BSIK table.
+    SELECT bukrs,gjahr,augbl,belnr,buzei,blart,shkzg,dmbtr,waers,rebzg
+    FROM bsik_view INTO TABLE @DATA(lt_bsik)
+    FOR ALL ENTRIES IN @lt_bkpf
+    WHERE bukrs EQ @lt_bkpf-bukrs AND
+          belnr EQ @lt_bkpf-belnr AND
+          gjahr EQ @lt_bkpf-gjahr AND
+          blart EQ 'KZ'.
+    IF sy-subrc EQ 0.
+      SORT lt_bsik BY belnr shkzg.
+    ENDIF.
+
+    IF lt_bsik IS INITIAL.
+      ""--> From BSAK Table pass BKPF-Belnr in AUGBL.
+      SELECT bukrs,gjahr,augbl,belnr,buzei,blart,shkzg,dmbtr,waers,rebzg
+      FROM bsak_view INTO TABLE @DATA(lt_bsak_AUGBL)
+      FOR ALL ENTRIES IN @lt_bkpf
+      WHERE bukrs EQ @lt_bkpf-bukrs AND
+            augbl EQ @lt_bkpf-belnr AND
+            gjahr EQ @lt_bkpf-gjahr AND
+            blart EQ 'KZ'.
+      IF sy-subrc EQ 0.
+        SORT lt_bsak_AUGBL BY augbl shkzg.
+      ENDIF.
+
+      IF lt_bsak_augbl IS INITIAL.
+        ""--> From BSAK Table pass BKPF-Belnr in BSAK-BELNR.
+        SELECT bukrs,gjahr,augbl,belnr,blart,buzei,shkzg,dmbtr,waers,rebzg
+        FROM bsak_view INTO TABLE @DATA(lt_bsak_BELNR)
+        FOR ALL ENTRIES IN @lt_bkpf
+        WHERE bukrs EQ @lt_bkpf-bukrs AND
+              belnr EQ @lt_bkpf-belnr AND
+              gjahr EQ @lt_bkpf-gjahr AND
+              blart EQ 'KZ'.
+        IF sy-subrc EQ 0.
+          SORT lt_bsak_belnr BY belnr shkzg.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  "--> Prepare The final header Detail Result.
+  LOOP AT lt_bkpf INTO DATA(ls_bkpf).
+    ls_final_header-belnr = ls_bkpf-belnr.
+    ls_final_header-bukrs = ls_bkpf-bukrs.
+    ls_final_header-gjahr = ls_bkpf-gjahr.
+    ls_final_header-budat = ls_bkpf-budat.
+    ls_final_header-form_titel = 'Payment Advice'.
+
+    READ TABLE lt_vendor INTO DATA(ls_vendor) WITH KEY belnr = ls_bkpf-belnr.
+    IF sy-subrc EQ 0.
+      ls_final_header-lifnr      = ls_vendor-lifnr.
+      ls_final_header-lifnr_name = ls_vendor-name1.
+      ls_final_header-street     = ls_vendor-street.
+      ls_final_header-strspp1    = ls_vendor-str_suppl1.
+      ls_final_header-strspp2    = ls_vendor-str_suppl2.
+      ls_final_header-strspp3    = ls_vendor-str_suppl3.
+      ls_final_header-region     = ls_vendor-region.
+      ls_final_header-regio_desc = ls_vendor-bezei.
+      ls_final_header-post_code  = ls_vendor-post_code1.
+      ls_final_header-country    = ls_vendor-country.
+      ls_final_header-city       = ls_vendor-city1.
+      ls_final_header-lifnr_address = |{ ls_vendor-street },{ ls_vendor-str_suppl1 },{ ls_vendor-str_suppl2 },{ ls_vendor-str_suppl3 },{ ls_vendor-city1 },{ ls_vendor-bezei },{ ls_vendor-post_code1 }|.
+      ls_final_header-bank_key      = ls_vendor-bankl.
+      ls_final_header-bank_acct     = ls_vendor-bankn.
+    ENDIF.
+
+*   "--> get payment amount details of each doument.
+    READ TABLE lt_bsik INTO DATA(ls_bsik) WITH KEY belnr = ls_bkpf-belnr.
+    IF sy-subrc EQ 0.
+      DATA(lv_index) = sy-tabix.
+      ls_final_header-currency_key = ls_bsik-waers.
+      ls_final_header-rebzg        = ls_bsik-rebzg.
+      CLEAR:ls_bsik.
+
+      LOOP AT lt_bsik INTO  ls_bsik FROM lv_index.
+        IF ls_bsik-belnr EQ ls_bkpf-belnr.
+          IF ls_bsik-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + ls_bsik-dmbtr.
+          ELSEIF ls_bsik-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + ls_bsik-dmbtr.
+          ENDIF.
+        ELSE.
+          EXIT.
+        ENDIF.
+        CLEAR:ls_bsik.
+      ENDLOOP.
+    ENDIF.
+
+    CLEAR:lv_index.
+    READ TABLE lt_bsak_augbl INTO DATA(ls_bsak) WITH KEY augbl = ls_bkpf-belnr.
+    IF sy-subrc EQ 0.
+      lv_index = sy-tabix.
+      ls_final_header-currency_key = ls_bsak-waers.
+      ls_final_header-rebzg        = ls_bsik-rebzg.
+      CLEAR: ls_bsak.
+      LOOP AT lt_bsak_augbl INTO ls_bsak FROM lv_index.
+        IF ls_bsak-augbl EQ ls_bkpf-belnr.
+          IF ls_bsak-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + ls_bsak-dmbtr.
+          ELSEIF ls_bsak-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + ls_bsak-dmbtr.
+          ENDIF.
+        ELSE.
+          EXIT.
+        ENDIF.
+        CLEAR:ls_bsak.
+      ENDLOOP.
+    ENDIF.
+
+    CLEAR:lv_index,ls_bsak.
+    READ TABLE lt_bsak_belnr INTO ls_bsak WITH KEY belnr = ls_bkpf-belnr.
+    IF sy-subrc EQ 0.
+      lv_index = sy-tabix.
+      ls_final_header-currency_key = ls_bsak-waers.
+      ls_final_header-rebzg        = ls_bsik-rebzg.
+      CLEAR: ls_bsak.
+      LOOP AT lt_bsak_belnr INTO ls_bsak FROM lv_index.
+        IF ls_bsak-belnr EQ ls_bkpf-belnr.
+          IF ls_bsak-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + ls_bsak-dmbtr.
+          ELSEIF ls_bsak-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + ls_bsak-dmbtr.
+          ENDIF.
+        ELSE.
+          EXIT.
+        ENDIF.
+        CLEAR:ls_bsak.
+      ENDLOOP.
+    ENDIF.
+
+    ls_final_header-payment_amount       = ( lv_dmbtr_S - lv_dmbtr_h ).
+    "--> Company Code Address.
+    IF ls_bkpf-bukrs EQ '1100'.
+      ls_final_header-bukrs_address = |8,Commercial Complex,Masjid Moth,Greater Kailash II,New Delhi,110048|.
+      ls_final_header-bukrs_name    = 'Himachal Futuristic Communications Ltd (HFCL)'.
+    ELSEIF ls_bkpf-bukrs EQ '1200'.
+      ls_final_header-bukrs_address = |G.S.T. Road Guindy,Chennai,600032|.
+      ls_final_header-bukrs_name    = 'Hindustan Teleprinters Limited (HTL)'.
+    ENDIF.
+
+    APPEND ls_final_header TO lt_header_final.
+    CLEAR:ls_final_header,lv_dmbtr_s,lv_dmbtr_h.
+  ENDLOOP.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_item_details
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_item_final_details .
+
+  IF lt_header_final IS NOT INITIAL.
+    SELECT  bukrs,augbl,gjahr,belnr,xblnr,budat,blart
+    FROM bsak_view INTO CORRESPONDING FIELDS OF TABLE @lt_bsak1
+    FOR ALL ENTRIES IN @lt_header_final
+    WHERE augbl =  @lt_header_final-belnr AND
+          belnr NE @lt_header_final-belnr AND
+          bukrs =  @lt_header_final-bukrs .
+*      AND gjahr =  @lt_header_final-gjahr.
+  ENDIF.
+  SORT lt_bsak1 BY augbl belnr DESCENDING.
+
+  IF lt_bsak1 IS NOT INITIAL.
+    SELECT  bukrs,augbl,gjahr,belnr,xblnr,budat,blart,shkzg,dmbtr,qbshb,waers,umskz
+    FROM bsik_view INTO TABLE @lt_bsak2
+    FOR ALL ENTRIES IN @lt_bsak1
+    WHERE belnr = @lt_bsak1-belnr AND
+          bukrs = @lt_bsak1-bukrs AND
+          gjahr = @lt_bsak1-gjahr.
+
+    IF lt_bsak2 IS INITIAL.
+      SELECT  bukrs,augbl,gjahr,belnr,xblnr,budat,blart,shkzg,dmbtr,qbshb,waers,umskz
+      FROM bsak_view INTO TABLE @lt_bsak2
+      FOR ALL ENTRIES IN @lt_bsak1
+      WHERE belnr = @lt_bsak1-belnr AND
+            bukrs = @lt_bsak1-bukrs AND
+            gjahr = @lt_bsak1-gjahr.
+    ENDIF.
+
+    SORT lt_bsak2 BY belnr DESCENDING.
+
+    "--> Get Tax details.
+    SELECT bukrs,belnr,gjahr,buzei,hwbas,hwste,ktosl,shkzg
+    FROM bset INTO TABLE @lt_bset
+    FOR ALL ENTRIES IN @lt_bsak1
+    WHERE belnr EQ @lt_bsak1-belnr AND
+          gjahr EQ @lt_bsak1-gjahr AND
+          bukrs EQ @lt_bsak1-bukrs.
+
+    SORT lt_bset BY belnr DESCENDING.
+  ENDIF.
+
+  "--> Prepare Final Item Result.
+  LOOP AT lt_header_final INTO DATA(ls_header).
+    "--> Check for packaging Document case.
+    IF ls_header-rebzg IS INITIAL.
+      READ TABLE lt_bsak1 INTO DATA(temp_bsak1) WITH KEY augbl = ls_header-belnr.
+      IF sy-subrc EQ 0.
+        DATA(lv_index2) = sy-tabix.
+      ELSE.
+        EXIT.
+      ENDIF.
+      LOOP AT lt_bsak1 INTO DATA(ls_bsak1) FROM lv_index2.
+        IF ls_bsak1-augbl EQ ls_header-belnr .
+          ls_final_item-belnr = ls_bsak1-augbl.
+          ls_final_item-bukrs = ls_bsak1-bukrs.
+          ls_final_item-gjahr = ls_bsak1-gjahr.
+          ls_final_item-xblnr = ls_bsak1-xblnr.
+          ls_final_item-budat = ls_bsak1-budat.
+          ls_final_item-belnr_inv = ls_bsak1-belnr.
+
+          IF ls_bsak1-blart EQ 'KR' OR ls_bsak1-blart EQ 'KG' OR ls_bsak1-blart EQ 'RE'.
+
+            "-->amount payable detail and Gst.
+            READ TABLE lt_bset INTO DATA(ls_bset) WITH KEY belnr = ls_bsak1-belnr.
+            IF sy-subrc EQ 0.
+              ls_final_item-amount_payable = ls_bset-hwbas.
+              DATA(lv_index3) = sy-tabix.
+            ENDIF.
+            CLEAR:lv_dmbtr_s,lv_dmbtr_h.
+            LOOP AT lt_bset INTO ls_bset FROM lv_index3 WHERE hwste GT 0.
+              IF ls_bset-belnr EQ ls_bsak1-belnr.
+                IF ls_bset-shkzg EQ 'S'.
+                  lv_dmbtr_s = lv_dmbtr_s + LS_bset-hwste.
+                ELSEIF LS_bset-shkzg EQ 'H'.
+                  lv_dmbtr_H = lv_dmbtr_H + LS_bset-hwste.
+                ENDIF.
+                CLEAR:LS_bset.
+              ENDIF.
+            ENDLOOP.
+            ls_final_item-gst_amount = lv_dmbtr_s - lv_dmbtr_h.
+
+
+
+*          LOOP AT lt_bSet INTO ls_bset FROM lv_index3.
+*            IF ls_bset-belnr EQ ls_bsak1-belnr.
+*              lv_gst = lv_gst + ls_bset-hwste .
+*            ELSE.
+*              EXIT.
+*            ENDIF.
+*          ENDLOOP.
+*          ls_final_item-gst_amount = lv_gst.
+*          CLEAR:lv_gst.
+
+            "--> Get TDS Amount Detail.
+            READ TABLE lt_bsak2 INTO DATA(ls_bsak2) WITH KEY belnr = ls_bsak1-belnr.
+            IF sy-subrc EQ 0.
+              ls_final_item-tds_amount = ls_bsak2-qbshb.
+            ENDIF.
+
+            "--> Get Net Paid Amount.
+            ls_final_item-net_paid = ls_final_item-amount_payable + ls_final_item-gst_amount - ls_final_item-tds_amount - ls_final_item-payment_less - ls_final_item-shkzg_note.
+
+          ELSEIF ls_bsak1-blart EQ 'IU'.
+            "--> Get Payment Less Amount.
+            READ TABLE lt_bsak2 INTO ls_bsak2 WITH KEY belnr = ls_bsak1-belnr.
+            IF sy-subrc EQ 0.
+              DATA(lv_index5) = sy-tabix.
+            ENDIF.
+            CLEAR: ls_bsak2,lv_dmbtr_h,lv_dmbtr_s.
+            LOOP AT lt_bsak2 INTO ls_bsak2 FROM lv_index5.
+              IF ls_bsak2-belnr EQ ls_bsak1-belnr.
+                IF ls_bsak2-shkzg EQ 'S'.
+                  lv_dmbtr_s = lv_dmbtr_s + ls_bsak2-dmbtr.
+                ELSEIF ls_bsak2-shkzg EQ 'H'.
+                  lv_dmbtr_h = lv_dmbtr_H + ls_bsak2-dmbtr.
+                ENDIF.
+              ELSE.
+                EXIT.
+              ENDIF.
+              CLEAR:ls_bsak2.
+            ENDLOOP.
+            ls_final_item-amount_payable = lv_dmbtr_s - lv_dmbtr_h.
+
+            "--> Get Net Paid Amount.
+            ls_final_item-net_paid = ls_final_item-amount_payable + ls_final_item-gst_amount - ls_final_item-tds_amount - ls_final_item-payment_less - ls_final_item-shkzg_note.
+
+          ELSE.
+            "--> Get Payable Amount.
+            CLEAR:lv_index5.
+            READ TABLE lt_bsak2 INTO ls_bsak2 WITH KEY belnr = ls_bsak1-belnr.
+            IF sy-subrc EQ 0.
+              lv_index5 = sy-tabix.
+            ENDIF.
+            CLEAR: ls_bsak2,lv_dmbtr_h,lv_dmbtr_s.
+            LOOP AT lt_bsak2 INTO ls_bsak2 FROM lv_index5.
+              IF ls_bsak2-belnr EQ ls_bsak1-belnr.
+                IF ls_bsak2-shkzg EQ 'S'.
+                  lv_dmbtr_s = lv_dmbtr_s + ls_bsak2-dmbtr.
+                ELSEIF ls_bsak2-shkzg EQ 'H'.
+                  lv_dmbtr_h = lv_dmbtr_H + ls_bsak2-dmbtr.
+                ENDIF.
+              ELSE.
+                EXIT.
+              ENDIF.
+              CLEAR:ls_bsak2.
+            ENDLOOP.
+            ls_final_item-payment_less = lv_dmbtr_s - lv_dmbtr_h.
+
+            "--> Get Net Paid Amount.
+            ls_final_item-net_paid = ls_final_item-amount_payable + ls_final_item-gst_amount - ls_final_item-tds_amount - ls_final_item-payment_less - ls_final_item-shkzg_note.
+          ENDIF.
+          APPEND ls_final_item TO lt_final_item.
+          CLEAR: ls_final_item.
+        ELSE.
+          EXIT.
+        ENDIF.
+      ENDLOOP.
+      CLEAR: ls_header,lv_index2.
+    ELSE.
+      "--> IF flow of logic comes to this Else bLock then, this payment is related to packahing and details will get from only BSIK_VIEW.
+      SELECT bukrs,belnr,gjahr,xblnr,budat,blart,dmbtr,rebzg
+      FROM bsik_view INTO TABLE @DATA(lt_packaging_bsik1)
+      WHERE belnr EQ @ls_header-rebzg AND bukrs EQ @ls_header-bukrs.
+
+      SELECT bukrs,belnr,gjahr,xblnr,budat,blart,dmbtr,rebzg
+      FROM bsik_view INTO TABLE @DATA(lt_packaging_bsik2)
+      WHERE rebzg EQ @ls_header-rebzg AND bukrs EQ @ls_header-bukrs.
+
+      IF lt_packaging_bsik1 IS NOT INITIAL.
+        "--> Get Gst Details.
+        SELECT bukrs,belnr,gjahr,buzei,hwbas,hwste,ktosl,shkzg
+        FROM bset INTO TABLE @DATA(lt_bset_p1)
+        FOR ALL ENTRIES IN @lt_packaging_bsik1
+        WHERE belnr EQ @lt_packaging_bsik1-belnr AND bukrs EQ @lt_packaging_bsik1-bukrs AND gjahr EQ @lt_packaging_bsik1-gjahr.
+
+        "--> GET TDS/Withholding Tax Details.
+        SELECT bukrs,belnr,gjahr,wt_qbshh
+        FROM with_item INTO TABLE @DATA(lt_with_item_p1)
+        FOR ALL ENTRIES IN @lt_packaging_bsik1
+        WHERE belnr EQ @lt_packaging_bsik1-belnr AND bukrs EQ @lt_packaging_bsik1-bukrs AND gjahr EQ @lt_packaging_bsik1-gjahr.
+      ENDIF.
+
+      IF lt_packaging_bsik2 IS NOT INITIAL.
+        "--> Get Gst Details.
+        SELECT bukrs,belnr,gjahr,buzei,hwbas,hwste,ktosl,shkzg
+        FROM bset INTO TABLE @DATA(lt_bset_p2)
+        FOR ALL ENTRIES IN @lt_packaging_bsik2
+        WHERE belnr EQ @lt_packaging_bsik2-belnr AND bukrs EQ @lt_packaging_bsik2-bukrs AND gjahr EQ @lt_packaging_bsik2-gjahr.
+
+        "--> GET TDS/Withholding Tax Details.
+        SELECT bukrs,belnr,gjahr,wt_qbshh
+        FROM with_item INTO TABLE @DATA(lt_with_item_p2)
+        FOR ALL ENTRIES IN @lt_packaging_bsik2
+        WHERE belnr EQ @lt_packaging_bsik2-belnr AND bukrs EQ @lt_packaging_bsik2-bukrs AND gjahr EQ @lt_packaging_bsik2-gjahr.
+      ENDIF.
+
+      "--. Prepare item result.
+      LOOP AT lt_packaging_bsik1 INTO DATA(ls_packaging_bsik1).
+        ls_final_item-belnr = ls_header-belnr.
+        ls_final_item-bukrs = ls_header-bukrs.
+        ls_final_item-gjahr = ls_header-gjahr.
+        ls_final_item-xblnr = ls_packaging_bsik1-xblnr.
+        ls_final_item-budat = ls_packaging_bsik1-budat.
+        ls_final_item-belnr_inv = ls_packaging_bsik1-belnr.
+
+
+        "-->TDS AMOUNT.
+        READ TABLE lt_with_item_p1 INTO DATA(wa_with_item) WITH KEY belnr = ls_packaging_bsik1-belnr bukrs = ls_packaging_bsik1-bukrs gjahr = ls_packaging_bsik1-gjahr.
+        IF sy-subrc EQ 0.
+          ls_final_item-tds_amount = wa_with_item-wt_qbshh.
+        ENDIF.
+
+        "--> Gst Amount.
+        CLEAR:lv_dmbtr_s,lv_dmbtr_h.
+        READ TABLE lt_bset_p1 INTO DATA(wa_bset) WITH KEY belnr = ls_packaging_bsik1-belnr bukrs = ls_packaging_bsik1-bukrs gjahr = ls_packaging_bsik1-gjahr.
+        IF sy-subrc EQ 0.
+          ls_final_item-amount_payable = wa_bset-hwbas.
+          CLEAR: wa_bset.
+          LOOP AT lt_bset_p1 INTO wa_bset.
+            IF wa_bset-shkzg EQ 'S'.
+              lv_dmbtr_s = lv_dmbtr_s + wa_bset-hwste.
+            ELSEIF wa_bset-shkzg EQ 'H'.
+              lv_dmbtr_H = lv_dmbtr_H + wa_bset-hwste.
+            ENDIF.
+            CLEAR:wa_bset.
+          ENDLOOP.
+          ls_final_item-gst_amount = lv_dmbtr_s - lv_dmbtr_h.
+
+        ELSE.
+          ls_final_item-amount_payable = ls_packaging_bsik1-dmbtr.
+        ENDIF.
+
+        "--> Get Net Paid Amount.
+        ls_final_item-net_paid = ls_final_item-amount_payable + ls_final_item-gst_amount - ls_final_item-tds_amount - ls_final_item-payment_less - ls_final_item-shkzg_note.
+        APPEND ls_final_item TO lt_final_item.
+        CLEAR:ls_final_item,ls_packaging_bsik1.
+      ENDLOOP.
+
+      LOOP AT lt_packaging_bsik2 INTO DATA(ls_packaging_bsik2).
+        ls_final_item-belnr = ls_header-belnr.
+        ls_final_item-bukrs = ls_header-bukrs.
+        ls_final_item-gjahr = ls_header-gjahr.
+        ls_final_item-xblnr = ls_packaging_bsik2-xblnr.
+        ls_final_item-budat = ls_packaging_bsik2-budat.
+        ls_final_item-belnr_inv = ls_packaging_bsik2-belnr.
+
+
+        "-->TDS AMOUNT.
+        CLEAR:wa_with_item.
+        READ TABLE lt_with_item_p1 INTO wa_with_item WITH KEY belnr = ls_packaging_bsik2-belnr bukrs = ls_packaging_bsik2-bukrs gjahr = ls_packaging_bsik2-gjahr.
+        IF sy-subrc EQ 0.
+          ls_final_item-tds_amount = wa_with_item-wt_qbshh.
+        ENDIF.
+
+        "--> Gst Amount.
+        CLEAR:lv_dmbtr_s,lv_dmbtr_h,wa_bset.
+        READ TABLE lt_bset_p2 INTO wa_bset WITH KEY belnr = ls_packaging_bsik2-belnr bukrs = ls_packaging_bsik2-bukrs gjahr = ls_packaging_bsik2-gjahr.
+        IF sy-subrc EQ 0.
+          ls_final_item-payment_less = wa_bset-hwbas.
+          CLEAR:wa_bset.
+          LOOP AT lt_bset_p2 INTO wa_bset.
+            IF wa_bset-shkzg EQ 'S'.
+              lv_dmbtr_s = lv_dmbtr_s + wa_bset-hwste.
+            ELSEIF wa_bset-shkzg EQ 'H'.
+              lv_dmbtr_H = lv_dmbtr_H + wa_bset-hwste.
+            ENDIF.
+            CLEAR:wa_bset.
+          ENDLOOP.
+          ls_final_item-gst_amount = lv_dmbtr_s - lv_dmbtr_h.
+        ELSE.
+          ls_final_item-payment_less = ls_packaging_bsik2-dmbtr.
+        ENDIF.
+
+        "--> Get Net Paid Amount.
+        ls_final_item-net_paid = ls_final_item-amount_payable + ls_final_item-gst_amount - ls_final_item-tds_amount - ls_final_item-payment_less - ls_final_item-shkzg_note.
+        APPEND ls_final_item TO lt_final_item.
+        CLEAR:ls_final_item,ls_packaging_bsik1.
+      ENDLOOP.
+    ENDIF.
+  ENDLOOP.
+
+  "--> If lt_final_item is initial.
+  IF lt_final_item IS INITIAL.
+    IF lt_header_final IS NOT INITIAL.
+      "-->Get details from Bsik.
+      SELECT bukrs,augbl,gjahr,belnr,buzei,xblnr,budat,blart,shkzg,dmbtr,qbshb,waers,rebzg
+      FROM bsik_view INTO TABLE @DATA(lt_bsik2)
+      FOR ALL ENTRIES IN @lt_header_final
+      WHERE belnr EQ @lt_header_final-belnr AND bukrs EQ @lt_header_final-bukrs AND gjahr EQ @lt_header_final-gjahr.
+
+      "-->If Detail not avialable in BSIK then check in BSAK.FIRST PASS IN BSAK-AUGBL.IF RECORD NOT FOUND THEN CHECK again WITH BSAK,PASS in field BSAK-BELNR.
+      IF lt_bsik2 IS INITIAL.
+        SELECT bukrs,augbl,gjahr,belnr,buzei,xblnr,budat,blart,shkzg,dmbtr,qbshb,waers,rebzg
+        FROM bsak_view INTO TABLE @DATA(lt_bsak_augbl2)
+        FOR ALL ENTRIES IN @lt_header_final
+        WHERE augbl EQ @lt_header_final-belnr AND bukrs EQ @lt_header_final-bukrs AND gjahr EQ @lt_header_final-gjahr.
+
+        IF lt_bsak_augbl2 IS INITIAL.
+          SELECT bukrs,augbl,gjahr,belnr,buzei,xblnr,budat,blart,shkzg,dmbtr,qbshb,waers,rebzg
+          FROM bsak_view INTO TABLE @DATA(lt_bsak_belnr2)
+          FOR ALL ENTRIES IN @lt_header_final
+          WHERE belnr EQ @lt_header_final-belnr AND bukrs EQ @lt_header_final-bukrs AND gjahr EQ @lt_header_final-gjahr.
+        ENDIF.
+      ENDIF.
+
+
+      "--> Get Gst Details.
+      SELECT bukrs,belnr,gjahr,buzei,hwbas,hwste,ktosl,shkzg
+      FROM bset INTO TABLE @lt_bset
+      FOR ALL ENTRIES IN @lt_header_final
+      WHERE belnr EQ @lt_header_final-belnr AND bukrs EQ @lt_header_final-bukrs AND gjahr EQ @lt_header_final-gjahr.
+
+      "--> GET TDS/Withholding Tax Details.
+      SELECT bukrs,belnr,gjahr,wt_qbshh
+      FROM with_item INTO TABLE @DATA(lt_with_item)
+      FOR ALL ENTRIES IN @lt_header_final
+      WHERE belnr EQ @lt_header_final-belnr AND bukrs EQ @lt_header_final-bukrs AND gjahr EQ @lt_header_final-gjahr.
+    ENDIF.
+
+    CLEAR:ls_header,ls_final_item.
+    LOOP AT lt_header_final INTO ls_header.
+      "--> Check in Bsik.
+      READ TABLE lt_bsik2 INTO DATA(ls_bsik) WITH KEY belnr = ls_header-belnr.
+      IF sy-subrc EQ 0.
+        ls_final_item-belnr = ls_bsik-belnr.
+        ls_final_item-bukrs = ls_bsik-bukrs.
+        ls_final_item-gjahr = ls_bsik-gjahr.
+        ls_final_item-xblnr = ls_bsik-xblnr.
+        ls_final_item-budat = ls_bsik-budat.
+        IF ls_bsik-rebzg IS INITIAL.
+          ls_final_item-belnr_inv = ls_bsik-belnr.
+        ELSE.
+          ls_final_item-belnr_inv = ls_bsik-rebzg.
+        ENDIF.
+
+        "--> Amount Payable.
+        CLEAR:lv_dmbtr_s,lv_dmbtr_h.
+        LOOP AT lt_bsik2 INTO  DATA(wa_bsik).
+          IF wa_bsik-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + wa_bsik-dmbtr.
+          ELSEIF wa_bsik-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + wa_bsik-dmbtr.
+          ENDIF.
+          CLEAR:wa_bsik.
+        ENDLOOP.
+        ls_final_item-amount_payable = lv_dmbtr_s - lv_dmbtr_h.
+
+        "-->TDS AMOUNT.
+        CLEAR:wa_with_item.
+        READ TABLE lt_with_item INTO wa_with_item WITH KEY belnr = ls_header-belnr bukrs = ls_header-bukrs gjahr = ls_header-gjahr.
+        IF sy-subrc EQ 0.
+          ls_final_item-tds_amount = wa_with_item-wt_qbshh.
+        ENDIF.
+
+        "--> Gst Amount.
+        CLEAR:lv_dmbtr_s,lv_dmbtr_h,wa_bset.
+        LOOP AT lt_bset INTO wa_bset.
+          IF wa_bset-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + wa_bset-hwste.
+          ELSEIF wa_bset-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + wa_bset-hwste.
+          ENDIF.
+          CLEAR:wa_bset.
+        ENDLOOP.
+        ls_final_item-gst_amount = lv_dmbtr_s - lv_dmbtr_h.
+
+        "--> Get Net Paid Amount.
+        ls_final_item-net_paid = ls_final_item-amount_payable + ls_final_item-gst_amount - ls_final_item-tds_amount - ls_final_item-payment_less - ls_final_item-shkzg_note.
+        APPEND ls_final_item TO lt_final_item.
+      ENDIF.
+
+      "--> Check in Bsak for field Augbl.
+      READ TABLE lt_bsak_augbl2 INTO DATA(ls_bsak) WITH KEY augbl = ls_header-belnr.
+      IF sy-subrc EQ 0.
+        ls_final_item-belnr = ls_bsak-augbl.
+        ls_final_item-bukrs = ls_bsak-bukrs.
+        ls_final_item-gjahr = ls_bsak-gjahr.
+        ls_final_item-xblnr = ls_bsak-xblnr.
+        ls_final_item-budat = ls_bsak-budat.
+        IF ls_bsak-rebzg IS INITIAL.
+          ls_final_item-belnr_inv = ls_bsak-belnr.
+        ELSE.
+          ls_final_item-belnr_inv = ls_bsak-rebzg.
+        ENDIF.
+
+        "--> Amount Payable.
+        CLEAR:lv_dmbtr_s,lv_dmbtr_h.
+        LOOP AT lt_bsak_augbl2 INTO  DATA(wa_bsak).
+          IF wa_bsak-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + wa_bsak-dmbtr.
+          ELSEIF wa_bsak-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + wa_bsak-dmbtr.
+          ENDIF.
+          CLEAR:wa_bsak.
+        ENDLOOP.
+        ls_final_item-amount_payable = lv_dmbtr_s - lv_dmbtr_h.
+
+        "-->TDS AMOUNT.
+        READ TABLE lt_with_item INTO wa_with_item WITH KEY belnr = ls_header-belnr bukrs = ls_header-bukrs gjahr = ls_header-gjahr.
+        IF sy-subrc EQ 0.
+          ls_final_item-tds_amount = wa_with_item-wt_qbshh.
+        ENDIF.
+
+        "--> Gst Amount.
+        CLEAR:lv_dmbtr_s,lv_dmbtr_h.
+        LOOP AT lt_bset INTO wa_bset.
+          IF wa_bset-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + wa_bset-hwste.
+          ELSEIF wa_bset-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + wa_bset-hwste.
+          ENDIF.
+          CLEAR:wa_bset.
+        ENDLOOP.
+        ls_final_item-gst_amount = lv_dmbtr_s - lv_dmbtr_h.
+
+        "--> Get Net Paid Amount.
+        ls_final_item-net_paid = ls_final_item-amount_payable + ls_final_item-gst_amount - ls_final_item-tds_amount - ls_final_item-payment_less - ls_final_item-shkzg_note.
+        APPEND ls_final_item TO lt_final_item.
+      ENDIF.
+
+      "--> Check in Bsak field Belnr.
+      READ TABLE lt_bsak_belnr2 INTO ls_bsak WITH KEY belnr = ls_header-belnr.
+      IF sy-subrc EQ 0.
+        ls_final_item-belnr = ls_bsak-belnr.
+        ls_final_item-bukrs = ls_bsak-bukrs.
+        ls_final_item-gjahr = ls_bsak-gjahr.
+        ls_final_item-xblnr = ls_bsak-xblnr.
+        ls_final_item-budat = ls_bsak-budat.
+        IF ls_bsak-rebzg IS INITIAL.
+          ls_final_item-belnr_inv = ls_bsak-belnr.
+        ELSE.
+          ls_final_item-belnr_inv = ls_bsak-rebzg.
+        ENDIF.
+
+        "--> Amount Payable.
+        CLEAR:lv_dmbtr_s,lv_dmbtr_h.
+        LOOP AT lt_bsak_belnr2 INTO wa_bsak.
+          IF wa_bsak-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + wa_bsak-dmbtr.
+          ELSEIF wa_bsak-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + wa_bsak-dmbtr.
+          ENDIF.
+          CLEAR:wa_bsak.
+        ENDLOOP.
+        ls_final_item-amount_payable = lv_dmbtr_s - lv_dmbtr_h.
+
+        "-->TDS AMOUNT.
+        READ TABLE lt_with_item INTO wa_with_item WITH KEY belnr = ls_header-belnr bukrs = ls_header-bukrs gjahr = ls_header-gjahr.
+        IF sy-subrc EQ 0.
+          ls_final_item-tds_amount = wa_with_item-wt_qbshh.
+        ENDIF.
+
+        "--> Gst Amount.
+        CLEAR:lv_dmbtr_s,lv_dmbtr_h.
+        LOOP AT lt_bset INTO wa_bset.
+          IF wa_bset-shkzg EQ 'S'.
+            lv_dmbtr_s = lv_dmbtr_s + wa_bset-hwste.
+          ELSEIF wa_bset-shkzg EQ 'H'.
+            lv_dmbtr_H = lv_dmbtr_H + wa_bset-hwste.
+          ENDIF.
+          CLEAR:wa_bset.
+        ENDLOOP.
+        ls_final_item-gst_amount = lv_dmbtr_s - lv_dmbtr_h.
+
+        "--> Get Net Paid Amount.
+        ls_final_item-net_paid = ls_final_item-amount_payable + ls_final_item-gst_amount - ls_final_item-tds_amount - ls_final_item-payment_less - ls_final_item-shkzg_note.
+        APPEND ls_final_item TO lt_final_item.
+      ENDIF.
+      CLEAR :ls_header,ls_final_item.
+    ENDLOOP.
+  ENDIF.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form process_sf_mail
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+
+  "--> Perform sorting of final result table.
+  SORT lt_header_final BY belnr.
+  SORT lt_final_item BY belnr belnr_inv DESCENDING.
+
+  LOOP AT lt_header_final INTO DATA(ls_header).
+    CLEAR:lv_amount_payable_t,lv_gst_amount_t,lv_tds_amount_t,
+          lv_payment_less_t,lv_shkzg_note_t,lv_net_paid_t.
+
+    READ TABLE lt_final_item INTO DATA(temp_item) WITH KEY belnr = ls_header-belnr.
+    IF sy-subrc EQ 0.
+      DATA(lv_index4) = sy-tabix.
+    ENDIF.
+    LOOP AT lt_final_item INTO DATA(ls_item) FROM lv_index4.
+      IF ls_item-belnr EQ ls_header-belnr.
+        lv_amount_payable_t = lv_amount_payable_t + ls_item-amount_payable.
+        lv_gst_amount_t     = lv_gst_amount_t     + ls_item-gst_amount.
+        lv_tds_amount_t     = lv_tds_amount_t     + ls_item-tds_amount.
+        lv_payment_less_t   = lv_payment_less_t   + ls_item-payment_less.
+        lv_shkzg_note_t     = lv_shkzg_note_t     + ls_item-shkzg_note.
+      ELSE.
+        EXIT.
+      ENDIF.
+      CLEAR: ls_item.
+    ENDLOOP.
+
+    ls_header-amount_payable_t = lv_amount_payable_t.
+    ls_header-gst_amount_t     = lv_gst_amount_t.
+    ls_header-tds_amount_t     = lv_tds_amount_t.
+    ls_header-payment_less_t   = lv_payment_less_t.
+    ls_header-shkzg_note_t     = lv_shkzg_note_t.
+    ls_header-net_paid_t       = ( lv_amount_payable_t + lv_gst_amount_t - lv_tds_amount_t - lv_payment_less_t - lv_shkzg_note_t ).
+
+    MODIFY lt_header_final FROM ls_header.
+    CLEAR:ls_header.
+  ENDLOOP.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form call_sf_mail
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM call_sf_mail .
+
+  "--> Pre-requisit details for Smartform Print.
+  CLEAR :lv_fm_name,ls_output_options,
+        ls_control_parameters,ls_fnL_output_info.
+
+*  ls_output_options-tdcopies = 5.
+  ls_output_options-tddest   = 'LOCL'.
+
+  ls_control_parameters-preview   = 'X'.
+  ls_control_parameters-getotf    = 'X'.
+  ls_control_parameters-no_dialog = 'X'.
+*  ls_control_parameters-no_open   = 'X'.
+*  ls_control_parameters-no_close  = 'X'.
+
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lc_formname
+*     VARIANT            = ' '
+*     DIRECT_CALL        = ' '
+    IMPORTING
+      fm_name            = lv_fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+  IF sy-subrc <> 0.
+    " Implement suitable error handling here
+  ENDIF.
+
+  SORT lt_header_final BY belnr.
+  SORT lt_final_item BY belnr belnr_inv DESCENDING.
+
+  LOOP AT lt_header_final INTO es_header.
+    READ TABLE lt_final_item INTO DATA(temp_item) WITH KEY belnr = es_header-belnr.
+    IF sy-subrc EQ 0.
+      DATA(lv_index) = sy-tabix.
+    ENDIF.
+    LOOP AT lt_final_item INTO DATA(ls_item) FROM lv_index.
+      IF ls_item-belnr EQ es_header-belnr.
+        APPEND ls_item TO et_item.
+      ELSE.
+        EXIT.
+      ENDIF.
+    ENDLOOP.
+
+    CALL FUNCTION lv_fm_name
+      EXPORTING
+        control_parameters = ls_control_parameters
+        output_options     = ls_output_options
+        user_settings      = ' '
+        is_header          = es_header
+        it_item            = et_item
+      IMPORTING
+        job_output_info    = ls_job_output_info
+      EXCEPTIONS
+        formatting_error   = 1
+        internal_error     = 2
+        send_error         = 3
+        user_canceled      = 4
+        OTHERS             = 5.
+    IF sy-subrc <> 0.
+      " Implement suitable error handling here
+    ENDIF.
+
+    APPEND LINES OF ls_job_output_info-otfdata TO ls_fnL_output_info-otfdata.
+    CLEAR: es_header,et_item,ls_job_output_info.
+  ENDLOOP.
+
+  IF r_print EQ 'X'.
+    "//--> Print Form.
+    CALL FUNCTION 'HR_IT_DISPLAY_WITH_PDF'
+      TABLES
+        otf_table = ls_fnL_output_info-otfdata.
+
+  ELSEIF r_mail EQ 'X' OR lv_flag EQ 'X'.
+    PERFORM send_notification.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form send_notification
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM send_notification .
+
+  DATA:lv_bin_file           TYPE xstring,
+       lt_lines_pdf          TYPE TABLE OF tline,
+       lt_binary_tab         TYPE solix_tab,
+       lv_subject            TYPE so_obj_des,
+       ls_text               TYPE soli,
+       lt_text               TYPE bcsy_text,
+       lv_attachment_subject TYPE  sood-objdes,
+       lv_result             TYPE os_boolean.
+
+  DATA:lo_request       TYPE REF TO cl_bcs,
+       lo_sender        TYPE REF TO cl_sapuser_bcs,
+       lo_sapuser       TYPE REF TO cl_sapuser_bcs,
+       lo_External_user TYPE REF TO cl_cam_address_bcs,
+       lo_document_bcs  TYPE REF TO cl_document_bcs.
+
+*"-->. Get the Vendor Email Address.
+  DATA(ls_header) = lt_header_final[ 1 ].
+  IF sy-subrc EQ 0.
+    SELECT SINGLE lifnr,adrnr
+    FROM lfa1 INTO @DATA(ls_lfa1)
+    WHERE lifnr = @ls_header-lifnr.
+    IF sy-subrc = 0.
+      SELECT SINGLE *
+      FROM     adr6 INTO @DATA(ls_adr6)
+      WHERE    addrnumber = @ls_lfa1-adrnr AND flg_nouse NE 'X' AND smtp_addr  NE ''..
+      IF sy-subrc EQ 0.
+
+*"--> 1.Convert Smartform's OTF formart to PDF Formart and Also gate the BIN_FILe.
+        CALL FUNCTION 'CONVERT_OTF'
+          EXPORTING
+            format                = 'PDF'
+          IMPORTING
+*           BIN_FILESIZE          =
+            bin_file              = lv_BIN_file
+          TABLES
+            otf                   = ls_fnL_output_info-otfdata
+            lines                 = lt_lines_pdf
+          EXCEPTIONS
+            err_max_linewidth     = 1
+            err_format            = 2
+            err_conv_not_possible = 3
+            err_bad_otf           = 4
+            OTHERS                = 5.
+        IF sy-subrc <> 0.
+          " Implement suitable error handling here
+        ENDIF.
+        .
+*"--> 2. Convert the BIN_FILE from XSTRING format to binary format.
+        CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+          EXPORTING
+            buffer     = lv_bin_file
+          TABLES
+            binary_tab = lt_binary_tab.
+
+*"--> 3. Create Send Request.
+        TRY.
+            CALL METHOD cl_bcs=>create_persistent
+              RECEIVING
+                result = lo_request.
+          CATCH cx_send_req_bcs.
+        ENDTRY.
+
+*"--> 4.Create SAP user and add as sender.
+        "Email FROM/SAP user as Sender...
+        TRY.
+            CALL METHOD cl_sapuser_bcs=>create
+              EXPORTING
+                i_user = sy-uname
+              RECEIVING
+                result = lo_sender.
+          CATCH cx_address_bcs.
+        ENDTRY.
+
+        "Add Recipient/Sender To send Mail...
+        TRY.
+            CALL METHOD lo_request->set_sender
+              EXPORTING
+                i_sender = lo_sender.
+          CATCH cx_send_req_bcs.
+        ENDTRY.
+
+*"--> 5.Create SAP user/external user and add as reciver/recipient .
+        "-->Email to/User as Reciver......
+        "..SAP USER AS Reciver/recipient.
+        TRY.
+            CALL METHOD cl_sapuser_bcs=>create
+              EXPORTING
+                i_user = sy-uname
+              RECEIVING
+                result = lo_sapuser.
+          CATCH cx_address_bcs.
+        ENDTRY.
+        "..add SAP user as Recipient.
+        TRY.
+            CALL METHOD lo_request->add_recipient
+              EXPORTING
+                i_recipient = lo_sapuser.
+          CATCH cx_send_req_bcs.
+        ENDTRY.
+
+        "..external USER AS Reciver/recipient...
+        TRY.
+            CALL METHOD cl_cam_address_bcs=>create_internet_address
+              EXPORTING
+                i_address_string = ls_adr6-smtp_addr
+*               i_address_name   =
+*               i_incl_sapuser   =
+              RECEIVING
+                result           = lo_external_user.
+          CATCH cx_address_bcs.
+        ENDTRY.
+        "..Added External user as recipient.
+        TRY.
+            CALL METHOD lo_request->add_recipient
+              EXPORTING
+                i_recipient = lo_external_user.
+*                i_express   = 'X'.
+          CATCH cx_send_req_bcs.
+        ENDTRY.
+
+*"--> 6. Add the Mail Document Details.
+        "..Prepare the mail subject.
+        lv_subject = |Payment Advice to Vendor : { ls_header-belnr }|.
+
+
+        "..Prepare the mail Body.
+        APPEND |Dear Sir/Madam,| TO lt_text.
+        APPEND |  | TO lt_text.
+        APPEND |Please find the attached payment advice for the payment document :{ ls_header-belnr }.| TO LT_text.
+        APPEND |(This is an auto generated mail. Please do not reply)| TO LT_text.
+        APPEND | | TO lt_text.
+        APPEND |With Regards| TO lt_text.
+        APPEND |{ ls_header-bukrs_name }| TO lt_text.
+
+        TRY.
+            CALL METHOD cl_document_bcs=>create_document
+              EXPORTING
+                i_type    = 'RAW'
+                i_subject = lv_subject
+                i_text    = lt_text
+              RECEIVING
+                result    = lo_document_bcs.
+          CATCH cx_document_bcs.
+        ENDTRY.
+
+*"--> 7. Add Attachment.
+        lv_attachment_subject = |Payment Document : { ls_header-belnr }|.
+        TRY.
+            CALL METHOD lo_document_bcs->add_attachment
+              EXPORTING
+                i_attachment_type    = 'PDF'
+                i_attachment_subject = lv_attachment_subject
+                i_att_content_hex    = lt_binary_tab.
+          CATCH cx_document_bcs.
+        ENDTRY.
+
+*--> 8. Set The Document to mail Request.
+        TRY.
+            CALL METHOD lo_request->set_document
+              EXPORTING
+                i_document = lo_document_bcs.
+          CATCH cx_send_req_bcs.
+        ENDTRY.
+
+**--> 9. Activate/deactivate Immediate Sending.
+*        TRY.
+*            CALL METHOD lo_request->set_send_immediately
+*              EXPORTING
+*                i_send_immediately = abap_true.
+*          CATCH cx_send_req_bcs.
+*        ENDTRY.
+
+*--> 10. Send Mail.
+        TRY.
+            CALL METHOD lo_request->send
+              RECEIVING
+                result = lv_result.
+          CATCH cx_send_req_bcs.
+        ENDTRY.
+
+*"--> 11. Commit work.
+        IF lv_result IS NOT INITIAL.
+          COMMIT WORK.
+          IF r_mail EQ abap_true.
+            DATA(lv_message) = |Mail send successfully to Mail iD: { ls_adr6-smtp_addr }. |.
+            MESSAGE lv_message TYPE 'S'.
+          ENDIF.
+        ELSE.
+          MESSAGE 'Failed to send mail.' TYPE 'S'.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDFORM.

@@ -1,0 +1,487 @@
+*&---------------------------------------------------------------------*
+*& Report ZSB_ARN_APPROVAL_SYSTEM
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zsb_arn_approval_system.
+
+TABLES : zsb_arn , zsb_arn_history, zsb_arn_aprvr_ls, usr21,adr6 , ekko, lfa1, ekkn.
+
+CONTROLS: tab TYPE TABLEVIEW USING SCREEN 0100.
+
+DATA : zarn_no  LIKE  zsb_arn-arn_no,
+       htab     TYPE  zsb_arn_history  OCCURS 0 WITH HEADER LINE,
+       zcount   TYPE numc1,
+       zrmk(50).
+
+DATA binary_content TYPE solix_tab.
+DATA size           TYPE so_obj_len.
+
+DATA:
+  gc_subject TYPE so_obj_des,
+  gc_raw     TYPE char03 VALUE 'RAW'.
+
+DATA:
+  gv_mlrec         TYPE so_obj_nam,
+  gv_sent_to_all   TYPE os_boolean,
+  gv_email         TYPE adr6-smtp_addr,
+  gv_subject       TYPE so_obj_des,
+  gv_text          TYPE bcsy_text,
+  gr_send_request  TYPE REF TO cl_bcs,
+  gr_bcs_exception TYPE REF TO cx_bcs,
+  gr_recipient     TYPE REF TO if_recipient_bcs,
+  gr_sender        TYPE REF TO cl_sapuser_bcs,
+  gr_document      TYPE REF TO cl_document_bcs,
+  lv_string        TYPE string,
+  zlifnr           LIKE lfa1-lifnr,
+  zname1           LIKE lfa1-name1,
+  zprctr           LIKE ekkn-prctr,
+  zterm            LIKE ekko-zterm,
+  zvtext           LIKE tvzbt-vtext,
+  ztname(25),
+  zwaers           LIKE ekko-waers,
+  net_payb(15)     TYPE p DECIMALS 2,
+  tds_amt(15)      TYPE p DECIMALS 2,
+  ztds_per(5)      TYPE p DECIMALS 2.
+
+CONSTANTS:lv_fiori_link TYPE char300 VALUE 'https://fiori.sap.hfcl.com/sap/bc/ui5_ui5/sap/ZCA_FIORI_ARNV1/index.html?sap-client=900&spnego=disabled#/ARNNumber/<ARN'.  " line added by Airditdebi on 04-09-2024.
+
+START-OF-SELECTION.
+
+  CALL SCREEN 100.
+*&---------------------------------------------------------------------*
+*& Module STATUS_0100 OUTPUT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+MODULE status_0100 OUTPUT.
+  SET PF-STATUS 'ZSTATUS'.
+  SET TITLEBAR  'ZTITLE'.
+
+  IF zsb_arn-npr NE '3'.
+    LOOP AT SCREEN.
+      IF screen-name CS 'TDS' OR screen-name CS 'NET_PAY'.
+        screen-input = 0.
+        screen-invisible = 1.
+        MODIFY SCREEN.
+      ENDIF.
+    ENDLOOP.
+  ENDIF.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  USER_COMMAND_0100  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE user_command_0100 INPUT.
+  CASE  sy-ucomm.
+    WHEN  'F3'.
+      LEAVE TO SCREEN 0.
+    WHEN 'APPR'.
+      PERFORM approve_arn.
+    WHEN 'REJR'.
+      PERFORM reject_arn.
+    WHEN 'PDISP'.
+      IF ekko-bstyp = 'F'.
+        SET PARAMETER ID 'BES' FIELD zsb_arn-ebeln.
+        CALL TRANSACTION 'ME23N'.
+      ENDIF.
+    WHEN 'DMSATT'.
+      PERFORM get_dms_attachments.
+  ENDCASE.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*&      Module  VALIDATE_ARN  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE validate_arn INPUT.
+  CLEAR : zsb_arn,htab[],zwaers.
+
+  SELECT    SINGLE  *
+    FROM    zsb_arn
+    WHERE   arn_no = zarn_no.
+  IF sy-subrc = 0.
+    SELECT    SINGLE  *
+      FROM    ekko
+      WHERE   ebeln = zsb_arn-ebeln.
+    zterm  = ekko-zterm.
+    zwaers = ekko-waers.
+    SELECT    SINGLE   vtext
+      INTO    zvtext
+      FROM    tvzbt
+      WHERE   spras  = 'E'  AND
+              zterm  = ekko-zterm.
+    SELECT    SINGLE  *
+      FROM    lfa1
+      WHERE   lifnr  = ekko-lifnr.
+    IF sy-subrc = 0.
+      zlifnr = lfa1-lifnr.
+      zname1 = lfa1-name1.
+      SELECT    *
+        INTO    TABLE htab
+        FROM    zsb_arn_history
+       WHERE    arn_no = zarn_no.
+
+      SELECT     SINGLE  *
+        FROM     ekkn
+        WHERE    ebeln = zsb_arn-ebeln AND
+                 ( prctr NE '' OR ps_psp_pnr NE '' ).
+      IF sy-subrc = 0.
+        zprctr  = ekkn-prctr.
+        IF zprctr = ''.
+          SELECT    SINGLE  prctr
+            INTO    zprctr
+            FROM    prps
+            WHERE   pspnr = ekkn-ps_psp_pnr.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ELSE.
+    MESSAGE 'Wrong ARN No' TYPE 'E'.
+  ENDIF.
+
+ENDMODULE.
+
+
+
+
+MODULE tab_change_tc_attr OUTPUT.
+  DESCRIBE TABLE htab LINES tab-lines.
+ENDMODULE.
+*&---------------------------------------------------------------------*
+*& Form REJECT_ARN
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM reject_arn .
+  IF zsb_arn-status = 'R'.
+    MESSAGE 'This ARN Is Already Rejected' TYPE 'I'.
+  ELSE.
+    SELECT    SINGLE *
+      FROM    zsb_arn_aprvr_ls
+      WHERE   srno = zsb_arn-npr  AND
+              ename = sy-uname    AND
+              ekgrp = ekko-ekgrp.
+    IF sy-subrc = 0.
+      CLEAR : zsb_arn_history.
+      zsb_arn_history-arn_no   = zsb_arn-arn_no.
+      zsb_arn_history-edate    = sy-datum.
+      zsb_arn_history-etime    = sy-uzeit.
+      zsb_arn_history-euser    = sy-uname.
+      zsb_arn_history-status   = 'R'.
+      zsb_arn_history-rmk      = zrmk.
+      zsb_arn_history-lvl      = zsb_arn-npr.
+      INSERT zsb_arn_history.
+      zsb_arn-npr              = ''.
+      zsb_arn-status           = 'R'.
+      MODIFY zsb_arn.
+
+      MESSAGE 'ARN Successfully Rejected' TYPE 'I'.
+
+      CLEAR : htab[].
+
+      SELECT    *
+        INTO    TABLE htab
+        FROM    zsb_arn_history
+       WHERE    arn_no = zarn_no.
+      PERFORM send_notification_to_initiator.
+    ELSE.
+      MESSAGE 'You Are Not Auhtorized To Approve This ARN' TYPE 'I'.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form APPROVE_ARN
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM approve_arn .
+  IF zsb_arn-status = 'R'.
+    MESSAGE 'This ARN Is Already Rejected' TYPE 'I'.
+  ELSE.
+    SELECT    SINGLE *
+      FROM    zsb_arn_aprvr_ls
+      WHERE   srno = zsb_arn-npr  AND
+              ename = sy-uname    AND
+              ekgrp = ekko-ekgrp.
+    IF sy-subrc = 0.
+      CLEAR : zsb_arn_history,zcount.
+
+      SELECT    MAX( srno )
+        INTO    zcount
+        FROM    zsb_arn_aprvr_ls
+        WHERE   ekgrp = ekko-ekgrp.
+
+      zsb_arn_history-arn_no   = zsb_arn-arn_no.
+      zsb_arn_history-edate    = sy-datum.
+      zsb_arn_history-etime    = sy-uzeit.
+      zsb_arn_history-euser    = sy-uname.
+      zsb_arn_history-status   = 'A'.
+      zsb_arn_history-rmk      = zrmk.
+      zsb_arn_history-lvl      = zsb_arn-npr.
+      INSERT zsb_arn_history.
+      IF zsb_arn-npr  = 3.
+        zsb_arn-tds_per            = ztds_per.
+      ENDIF.
+      IF zsb_arn-npr = zcount.
+        zsb_arn-status           = 'A'.
+        zsb_arn-npr              = ''.
+      ELSE.
+        zsb_arn-npr              = zsb_arn-npr + 1.
+        zsb_arn-status           = 'P'.
+      ENDIF.
+      MODIFY zsb_arn.
+
+      MESSAGE 'ARN Successfully Approved' TYPE 'I'.
+
+      CLEAR : htab[].
+
+      SELECT    *
+        INTO    TABLE htab
+        FROM    zsb_arn_history
+       WHERE    arn_no = zarn_no.
+      IF zsb_arn-status  = 'P'.
+        PERFORM send_notifications_to_next.
+      ELSE.
+        PERFORM send_notification_to_initiator.
+      ENDIF.
+    ELSE.
+      MESSAGE 'You Are Not Auhtorized To Approve This ARN' TYPE 'I'.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form SEND_NOTIFICATIONS
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*&      --> P1
+*&---------------------------------------------------------------------*
+FORM send_notifications_to_next .
+  CLEAR : gv_text.
+  SELECT    SINGLE   *
+    FROM    zsb_arn_aprvr_ls
+    WHERE   srno = zsb_arn-npr AND
+            ekgrp = ekko-ekgrp.
+  IF sy-subrc  = 0.
+
+    SELECT     SINGLE   *
+      FROM     usr21
+      WHERE    bname = zsb_arn_aprvr_ls-ename.
+    IF sy-subrc = 0.
+
+      "Create send request
+      gr_send_request = cl_bcs=>create_persistent( ).
+
+      "Email FROM...
+      gr_sender = cl_sapuser_bcs=>create( 'BGUSER' ).
+      "Add sender to send request
+      CALL METHOD gr_send_request->set_sender
+        EXPORTING
+          i_sender = gr_sender.
+
+      TRY.
+
+          SELECT     *
+            FROM     adr6
+            WHERE    persnumber = usr21-persnumber.
+            "Email TO...
+            gr_recipient = cl_cam_address_bcs=>create_internet_address( adr6-smtp_addr ).
+            "Add recipient to send request
+            CALL METHOD gr_send_request->add_recipient
+              EXPORTING
+                i_recipient = gr_recipient
+                i_express   = 'X'.
+          ENDSELECT.
+
+          gc_subject = |ARN Notification-{ zsb_arn-arn_no }|.
+
+          "Email BODY
+          CLEAR : ztname.
+          IF zsb_arn-type = '1'.
+            ztname = 'LC'.
+          ELSEIF zsb_arn-type = '2'.
+            ztname = 'BG'.
+          ELSEIF zsb_arn-type = '3'.
+            ztname = 'Advance'.
+          ELSEIF zsb_arn-type = '4'.
+            ztname = 'PDC'.
+          ENDIF.
+          APPEND |<html><body><p>Sir/Madam.</p>| TO gv_text.
+          APPEND |<html><body><p>Advance request no { zsb_arn-arn_no }, has been created against purchase order no { zsb_arn-ebeln }. Please approve. </p>| TO gv_text.
+          APPEND |<html><body><p>Vendor Name: ({ zlifnr }) { zname1 } </p>| TO gv_text.
+          APPEND |<html><body><p>Type: ({ zsb_arn-type }) { ztname } </p>| TO gv_text.
+          APPEND |<html><body><p><a href="{ lv_fiori_link }">Click here</a> for Navigate to Fiori app.</p>| TO gv_text.        "line added by AIRDITDEBI ON 04-09-2024.
+          APPEND |<p>(This is an auto generated mail. Please do not reply)</p></body></html>| TO gv_text.
+
+          gr_document = cl_document_bcs=>create_document(
+            i_type    = 'HTM'
+            i_text    = gv_text
+            i_subject = gc_subject ).
+
+          CALL METHOD gr_send_request->set_document( gr_document ).
+
+          "Send email
+          CALL METHOD gr_send_request->send(
+            EXPORTING
+              i_with_error_screen = 'X'
+            RECEIVING
+              result              = gv_sent_to_all ).
+          IF gv_sent_to_all = 'X'.
+*            message 'Mail Sent Successfully' type 'I'.
+          ENDIF.
+
+          "Exception handling
+        CATCH cx_bcs INTO gr_bcs_exception.
+*          write:
+*            'Error!',
+*            'Error type:',
+*            gr_bcs_exception->error_type.
+
+      ENDTRY.
+
+      COMMIT WORK.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form SEND_NOTIFICATION_TO_INITIATOR
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM send_notification_to_initiator .
+  CLEAR : gv_text.
+  READ TABLE htab WITH KEY status = 'C'.
+  IF sy-subrc = 0.
+    SELECT     SINGLE   *
+      FROM     usr21
+      WHERE    bname = htab-euser .
+    IF sy-subrc = 0.
+      SELECT   SINGLE  *
+        FROM   adr6
+      WHERE    persnumber = usr21-persnumber AND
+               smtp_addr  NE ''.
+      IF sy-subrc = 0.
+        "Create send request
+        gr_send_request = cl_bcs=>create_persistent( ).
+
+        "Email FROM...
+        gr_sender = cl_sapuser_bcs=>create( 'BGUSER' ).
+        "Add sender to send request
+        CALL METHOD gr_send_request->set_sender
+          EXPORTING
+            i_sender = gr_sender.
+        TRY.
+
+            SELECT     *
+              FROM     adr6
+              WHERE    persnumber = usr21-persnumber AND
+                       smtp_addr  NE ''.
+              "Email TO...
+              gr_recipient = cl_cam_address_bcs=>create_internet_address( adr6-smtp_addr ).
+              "Add recipient to send request
+              CALL METHOD gr_send_request->add_recipient
+                EXPORTING
+                  i_recipient = gr_recipient
+                  i_express   = 'X'.
+            ENDSELECT.
+
+            gc_subject = |ARN Notification-{ zsb_arn-arn_no }|.
+
+            "Email BODY
+            CLEAR : ztname.
+            IF zsb_arn-type = '1'.
+              ztname = 'LC'.
+            ELSEIF zsb_arn-type = '2'.
+              ztname = 'BG'.
+            ELSEIF zsb_arn-type = '3'.
+              ztname = 'Advance'.
+            ELSEIF zsb_arn-type = '4'.
+              ztname = 'PDC'.
+            ENDIF.
+            APPEND |<html><body><p>Sir/Madam.</p>| TO gv_text.
+            IF zsb_arn-status = 'A'.
+              APPEND |<html><body><p>Advance request no { zsb_arn-arn_no }, has been approved against purchase order no { zsb_arn-ebeln }. </p>| TO gv_text.
+            ELSEIF zsb_arn-status = 'R'.
+              APPEND |<html><body><p>Advance request no { zsb_arn-arn_no }, has been rejected against purchase order no { zsb_arn-ebeln }. </p>| TO gv_text.
+            ENDIF.
+            APPEND |<html><body><p>Vendor Name: ({ zlifnr }) { zname1 } </p>| TO gv_text.
+            APPEND |<html><body><p>Type: ({ zsb_arn-type }) { ztname } </p>| TO gv_text.
+            APPEND |<p>(This is an auto generated mail. Please do not reply)</p></body></html>| TO gv_text.
+
+            gr_document = cl_document_bcs=>create_document(
+              i_type    = 'HTM'
+              i_text    = gv_text
+              i_subject = gc_subject ).
+
+            CALL METHOD gr_send_request->set_document( gr_document ).
+
+            "Send email
+            CALL METHOD gr_send_request->send(
+              EXPORTING
+                i_with_error_screen = 'X'
+              RECEIVING
+                result              = gv_sent_to_all ).
+            IF gv_sent_to_all = 'X'.
+*            message 'Mail Sent Successfully' type 'I'.
+            ENDIF.
+
+            "Exception handling
+          CATCH cx_bcs INTO gr_bcs_exception.
+*            WRITE:
+*              'Error!',
+*              'Error type:',
+*              gr_bcs_exception->error_type.
+
+        ENDTRY.
+        COMMIT WORK.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form GET_DMS_ATTACHMENTS
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_dms_attachments .
+  DATA: v_mblnr   TYPE mblnr,
+        v_gjahr   TYPE gjahr,
+        v_zeile   TYPE mblpo,
+        v_objkey  TYPE objky,
+        i_tabdrad TYPE drad OCCURS 0.
+
+  CONCATENATE zsb_arn-arn_no '' INTO v_objkey.
+
+  CALL FUNCTION 'DOCUMENT_ASSIGNMENT'
+    EXPORTING
+      dokob   = 'ZSB_ARN'
+      objky   = v_objkey
+      opcode  = 3
+    TABLES
+      tabdrad = i_tabdrad.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*&      Module  VALIDATE_TDS_PERCENATGE  INPUT
+*&---------------------------------------------------------------------*
+*       text
+*----------------------------------------------------------------------*
+MODULE validate_tds_percenatge INPUT.
+  CLEAR : tds_amt,net_payb.
+
+  tds_amt = ( zsb_arn-adv_amt * ztds_per ) / 100.
+  net_payb = zsb_arn-adv_amt - tds_amt.
+ENDMODULE.

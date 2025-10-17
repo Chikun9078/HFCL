@@ -1,0 +1,555 @@
+*---------------------------------------------------------------------*
+* DESCRIPTION: Settle Vendor Stock
+* RICEFW ID :
+*
+* PROGRAM NAME: ZMMEP_CUST_STOCK_SETTLE
+* AUTHOR: ANKUR JAIN , WIPRO
+* T-CODE : ZMM0056
+* DATE  : 25/03/2023
+*---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+* CHANGE HISTORY-01
+* Date        :25.10.2024   Changed By:AIRDITDEBI
+* Ticket No   :28065
+* Description :1.Adding Validation Before stock sattel .
+*              2.Material,custmor,vendor desc. field added in Report.
+*              3.issue solved, when user entering WBS element and no
+*                available record coming in report and showing error msg.
+*
+* CHANGE HISTORY-02
+* Date        :12-03-2025   Changed By:AIRDITDEBI
+* Ticket No   :33437
+* Description :1.Adding Storage location AS input option .
+*              2.Resolve input Quantity Issue.
+*---------------------------------------------------------------------*
+*---------------------------------------------------------------------*
+REPORT zmmep_cust_stock_settle.
+
+TABLES : lfa1, mara,mseg,zmm_stk_transfer,makt,kna1.
+
+TYPE-POOLS: slis.
+
+TYPES : BEGIN OF ty_final,
+          zstk_trf_id   TYPE zmm_stk_transfer-zstk_trf_id,
+          zstk_trf_line TYPE zmm_stk_transfer-zstk_trf_line,
+          zstk_crt_id   TYPE zmm_stk_transfer-zstk_crt_id,
+          item_no       TYPE zmm_stk_transfer-item_no,
+          werks         TYPE zmm_stk_transfer-werks,
+          zstrloc       TYPE zmm_stk_transfer-zstrloc,
+          customer      TYPE zmm_stk_transfer-customer,
+          vendor        TYPE zmm_stk_transfer-vendor,
+          pspel         TYPE zmm_stk_transfer-pspel,
+          matnr         TYPE zmm_stk_transfer-matnr,
+          qty           TYPE zmm_stk_transfer-qty,
+          uom           TYPE zmm_stk_transfer-uom,
+          status        TYPE zmm_stk_settle-settle_status,
+          mat_desc      TYPE makt-maktx,                                  "--> Added by debi on :25.10.2024.
+          vendor_desc   TYPE lfa1-name1,                                  "--> Added by debi on :25.10.2024.
+          customer_desc TYPE kna1-name1,                                  "--> Added by debi on :25.10.2024.
+          qty_balance   TYPE zmm_stk_transfer-qty,
+          qty_consume   TYPE zmm_stk_transfer-qty,
+          qty_faulty    TYPE zmm_stk_transfer-qty,
+          qty_return    TYPE zmm_stk_transfer-qty,
+          qty_missing   TYPE zmm_stk_transfer-qty,
+        END OF ty_final.
+
+TYPES: BEGIN OF ty_error_trf_id,
+         zstk_trf_id   TYPE zmm_stk_transfer-zstk_trf_id,
+         zstk_trf_line TYPE zmm_stk_transfer-zstk_trf_line,
+         zstk_crt_id   TYPE zmm_stk_transfer-zstk_crt_id,
+         item_no       TYPE zmm_stk_transfer-item_no,
+       END OF    ty_error_trf_id.
+
+DATA : lv_stock_entry_id_msg TYPE string,                         "--> Added by debi on :25.10.2024.
+       lv_totqty             TYPE i,                              "--> Added by debi on :25.10.2024
+       lv_temp_sum           LIKE zmm_stk_transfer-qty,
+       lv_QTY_STRING         TYPE string.
+
+DATA : ls_final TYPE ty_final                   ##NEEDED,
+       lt_final TYPE STANDARD TABLE OF ty_final ##NEEDED.
+
+DATA: ls_error_trf_id TYPE ty_error_trf_id,
+      lt_error_trf_id TYPE TABLE OF ty_error_trf_id.
+
+DATA : ls_stk_settle TYPE zmm_stk_settle                   ##NEEDED,
+       lt_stk_settle TYPE STANDARD TABLE OF zmm_stk_settle ##NEEDED.
+
+DATA: lt_fieldcat TYPE STANDARD TABLE OF lvc_s_fcat ##NEEDED,
+      ls_fieldcat TYPE lvc_s_fcat                   ##NEEDED.
+DATA : lv_flag TYPE string                          ##NEEDED.
+
+
+SELECTION-SCREEN : BEGIN OF BLOCK b1 WITH FRAME .
+  SELECT-OPTIONS:  s_vendor FOR lfa1-lifnr,
+                   s_matnr FOR mara-matnr,
+                   s_wbs  FOR zmm_stk_transfer-pspel,
+                   s_zstrlo FOR zmm_stk_transfer-zstrloc.
+
+SELECTION-SCREEN : END OF BLOCK b1.
+
+IF s_wbs IS NOT INITIAL.
+  LOOP AT s_wbs[] ASSIGNING FIELD-SYMBOL(<fs_wbs>).                "--> loop for "conversion routine" Added by debi on :25.10.2024.
+    CALL FUNCTION 'CONVERSION_EXIT_ABPSN_OUTPUT'
+      EXPORTING
+        input  = <fs_wbs>-low
+      IMPORTING
+        output = <fs_wbs>-low.
+  ENDLOOP.
+ENDIF.
+
+PERFORM get_data.
+PERFORM display_data.
+
+FORM get_data.
+  SELECT  zmm_stk_transfer~zstk_trf_id
+          zmm_stk_transfer~zstk_trf_line
+          zmm_stk_transfer~zstk_crt_id
+          zmm_stk_transfer~item_no
+          zmm_stk_transfer~werks
+          zmm_stk_transfer~zstrloc
+          zmm_stk_transfer~customer
+          zmm_stk_transfer~vendor
+          zmm_stk_transfer~pspel
+          zmm_stk_transfer~matnr
+          zmm_stk_transfer~qty
+          zmm_stk_transfer~uom
+          zmm_stk_settle~settle_status
+          makt~maktx
+          lfa1~name1
+        INTO TABLE lt_final           ##TOO_MANY_ITAB_FIELDS
+        FROM zmm_stk_transfer
+        LEFT OUTER JOIN zmm_stk_settle ON zmm_stk_transfer~zstk_trf_id = zmm_stk_settle~zstk_trf_id AND
+                                          zmm_stk_transfer~zstk_trf_line = zmm_stk_settle~zstk_trf_line
+        LEFT OUTER JOIN makt           ON zmm_stk_transfer~matnr = makt~matnr AND
+                                          makt~spras = sy-langu
+        LEFT OUTER JOIN lfa1           ON zmm_stk_transfer~vendor = lfa1~lifnr
+        WHERE zmm_stk_transfer~vendor  IN s_vendor AND
+              zmm_stk_transfer~matnr   IN s_matnr  AND
+              zmm_stk_transfer~pspel   IN s_wbs    AND
+              zmm_stk_transfer~zstrloc IN s_zstrlo .
+
+  IF sy-subrc EQ 0.
+
+    LOOP AT lt_final ASSIGNING FIELD-SYMBOL(<fs_final>).
+
+      AUTHORITY-CHECK OBJECT 'ZMMA_CDEV'
+       ID 'WERKS' FIELD <fs_final>-werks
+       ID 'TCODE' FIELD 'ZMM0056'.
+      IF sy-subrc <> 0.
+        CLEAR:<fs_final>-werks.
+      ENDIF.
+
+    ENDLOOP.
+
+    DELETE lt_final WHERE werks IS INITIAL.
+    IF lt_final IS INITIAL.
+      MESSAGE e166(zmm).
+    ENDIF.
+
+
+    LOOP AT lt_final INTO ls_final WHERE status = 'SETTLED'.
+      ls_final-status = 'SETTLED'.
+      MODIFY lt_final FROM ls_final TRANSPORTING status WHERE zstk_trf_id  = ls_final-zstk_trf_id AND matnr = ls_final-matnr.
+    ENDLOOP.
+
+    LOOP AT lt_final INTO ls_final WHERE status = 'SETTLED'  ##INTO_OK.
+      DELETE lt_final INDEX sy-tabix.
+    ENDLOOP.
+
+    LOOP AT lt_final INTO ls_final.
+*    SELECT SINGLE * FROM zmm_stk_entry INTO @DATA(ls_stk_entry) WHERE zstk_crt_id = @ls_final-zstk_crt_id AND item_no = @ls_final-item_no.
+
+      SELECT SUM( consum_qty ) FROM zmm_stk_settle INTO @DATA(lv_sumqty_con)
+        WHERE matnr = @ls_final-matnr AND pspel = @ls_final-pspel AND vendor = @ls_final-vendor AND zstk_trf_id = @ls_final-zstk_trf_id
+                                                                                                AND zstk_trf_line = @ls_final-zstk_trf_line .     "-> zstk_trf_id,zstk_trf_line in where condition added by airditdebi on 10-8-2024
+
+      SELECT SUM( faulty_qty ) FROM zmm_stk_settle INTO @DATA(lv_sumqty_fal)
+            WHERE matnr = @ls_final-matnr AND pspel = @ls_final-pspel AND vendor = @ls_final-vendor AND zstk_trf_id = @ls_final-zstk_trf_id
+                                                                                                    AND zstk_trf_line = @ls_final-zstk_trf_line. "-> zstk_trf_id,zstk_trf_line in where condition added by airditdebi on 10-8-2024
+
+      SELECT SUM( missing_qty ) FROM zmm_stk_settle INTO @DATA(lv_sumqty_mis)
+            WHERE matnr = @ls_final-matnr AND pspel = @ls_final-pspel AND vendor = @ls_final-vendor AND zstk_trf_id = @ls_final-zstk_trf_id
+                                                                                                    AND zstk_trf_line = @ls_final-zstk_trf_line. "-> zstk_trf_id,zstk_trf_line in where condition added by airditdebi on 10-8-2024
+
+      SELECT SUM( return_qty ) FROM zmm_stk_settle INTO @DATA(lv_sumqty_ret)
+            WHERE matnr = @ls_final-matnr AND pspel = @ls_final-pspel AND vendor = @ls_final-vendor AND zstk_trf_id = @ls_final-zstk_trf_id
+                                                                                                    AND zstk_trf_line = @ls_final-zstk_trf_line. "-> zstk_trf_id,zstk_trf_line in where condition added by airditdebi on 10-8-2024
+
+      DATA lv_sumqty_tot         LIKE lv_sumqty_con.
+      lv_sumqty_tot = ( lv_sumqty_con + lv_sumqty_fal + lv_sumqty_ret + lv_sumqty_mis ).
+      ls_final-qty_balance = ls_final-qty - lv_sumqty_tot.
+
+      "--> Fetch cusomer Desc.
+      DATA(lv_kunnr) = |{ ls_final-customer ALPHA = IN }|.                                                "--> code for cusomer Desc. Added by debi on :25.10.2024.
+      SELECT SINGLE kunnr,name1 FROM kna1 INTO @DATA(ls_kna1) WHERE kunnr = @lv_kunnr .
+      IF sy-subrc EQ 0.
+        ls_final-customer_desc = ls_kna1-name1.
+      ENDIF.
+
+      MODIFY lt_final FROM ls_final TRANSPORTING qty qty_balance customer_desc.
+    ENDLOOP.
+
+    SORT lt_final ASCENDING.
+    DELETE ADJACENT DUPLICATES FROM lt_final COMPARING ALL FIELDS.
+  ENDIF.
+ENDFORM.
+
+FORM display_data.
+  DATA: ls_layout TYPE lvc_s_layo ##NEEDED.
+  DATA: gt_fieldcatalog TYPE lvc_t_fcat ##NEEDED,
+        gs_fieldcatalog TYPE lvc_s_fcat ##NEEDED,
+        gt_events       TYPE slis_t_event ##NEEDED,
+        gs_events       TYPE slis_alv_event ##NEEDED.
+
+  IF lt_final[] IS NOT INITIAL.
+********Preparing the field cat********
+    PERFORM get_fieldcat USING 'ZSTK_TRF_ID'   'LT_FINAL'  'Stock Transfer ID'     '' CHANGING lt_fieldcat  ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'ZSTK_TRF_LINE' 'LT_FINAL'  'Stock Transfer Line'   '' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'ZSTK_CRT_ID'   'LT_FINAL'  'Stock Entry ID'        '' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'ITEM_NO'       'LT_FINAL'  'Item No:'              '' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'WERKS'         'LT_FINAL'  'Plant'                 '' CHANGING lt_fieldcat      ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'ZSTRLOC'       'LT_FINAL'  'Storage Location'      '' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'MATNR'         'LT_FINAL'  'Material Number'       '' CHANGING lt_fieldcat  ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'MAT_DESC'      'LT_FINAL'  'Material Desc.'        '' CHANGING lt_fieldcat  ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'PSPEL'         'LT_FINAL'  'WBS Element'           '' CHANGING lt_fieldcat       ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'CUSTOMER'      'LT_FINAL'  'Customer ID'           '' CHANGING lt_fieldcat    ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'CUSTOMER_DESC' 'LT_FINAL'  'Customer Desc.'        '' CHANGING lt_fieldcat    ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'VENDOR'        'LT_FINAL'  'Vendor ID'             '' CHANGING lt_fieldcat        ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'VENDOR_DESC'   'LT_FINAL'  'Vendor Desc.'          '' CHANGING lt_fieldcat        ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'QTY'           'LT_FINAL'  'Qty Assigneed'         '' CHANGING lt_fieldcat       ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'UOM'           'LT_FINAL'  'UoM'                   '' CHANGING lt_fieldcat                 ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'QTY_BALANCE'   'LT_FINAL'  'Qty Balance'           '' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'QTY_CONSUME'   'LT_FINAL'  'Qty Consumed'          'X' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'QTY_FAULTY'    'LT_FINAL'  'Qty Faulty'            'X' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'QTY_RETURN'    'LT_FINAL'  'Qty Return'            'X' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+    PERFORM get_fieldcat USING 'QTY_MISSING'   'LT_FINAL'  'Qty Missed'            'X' CHANGING lt_fieldcat ##PERF_GLOBAL_PAR_OK ##NO_TEXT.
+
+    SORT lt_final.
+*......Trigger ENTER Event.....
+    gs_events-name = 'CALLER_EXIT'.
+    gs_events-form = 'CALLER_EXIT'.
+    APPEND gs_events TO gt_events.
+
+*.....To capture changed data.....
+    gs_events-name = 'DATA_CHANGED'.
+    gs_events-form = 'DATA_CHANGED'.
+    APPEND gs_events TO gt_events.
+
+    CLEAR: ls_layout.
+    ls_layout-cwidth_opt = 'X'.
+
+    CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY_LVC'
+      EXPORTING
+        i_callback_program       = sy-repid
+        i_callback_pf_status_set = 'PF_STATUS'
+        i_callback_user_command  = 'USR_CMND'
+        is_layout_lvc            = ls_layout
+        it_fieldcat_lvc          = lt_fieldcat[]
+        it_events                = gt_events
+      TABLES
+        t_outtab                 = lt_final
+      EXCEPTIONS
+        program_error            = 1
+        OTHERS                   = 2.
+    IF sy-subrc <> 0   .
+      MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+  ELSE.
+    MESSAGE 'No data to display !' TYPE 'I'  ##NO_TEXT.
+  ENDIF.
+ENDFORM.
+
+FORM get_fieldcat  USING    p_field_name
+                            p_tab_name
+                            p_sel_name
+                            p_col_fixed
+                   CHANGING p_lt_fieldcat  ##PERF_NO_TYPE ##NEEDED.
+  ls_fieldcat-fieldname = p_field_name.
+  ls_fieldcat-tabname = p_tab_name.
+  ls_fieldcat-scrtext_m = p_sel_name.
+  ls_fieldcat-edit = p_col_fixed.
+
+  IF p_field_name = 'QTY_CONSUME' OR p_field_name = 'QTY_FAULTY' OR p_field_name = 'QTY_RETURN' OR
+     p_field_name = 'QTY_MISSING' OR p_field_name = 'QTY_TRANSFER' OR p_field_name = 'QTY_BALANCE' OR
+     p_field_name = 'QTY'.
+    ls_fieldcat-datatype = 'ZDEQTY'.
+    ls_fieldcat-just = 'R'.
+  ELSEIF p_field_name = 'VENDOR' OR p_field_name = 'CUSTOMER' OR p_field_name = 'MATNR'.
+    ls_fieldcat-convexit = 'ALPHA'.
+  ENDIF.
+  APPEND ls_fieldcat TO lt_fieldcat.
+  CLEAR: ls_fieldcat.
+ENDFORM.
+
+
+FORM caller_exit USING is_data TYPE slis_data_caller_exit    ##NEEDED ##called  .
+  DATA: lr_alv TYPE REF TO cl_gui_alv_grid.
+
+  IF lr_alv IS INITIAL.
+    CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+      IMPORTING
+        e_grid = lr_alv.
+
+* Register ENTER as edit event:
+    CALL METHOD lr_alv->register_edit_event
+      EXPORTING
+        i_event_id = cl_gui_alv_grid=>mc_evt_enter.
+  ENDIF.
+ENDFORM. "CALLER_EXIT
+
+
+FORM pf_status USING rt_extab TYPE slis_t_extab   ##NEEDED ##called  .
+  SET PF-STATUS 'ZPF_STATUS'.
+ENDFORM.
+
+FORM usr_cmnd      ##called
+        USING p_ucomm LIKE sy-ucomm
+              p_selfield TYPE slis_selfield  ##NEEDED .
+
+  DATA: gd_repid LIKE sy-repid     ##NEEDED , "Exists
+        ref_grid TYPE REF TO cl_gui_alv_grid.
+  IF ref_grid IS INITIAL.
+    CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+      IMPORTING
+        e_grid = ref_grid.
+  ENDIF.
+  IF NOT ref_grid IS INITIAL.
+    CALL METHOD ref_grid->check_changed_data.
+  ENDIF.
+*.....on triggering save data will be saved in database....
+  CASE p_ucomm.
+*//"-------------------------------------------------------------------------------> below code added by AIRDITDEBI on 18-10-2024.
+    WHEN 'STOCKSTL'.
+      DELETE lt_final WHERE qty_balance < 0.
+      LOOP AT lt_final INTO ls_final .
+        lv_totqty = ( ls_final-qty_consume + ls_final-qty_faulty + ls_final-qty_return + ls_final-qty_missing ).
+        IF lv_totqty  = 0.
+          DELETE lt_final INDEX sy-tabix.
+        ENDIF.
+      ENDLOOP.
+
+      IF lt_final IS  NOT INITIAL.
+        PERFORM insert_data.
+      ELSE.
+        MESSAGE 'Please Enter Quantity for Stock Transfer.' TYPE 'E' DISPLAY LIKE 'I'.
+      ENDIF.
+  ENDCASE.
+*//"----------------------------------------------------------------------------------------->code added by AIRDITDEBI on 18-10-2024.
+
+*//"----------------------------------------------------------------------------------------->Below code commened by AIRDITDEBI on 18-10-2024.
+*    WHEN 'STOCKSTL'.
+*      DATA : lv_process_data TYPE c VALUE 'X'  ##INTO_OK,
+*             lv_totqty       TYPE i.
+*
+*      LOOP AT lt_final INTO ls_final ##INTO_OK."WHERE qty_consume <> 0 AND qty_faulty <> 0 AND qty_return <> 0 AND qty_missing <> 0.
+*        DATA lv_totqty TYPE i.
+*        lv_totqty = ls_final-qty_consume + ls_final-qty_faulty + + ls_final-qty_return + ls_final-qty_missing.
+*        IF ls_final-qty < lv_totqty.
+*          MESSAGE 'For settlement qty must be equal or less then assigned qty !' TYPE 'E'  ##NO_TEXT.
+*          lv_process_data = ''.
+*        ELSEIF lv_totqty = 0.
+*
+*          DELETE lt_final INDEX sy-tabix.
+*        ELSEIF  ls_final-qty >= lv_totqty ##BOOL_OK.
+*          lv_process_data = 'X'.
+*
+*        ENDIF." IF ls_final-qty_balance <> lv_totqty.
+*      ENDLOOP.
+*
+*      IF lv_process_data = 'X'.
+*        PERFORM insert_data.
+*      ENDIF.
+**  ENDCASE.
+*//------------------------------------------------------------------------------------------->code commened by AIRDITDEBI on 18-10-2024.
+ENDFORM.
+
+FORM insert_data.
+  "Get Maximum zstk_stl_id.
+  SELECT MAX( zstk_stl_id ) FROM zmm_stk_settle INTO @DATA(lv_count). "#EC CI_NOWHERE
+
+  LOOP AT lt_final INTO ls_final .
+    IF ls_final-qty_consume = 0 AND ls_final-qty_faulty = 0 AND ls_final-qty_return = 0 AND ls_final-qty_missing = 0.
+      " not to process
+    ELSE.
+      lv_count = lv_count + 1. " new id generated
+
+      ls_stk_settle-zstk_stl_id = lv_count.
+      ls_stk_settle-zstk_stl_line = ls_final-item_no.
+      ls_stk_settle-zstk_trf_id = ls_final-zstk_trf_id.
+      ls_stk_settle-zstk_trf_line = ls_final-item_no.
+      ls_stk_settle-vendor = ls_final-vendor.
+      ls_stk_settle-pspel = ls_final-pspel.
+      ls_stk_settle-matnr = ls_final-matnr.
+
+      ls_stk_settle-consum_qty = ls_final-qty_consume.
+      ls_stk_settle-faulty_qty = ls_final-qty_faulty.
+      ls_stk_settle-return_qty = ls_final-qty_return.
+      ls_stk_settle-missing_qty = ls_final-qty_missing.
+
+      CALL FUNCTION 'CONVERSION_EXIT_MATN1_INPUT'
+        EXPORTING
+          input  = ls_final-matnr
+        IMPORTING
+          output = ls_final-matnr.
+
+      SELECT SINGLE matnr, meins FROM mara INTO @DATA(lv_matnr_meins) WHERE matnr = @ls_final-matnr.
+      ls_stk_settle-consum_uom = lv_matnr_meins-meins.
+      ls_stk_settle-faulty_uom = lv_matnr_meins-meins.
+      ls_stk_settle-return_uom = lv_matnr_meins-meins.
+      ls_stk_settle-missing_uom = lv_matnr_meins-meins.
+
+*      IF ( ls_final-qty_consume + ls_final-qty_faulty + ls_final-qty_return + ls_final-qty_missing ) = ''.
+*      ENDIF.
+
+      ls_stk_settle-settle_status = ''.
+*      ls_stk_settle-settle_status = 'SETTLED'.
+      ls_stk_settle-syuname = sy-uname.
+      ls_stk_settle-sydate = sy-datum.
+      ls_stk_settle-sytime = sy-uzeit.
+
+      APPEND ls_stk_settle TO lt_stk_settle.
+      CLEAR: ls_stk_settle.
+    ENDIF.
+  ENDLOOP.
+
+  INSERT  zmm_stk_settle FROM TABLE lt_stk_settle  .
+  IF sy-subrc = 0.
+    COMMIT WORK AND WAIT.
+    MESSAGE  'Stock Settled Successfully' TYPE 'S'  ##NO_TEXT.
+  ENDIF.
+  LEAVE TO SCREEN 0.
+ENDFORM.
+
+FORM data_changed USING ir_data_changed TYPE REF TO cl_alv_changed_data_protocol   ##called.
+  TYPES:BEGIN OF ty_index,
+          index_no TYPE sy-index,
+        END OF ty_index.
+
+  DATA: ls_modi         TYPE lvc_s_modi,
+        ls_index        TYPE ty_index,
+        lt_index        TYPE TABLE OF ty_index,
+        lv_modi_val_dec TYPE p DECIMALS 3..
+
+  SORT lt_final.
+  CLEAR :lt_error_trf_id,ls_error_trf_id .
+
+  LOOP AT ir_data_changed->mt_mod_cells INTO ls_modi  ##into_ok.
+    CASE ls_modi-fieldname.
+      WHEN 'QTY_CONSUME'.
+        CLEAR: lv_qty_string,ls_index.
+        lv_qty_string = ls_modi-value.
+*        IF lv_qty_string CA '.'.
+*          MESSAGE TEXT-001 TYPE 'E'.
+*        ENDIF.
+        REPLACE ALL OCCURRENCES OF ',' IN ls_modi-value WITH '.'.
+        lv_modi_val_dec = ls_modi-value.
+        ls_final-qty_consume = ls_modi-value.
+        MODIFY lt_final FROM ls_final INDEX ls_modi-row_id TRANSPORTING qty_consume.
+        ls_index-index_no = ls_modi-row_id.
+        APPEND ls_index TO lt_index.
+
+      WHEN 'QTY_FAULTY'.
+        CLEAR: lv_qty_string,lv_modi_val_dec,ls_index.
+
+        lv_qty_string = ls_modi-value.
+*        IF lv_qty_string CA '.'.
+*          MESSAGE TEXT-001 TYPE 'E'.
+*        ENDIF.
+        REPLACE ALL OCCURRENCES OF ',' IN ls_modi-value WITH '.'.
+        lv_modi_val_dec = ls_modi-value.
+        ls_final-qty_faulty  = lv_modi_val_dec.
+        MODIFY lt_final FROM ls_final INDEX ls_modi-row_id TRANSPORTING qty_faulty.
+        ls_index-index_no = ls_modi-row_id.
+        APPEND ls_index TO lt_index.
+
+      WHEN 'QTY_RETURN'.
+        CLEAR:  lv_qty_string,lv_modi_val_dec,ls_index.
+        lv_qty_string = ls_modi-value.
+*        IF lv_qty_string CA '.'.
+*          MESSAGE TEXT-001 TYPE 'E'.
+*        ENDIF.
+        REPLACE ALL OCCURRENCES OF ',' IN ls_modi-value WITH '.'.
+        lv_modi_val_dec = ls_modi-value.
+        ls_final-qty_return  = lv_modi_val_dec.
+        MODIFY lt_final FROM ls_final INDEX ls_modi-row_id TRANSPORTING qty_return.
+        ls_index-index_no = ls_modi-row_id.
+        APPEND ls_index TO lt_index.
+
+      WHEN 'QTY_MISSING'.
+        CLEAR:lv_qty_string,lv_modi_val_dec,ls_index.
+        lv_qty_string = ls_modi-value.
+*        IF lv_qty_string CA '.'.
+*          MESSAGE TEXT-001 TYPE 'E'.
+*        ENDIF.
+        REPLACE ALL OCCURRENCES OF ',' IN ls_modi-value WITH '.'.
+        lv_modi_val_dec = ls_modi-value.
+        ls_final-qty_missing  = lv_modi_val_dec.
+        MODIFY lt_final FROM ls_final INDEX ls_modi-row_id TRANSPORTING qty_missing.
+        ls_index-index_no = ls_modi-row_id.
+        APPEND ls_index TO lt_index.
+
+*        IF lv_qty_string CA ','.
+*          REPLACE ALL OCCURRENCES OF ',' IN ls_modi-value WITH '.'.
+*        ENDIF.
+*        READ TABLE lt_final INTO ls_final INDEX ls_modi-row_id.
+*        IF sy-subrc = 0.
+**          CALL FUNCTION 'NUMERIC_CHECK'
+**            EXPORTING
+**              string_in = ls_modi-value
+**            IMPORTING
+**              htype     = lv_hype.
+**          IF lv_hype = 'NUMC'. " NUMERIC
+*
+*          ls_final-qty_missing = ls_modi-value.
+*          MODIFY lt_final FROM ls_final INDEX ls_modi-row_id TRANSPORTING qty_missing.
+*          ls_index-index_no = ls_modi-row_id.
+*          APPEND ls_index TO lt_index.
+**          ELSEIF lv_hype = 'CHAR'. " NON-NUMERIC
+**            MESSAGE 'Pls enter numeric value in qty' TYPE 'E' DISPLAY LIKE 'I'.
+**          ENDIF.
+*        ENDIF.
+    ENDCASE.
+    CLEAR : ls_final,ls_modi.
+  ENDLOOP.
+
+*--------------> Below code for validation Added by debi on :25.10.2024.
+  "--> Calculate the requested sattel quantity and if an requested quantity is grater then balance quntity,store in error inernal table for message.
+  CLEAR: ls_final,ls_index,lv_temp_sum.
+  DELETE ADJACENT DUPLICATES FROM lt_index COMPARING index_no.
+  LOOP AT lt_index INTO ls_index .
+    READ TABLE lt_final INTO ls_final INDEX ls_index-index_no.
+    lv_temp_sum = ( ls_final-qty_consume + ls_final-qty_faulty  + ls_final-qty_return +  ls_final-qty_missing ).
+    IF lv_temp_sum GT ls_final-qty_balance.
+      ls_error_trf_id-zstk_trf_id   = ls_final-zstk_trf_id.
+      ls_error_trf_id-zstk_trf_line = ls_final-zstk_trf_line.
+      ls_error_trf_id-zstk_crt_id   = ls_final-zstk_crt_id.
+      ls_error_trf_id-item_no       = ls_final-item_no.
+
+      APPEND ls_error_trf_id TO lt_error_trf_id.
+    ENDIF.
+    CLEAR : ls_final,ls_modi,lv_temp_sum,ls_error_trf_id.
+  ENDLOOP.
+
+  IF lt_error_trf_id IS INITIAL.
+    PERFORM refresh_grid.
+  ELSE.
+    CLEAR:lv_stock_entry_id_msg.
+    DELETE ADJACENT DUPLICATES FROM lt_error_trf_id COMPARING ALL FIELDS.
+    LOOP AT lt_error_trf_id INTO ls_error_trf_id.
+      lv_stock_entry_id_msg = COND #( WHEN lv_stock_entry_id_msg IS INITIAL THEN ls_error_trf_id-zstk_trf_id
+                              ELSE |{ lv_stock_entry_id_msg },{ ls_error_trf_id-zstk_trf_id }|  ).
+    ENDLOOP.
+    DATA(lv_inconsistency_mesg) = |Stock Entry ID "{ lv_stock_entry_id_msg }" having inconsistant Balance Qty./sum of enterd qty more then Balance Qty.|.
+    MESSAGE lv_inconsistency_mesg TYPE 'E' DISPLAY LIKE 'I'.
+  ENDIF.
+ENDFORM.
+
+FORM refresh_grid.
+  DATA: g_alv TYPE REF TO cl_gui_alv_grid.
+  CALL FUNCTION 'GET_GLOBALS_FROM_SLVC_FULLSCR'
+    IMPORTING
+      e_grid = g_alv.
+  CALL METHOD g_alv->refresh_table_display.
+ENDFORM.

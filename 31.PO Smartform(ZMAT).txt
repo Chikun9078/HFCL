@@ -1,0 +1,1377 @@
+*-----------------------------------------------------------------------------------------------------------*
+* DESCIPTION:
+* Driver program of DOMESTIC_MAT_PO_SCHDL (PO Smartforms)
+*
+*
+* PROGRAM NAME: ZMMEP_DOMESTIC_MAT_PO_SCHDL
+* AUTHOR: Adarsh Sanjay Thakur Wipro
+* DATE  : 27/10/2023
+* RICEFWID: FS_MM_06
+*----------------------------------------------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------------------------------------------------------------------------------------------------*
+* 14/03/2024   MASTERS1                  The logic added for digital
+*                                        Signature Process by MastersInida
+*
+** Date : 12/09/2024  Changed By : AIRDITDEBI
+* Change Description : Showing First approver name in the
+*                      Purchaser name field in the print  for all the
+*                      plant .But whenever the PO belongs to
+*                      manufacturing plant(a set of plant provided by Funtional(table :ZMM_MF_PLANT))
+*                      ,then it will show the creater of the plant in  "Purchaser name" field in the Print.
+*
+* Date : 01/10/2024  Changed By : AIRDITDEBI
+* Change Description : Showing "Supplier Material Number" With Item Description for specific Plant Maintaines
+*                      in the table ZMM_PLANT_SMN(Plant For which Suplier Material No. Display in ME23N Print).
+*                      Due to this change  MPN will reflect  in PO and need not be added separately in Item Text
+*                      & Custom Stock Report which will help in better detailed stock identification .
+*
+* Date : 12/12/2024  Changed By : AIRDITDEBI  Ticket no : 30221
+* Change Description : Display the address of Plant when document was created by comparing the document  Create date
+*                      and plant change history details from CDHDR & CDPOS table.
+*
+*------------------------------------------------------------------------------------------------------------*
+REPORT zmmep_domestic_mat_po_schdl.
+
+TABLES: nast,tnapr.
+
+CONSTANTS: lang          TYPE thead-tdspras VALUE 'E',
+           lc_p000       TYPE char4 VALUE 'P000',
+           lc_p001       TYPE char4 VALUE 'P001',
+           lc_pbxx       TYPE char4 VALUE 'PBXX',
+           lc_ra00       TYPE char4 VALUE 'RA00',
+           lc_ra01       TYPE char4 VALUE 'RA01',
+           lc_ra02       TYPE char4 VALUE 'RA02',
+           lc_r000       TYPE char4 VALUE 'R000',
+           lc_r001       TYPE char4 VALUE 'R001',
+           lc_r002       TYPE char4 VALUE 'R002',
+           lc_r003       TYPE char4 VALUE 'R003',
+           lc_pnb1       TYPE char4 VALUE 'PNB1', "PNB1	Supp. P&F (Value)
+           lc_pnc1       TYPE char4 VALUE 'PNC1', "PNC1	Supp. P&F/Qty
+           lc_pnf1       TYPE char4 VALUE 'PNF1', "PNF1	Supp. P&F
+           lc_fsa1       TYPE char4 VALUE 'FSA1', "FSA1	Supp. Freight %
+           lc_fsb1       TYPE char4 VALUE 'FSB1', "FSB1	Supp.Freight (Value)
+           lc_fsc1       TYPE char4 VALUE 'FSC1', "FSC1	Supp. Freight/Qty
+           lc_pb00       TYPE char4 VALUE 'PB00',
+           lc_jiig       TYPE char4 VALUE 'JIIG',
+           lc_jicg       TYPE char4 VALUE 'JICG',
+           lc_jisg       TYPE char4 VALUE 'JISG',
+           lc_jexs       TYPE char4 VALUE 'JEXS',
+           lc_formname   TYPE tdsfname VALUE 'ZMMSF_PO_PRINT',
+           lc_background TYPE string VALUE 'DRAFT_L',
+           lc_blank      TYPE string VALUE 'BLANK',
+           lc_type       TYPE char3 VALUE 'RAW'.
+
+* Type Dec
+TYPES: BEGIN OF ty_item,
+         ebeln     TYPE ebeln,
+         ebelp     TYPE ebelp,
+         unit_rt   TYPE p LENGTH 11 DECIMALS 3,
+         discount  TYPE kbetr,
+         freight   TYPE kbetr,
+         packaging TYPE kbetr,
+         total_tax TYPE kbetr,
+       END OF ty_item,
+
+       BEGIN OF ty_gst,
+         ebeln    TYPE ebeln,
+         ebelp    TYPE ebelp,
+         igst     TYPE kbetr,
+         igst_per TYPE kbetr,
+         cgst     TYPE kbetr,
+         cgst_per TYPE kbetr,
+         sgst     TYPE kbetr,
+         sgst_per TYPE kbetr,
+         vat      TYPE kbetr,
+         vat_per  TYPE kbetr,
+       END OF ty_gst.
+DATA : p_ebeln TYPE ebeln ##NEEDED.
+
+DATA: ls_control_parameters TYPE  ssfctrlop ##NEEDED,
+      ls_output_options     TYPE  ssfcompop ##NEEDED.
+
+FORM entry_neu USING ent_retco TYPE any ent_screen TYPE any.
+  DATA: l_druvo       TYPE t166k-druvo,
+        l_nast        TYPE nast ##NEEDED,
+        l_from_memory ##TYPE_CHAIN_OK,
+        l_doc         TYPE meein_purchase_doc_print ##NEEDED.
+
+  CLEAR ent_retco.
+
+  IF sy-tcode = 'ZDS_COCKPIT'.
+
+    DATA: lv_kschl TYPE kschl,
+          lv_docno TYPE nast-objky,
+          ls_nast  TYPE nast.
+
+    CLEAR: lv_kschl,ls_nast,lv_docno.
+
+    IMPORT lv_kschl FROM MEMORY ID 'ZDS_KSCHL'.              "Export to Memory is Done by Master India Team, So not able to clear the Extended check Warning
+    IMPORT lv_docno FROM MEMORY ID 'ZDS_DOC'.                "Export to Memory is Done by Master India Team, So not able to clear the Extended check Warning
+
+    FREE MEMORY ID 'ZDS_KSCHL'.
+    FREE MEMORY ID 'ZDS_DOC'.
+
+    IF lv_kschl IS INITIAL.
+      lv_kschl = 'ZMAT'.
+    ENDIF.
+
+    SELECT * FROM nast                        "#EC CI_ALL_FIELDS_NEEDED
+      UP TO 1 ROWS                                      "#EC CI_NOORDER
+      INTO ls_nast
+      WHERE objky = lv_docno
+      AND kschl = lv_kschl.
+    ENDSELECT.
+
+    IF sy-subrc IS INITIAL.
+      IF ls_nast-aende EQ space.
+        l_druvo = '1'.
+      ELSE.
+        l_druvo = '2'.
+      ENDIF.
+
+      CALL FUNCTION 'ME_READ_PO_FOR_PRINTING'
+        EXPORTING
+          ix_nast        = ls_nast
+          ix_screen      = ent_screen
+        IMPORTING
+          ex_retco       = ent_retco
+          ex_nast        = l_nast
+          doc            = l_doc
+        CHANGING
+          cx_druvo       = l_druvo
+          cx_from_memory = l_from_memory.
+      CHECK ent_retco EQ 0.
+      p_ebeln = ls_nast-objky.
+      PERFORM fget_data.
+
+    ENDIF.
+  ELSE.
+    IF nast-aende EQ space.
+      l_druvo = '1'.
+    ELSE.
+      l_druvo = '2'.
+    ENDIF.
+
+    CALL FUNCTION 'ME_READ_PO_FOR_PRINTING'
+      EXPORTING
+        ix_nast        = nast
+        ix_screen      = ent_screen
+      IMPORTING
+        ex_retco       = ent_retco
+        ex_nast        = l_nast
+        doc            = l_doc
+      CHANGING
+        cx_druvo       = l_druvo
+        cx_from_memory = l_from_memory.
+    CHECK ent_retco EQ 0.
+
+
+    IF nast-kschl NE 'ZMTM'.
+      IF tnapr-sform NE ' '.
+        p_ebeln = nast-objky.
+        ls_control_parameters-preview    = 'X'.
+        ls_control_parameters-no_dialog  = 'X'.
+        ls_output_options-tddest = 'LP01'.
+        PERFORM fget_data.
+      ENDIF.
+    ELSE.
+      p_ebeln = nast-objky.
+      ls_control_parameters-preview    = ''.
+      ls_control_parameters-no_dialog  = 'X'.
+      ls_control_parameters-getotf = 'X'.
+
+      PERFORM fget_data.
+
+    ENDIF.
+  ENDIF.
+
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM fget_data .
+
+*  DATA: lt_text          TYPE STANDARD TABLE OF tline,
+  DATA:
+    lt_final_items   TYPE STANDARD TABLE OF zst_mm_po_sf_items,
+    lwa_final_items  TYPE zst_mm_po_sf_items,
+    lt_conditions    TYPE STANDARD TABLE OF ty_item,
+    lwa_conditions   TYPE ty_item,
+    lv_unit_rt       TYPE vfprc_element_amount,
+    lv_discount      TYPE vfprc_element_amount,
+    lv_freight       TYPE vfprc_element_amount,
+    lv_packing       TYPE vfprc_element_amount,
+    lv_tax_value     TYPE vfprc_element_amount,
+    lv_fm_name       TYPE rs38l_fnam,
+    lt_gst           TYPE STANDARD TABLE OF ty_gst,
+    lwa_gst          TYPE ty_gst,
+    lv_shipping_term TYPE char50,
+    lv_bsart         TYPE esart,
+*        ref1             TYPE string,
+*        ref2             TYPE string,
+*        ref3             TYPE string,
+*    lv_gnrl          TYPE string,
+    lv_background    TYPE string,
+    lv_title         TYPE string,
+    lt_dlv_schdl     TYPE ztt_dlvry_schdl,
+    lv_purchaser     TYPE string,
+    lv_projname      TYPE eknam,
+    gs_print_data    TYPE zst_sloc_address,
+    zterm_txt        TYPE char30,
+    ls_adrc          TYPE adrc.
+
+
+  SELECT ebeln,ernam,frggr,frgsx FROM ekko                                                           " EBELN,ERNAM added by Airditdebi on 12-09-204
+    UP TO 1 ROWS                                        "#EC CI_NOORDER
+    INTO @DATA(ls_pr)
+    WHERE ebeln = @p_ebeln.
+  ENDSELECT.
+
+*--> Fetching all the manufacturing plant detail for which
+*    Creater name will come in Purchaee section.
+  SELECT werks FROM zmm_mf_plant INTO TABLE @DATA(lt_mf_plant). "#EC CI_NOWHERE                     " added by Airditdebi on 12-09-204
+
+  IF ls_pr IS NOT INITIAL.
+
+    "--> Fetch the plant detail of the PO.                                                           " added by Airditdebi on 12-09-204 (229 - 243)
+    SELECT SINGLE ebeln,ebelp,werks
+    FROM ekpo INTO @DATA(ls_ekpo)
+    WHERE ebeln = @ls_pr-ebeln .
+
+    "--> Check if Plant belongs to manufacturing then lv_purchaser = PO Cretaer name.
+    IF ls_ekpo IS NOT INITIAL AND line_exists( lt_mf_plant[ werks = ls_ekpo-werks ] ).
+
+      SELECT SINGLE bname,name_textc
+      FROM user_addr
+      INTO @DATA(ls_user) WHERE bname = @ls_pr-ernam.
+      IF  sy-subrc EQ 0.
+        lv_purchaser = ls_user-name_textc.
+      ENDIF.
+    ENDIF.
+
+    SELECT frgc1 FROM t16fs
+      UP TO 1 ROWS                                      "#EC CI_NOORDER
+      INTO @DATA(lv_frgc1)
+      WHERE frggr = @ls_pr-frggr
+      AND frgsx = @ls_pr-frgsx.
+    ENDSELECT.
+    IF lv_frgc1 IS NOT INITIAL.
+      SELECT SINGLE objid, otype
+      FROM t16fw
+      INTO @DATA(ls_objid) BYPASSING BUFFER
+      WHERE frggr = @ls_pr-frggr AND frgco = @lv_frgc1 ##WARN_OK. "#EC CI_NOORDER
+
+      IF ls_objid-otype = 'S' OR ls_objid-otype = 'O' AND lv_purchaser IS INITIAL.            "cond. "and lv_purchaser is INITIAL"  :added by Airditdebi on 12-09-204
+        SELECT stext FROM hrp1000
+          UP TO 1 ROWS                                  "#EC CI_NOORDER
+          INTO @lv_purchaser
+           WHERE objid = @ls_objid-objid.
+        ENDSELECT. "
+      ELSEIF ls_objid-otype = 'US' AND lv_purchaser IS INITIAL .                              "cond. "and lv_purchaser is INITIAL"  :added by Airditdebi on 12-09-204
+        SELECT name_textc
+          UP TO 1 ROWS                                  "#EC CI_NOORDER
+          FROM user_addr
+          INTO @lv_purchaser
+          WHERE bname = @ls_objid-objid.
+        ENDSELECT.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+
+  "Adding logic for purchaser
+  SELECT MIN( changenr )
+  FROM cdpos
+  INTO @DATA(lv_changenr)
+  WHERE objectid  = @p_ebeln AND
+        fname     = 'FRGZU'  AND
+        value_new = 'X'.
+  IF lv_changenr IS NOT INITIAL.
+*    sort lt_changenr ASCENDING.
+*    read table lt_changenr into data(ls_id) index 1.
+    SELECT username FROM cdhdr
+      UP TO 1 ROWS                                      "#EC CI_NOORDER
+      INTO @DATA(lv_user)
+      WHERE changenr = @lv_changenr.
+    ENDSELECT.
+    IF lv_user IS NOT INITIAL AND lv_purchaser IS INITIAL .                           "cond. "and lv_purchaser is INITIAL"  :added by Airditdebi on 12-09-204.
+      SELECT name_textc
+        UP TO 1 ROWS                                    "#EC CI_NOORDER
+        FROM user_addr
+        INTO @lv_purchaser
+        WHERE bname = @lv_user.
+      ENDSELECT.
+    ENDIF.
+  ENDIF.
+
+
+  "fetching release strategy from ekko for background
+  SELECT SINGLE frgke FROM ekko INTO @DATA(lv_release_strategy) WHERE ebeln = @p_ebeln.
+  IF sy-subrc IS INITIAL.
+    IF lv_release_strategy IS INITIAL OR lv_release_strategy = space.
+      lv_release_strategy = 'G'.
+    ENDIF.
+    IF  lv_release_strategy = 'G' OR lv_release_strategy = 'M' OR lv_release_strategy = 'R'.
+      lv_background  = lc_blank.
+    ELSE.
+      lv_background = lc_background.
+    ENDIF.
+  ENDIF.
+
+  "fetching doc type from ekko
+  SELECT SINGLE bsart, ekorg, ekgrp FROM ekko INTO ( @DATA(lv_doc_type), @DATA(lv_ekorg), @DATA(lv_ekgrp) ) WHERE ebeln = @p_ebeln.
+  IF sy-subrc IS INITIAL.
+    SELECT SINGLE zbtxt
+           INTO @lv_title
+           FROM zmm_po_doctyp
+           WHERE zbsart = @lv_doc_type AND zbstyp = 'F'.
+  ENDIF.
+
+  "fetching project name that is description of purchase group
+  IF lv_ekgrp IS NOT INITIAL.
+    SELECT SINGLE eknam FROM t024 INTO @lv_projname WHERE ekgrp = @lv_ekgrp.
+  ENDIF.
+
+*start of fetching address details
+  SELECT bukrs, werks, loekz                            "#EC CI_NOORDER
+          FROM ekpo INTO TABLE @DATA(lt_werks) "@DATA(lv_ekpo)
+          WHERE ebeln =  @p_ebeln.
+  IF lt_werks[] IS NOT INITIAL.
+    DELETE lt_werks WHERE loekz = 'L'.
+    READ TABLE lt_werks INTO DATA(lv_ekpo) INDEX 1.     "#EC CI_NOORDER
+  ENDIF.
+
+  IF lv_ekpo-bukrs IS NOT INITIAL.
+    SELECT butxt
+           FROM t001 INTO @DATA(lv_butxt)
+       UP TO 1 ROWS
+           WHERE bukrs = @lv_ekpo-bukrs.
+    ENDSELECT.
+  ENDIF.
+*/-> Start<-/--------------------------------------------------------------------------------------> Added By AIRDITDEBI ON 12-12-2024
+  "--> fetch Cretae date and time of the PO.
+  IF lv_ekpo-werks IS NOT INITIAL.
+    SELECT SINGLE objectid,udate,utime FROM cdhdr WHERE objectid EQ @p_ebeln AND change_ind EQ 'I' INTO @DATA(ls_po_create).
+
+    IF  sy-subrc EQ 0.
+      CALL FUNCTION 'ZMMFM_PO_PLANT_ADDRESS'
+        EXPORTING
+          iv_werks = lv_ekpo-werks
+          iv_date  = ls_po_create-udate
+          iv_time  = ls_po_create-utime
+        IMPORTING
+          es_adrc  = ls_adrc.
+
+      IF ls_adrc-region IS NOT INITIAL.
+        SELECT SINGLE bezei FROM t005u INTO @DATA(lv_bezei)
+        WHERE bland = @ls_adrc-region AND spras = 'E' AND land1 = @ls_adrc-country.
+      ENDIF.
+
+      IF ls_adrc-country IS NOT INITIAL.
+        SELECT  SINGLE landx FROM t005t INTO @DATA(lv_landx)
+         WHERE land1 = @ls_adrc-country AND spras = 'E'.
+      ENDIF.
+    ENDIF.
+  ENDIF.
+*/-> End <-/---------------------------------------------------------------------------------------> Added by AIRDITDEBI ON 12-12-2024
+
+*/-> Start<-/--------------------------------------------------------------------------------------> Commented By AIRDITDEBI ON 12-12-2024
+   "--> fetch Cretae date and time of the PO.
+*  IF lv_ekpo-werks IS NOT INITIAL.
+*    SELECT adrnr
+*           FROM t001w
+*           INTO @DATA(lv_adrnr)
+*       UP TO 1 ROWS
+*           WHERE werks = @lv_ekpo-werks.
+*    ENDSELECT.
+*  ENDIF.
+*
+*  IF lv_adrnr IS NOT INITIAL.
+*    SELECT street     AS street,                        "#EC CI_NOORDER
+*                  str_suppl1 AS company_street1,
+*                  str_suppl2 AS company_street2,
+*                  str_suppl3 AS company_street3,
+*                  country,
+*                  city1      AS city1,
+*                  post_code1 AS post_code
+*           FROM adrc
+*           INTO @DATA(ls_adrc)
+*       UP TO 1 ROWS
+*           WHERE addrnumber = @lv_adrnr.
+*    ENDSELECT.
+*  ENDIF.
+*
+*  IF lv_adrnr IS NOT INITIAL.
+*    SELECT region                                       "#EC CI_NOORDER
+*           FROM adrc
+*           INTO @DATA(lv_region)
+*       UP TO 1 ROWS
+*           WHERE addrnumber = @lv_adrnr.
+*    ENDSELECT.
+*  ENDIF.
+*
+*  IF lv_region IS NOT INITIAL.
+*    SELECT bezei
+*           FROM t005u
+*           INTO @DATA(lv_bezei)
+*       UP TO 1 ROWS
+*           WHERE bland = @lv_region
+*           AND spras = 'E'
+*           AND land1 = @ls_adrc-country. "'IN'.
+*    ENDSELECT.
+*  ENDIF.
+*
+*  IF lv_adrnr IS NOT INITIAL.
+*    SELECT country                                      "#EC CI_NOORDER
+*           FROM adrc
+*           INTO @DATA(lv_country)
+*         UP TO 1 ROWS
+*           WHERE addrnumber = @lv_adrnr.
+*    ENDSELECT.
+*  ENDIF.
+*
+*  IF lv_country IS NOT INITIAL.
+*    SELECT landx
+*           FROM t005t
+*           INTO @DATA(lv_landx)
+*         UP TO 1 ROWS
+*           WHERE land1 = @lv_country
+*           AND spras = 'E'.
+*    ENDSELECT.
+*  ENDIF.
+*/-> End <-/------------------------------------------------------------------------------------> Commented by AIRDITDEBI 12-12-2024
+
+  IF lv_ekpo-werks IS NOT INITIAL.
+    SELECT j_1bbranch
+           FROM t001w
+           INTO @DATA(lv_j_1_bbranch)
+         UP TO 1 ROWS
+           WHERE werks = @lv_ekpo-werks.
+    ENDSELECT.
+  ENDIF.
+
+  IF lv_j_1_bbranch IS NOT INITIAL.
+    SELECT gstin
+        UP TO 1 ROWS                                    "#EC CI_NOORDER
+           FROM j_1bbranch
+           INTO @DATA(lv_gstin)
+           WHERE branch = @lv_j_1_bbranch
+            AND bukrs = @lv_ekpo-bukrs.       "added to pick gsrtin based on bukrs
+    ENDSELECT.
+  ENDIF.
+
+  "fetching order date (aedat) from ekko
+  SELECT  bedat, kdate, waers
+         FROM ekko
+         INTO (@DATA(lv_order_date),@DATA(lv_po_val_date),@DATA(lv_waers))
+       UP TO 1 ROWS
+         WHERE ebeln = @p_ebeln.
+  ENDSELECT.
+
+  "fetching version and amendment date from erev table
+  SELECT MAX( revno )                                   "#EC CI_NOORDER
+         FROM erev
+         INTO @DATA(lv_revno)
+         WHERE edokn = @p_ebeln.
+
+
+  IF lv_revno > 0.
+    SELECT erdat
+      UP TO 1 ROWS                                      "#EC CI_NOORDER
+      FROM erev
+      INTO @DATA(lv_rev_dat)
+      WHERE edokn = @p_ebeln.
+    ENDSELECT.
+  ENDIF.
+
+*start of fetching partner data
+  SELECT lifnr, llief
+         FROM ekko
+         INTO (@DATA(lv_lifnr),@DATA(lv_gscode))
+      UP TO 1 ROWS
+         WHERE ebeln = @p_ebeln.
+  ENDSELECT.
+
+  IF lv_gscode IS NOT INITIAL.
+    lv_lifnr = lv_gscode.
+    CLEAR: lv_gscode.
+  ENDIF.
+
+  IF lv_lifnr IS NOT INITIAL.
+*    gs_print_data-vendor_no = lv_lifnr.
+
+    SELECT name1, name2, adrnr, stcd3
+           FROM lfa1
+           INTO @DATA(lv_lfa1)
+      UP TO 1 ROWS
+           WHERE lifnr = @lv_lifnr.
+    ENDSELECT.
+  ENDIF.
+
+  IF lv_lfa1 IS NOT INITIAL.
+
+    SELECT street     AS street,                        "#EC CI_NOORDER
+                  str_suppl1 AS street1,
+                  str_suppl2 AS street2,
+                  str_suppl3 AS street3,
+                  city1      AS city1,
+                  region     AS region,
+                  country    AS country,
+                  post_code1 AS post_code
+           FROM adrc
+           INTO @DATA(ls_adrc_partner)
+      UP TO 1 ROWS
+           WHERE addrnumber = @lv_lfa1-adrnr.
+    ENDSELECT.
+  ENDIF.
+
+  IF ls_adrc_partner IS NOT INITIAL.
+    SELECT bezei
+           FROM t005u
+           INTO @DATA(lv_bezei_partner)
+      UP TO 1 ROWS
+           WHERE bland = @ls_adrc_partner-region
+           AND spras = 'E' AND land1 = @ls_adrc_partner-country. "'IN'.
+    ENDSELECT.
+
+    SELECT landx
+           FROM t005t
+           INTO @DATA(lv_landx_partner)
+        UP TO 1 ROWS
+           WHERE land1 = @ls_adrc_partner-country
+           AND spras = 'E'.
+    ENDSELECT.
+  ENDIF.
+
+*end of fetching partner data
+
+*fetching shipping term
+  SELECT inco1, inco2, zterm
+         FROM ekko
+         INTO @DATA(lwa_ekko)
+    UP TO 1 ROWS
+         WHERE ebeln = @p_ebeln.
+  ENDSELECT.
+
+  IF lwa_ekko-zterm IS NOT INITIAL.
+    SELECT SINGLE text1
+      FROM t052u
+      INTO zterm_txt
+      WHERE zterm = lwa_ekko-zterm AND spras = lang.
+  ENDIF.
+
+  IF zterm_txt IS INITIAL AND lwa_ekko-zterm IS NOT INITIAL.
+    SELECT SINGLE vtext
+  FROM tvzbt
+  INTO zterm_txt
+  WHERE zterm = lwa_ekko-zterm AND spras = lang.
+  ENDIF.
+
+  CONCATENATE lwa_ekko-inco1 lwa_ekko-inco2 INTO lv_shipping_term SEPARATED BY ' '.
+
+  SELECT eindt                                          "#EC CI_NOORDER
+         FROM eket
+         INTO @DATA(lv_last_delivery_date)
+      UP TO 1 ROWS
+         WHERE ebeln = @p_ebeln.
+  ENDSELECT.
+
+*start of fetching item data
+  SELECT ebeln,
+         ebelp
+    FROM ekpo
+    INTO TABLE @DATA(lt_ekpo)
+    WHERE ebeln = @p_ebeln AND
+          loekz = ' '.                                                                       " only line 548 added by Airditdebi on 12-09-204
+
+  SORT lt_ekpo BY ebeln ebelp.
+
+  IF lt_ekpo IS NOT INITIAL.
+    SELECT ebeln, ebelp, uniqueid, eindt,menge
+      FROM eket INTO TABLE @lt_dlv_schdl
+      FOR ALL ENTRIES IN @lt_ekpo
+      WHERE ebeln = @lt_ekpo-ebeln AND ebelp = @lt_ekpo-ebelp.
+  ENDIF.
+
+  SORT lt_dlv_schdl BY ebeln ebelp.
+
+  IF lt_ekpo[] IS NOT INITIAL.
+    SELECT ebeln,
+           ebelp,
+           loekz,
+           matnr,
+           txz01,
+           j_1bnbm,
+           menge,
+           meins,
+           brtwr,
+           netpr,
+           peinh,
+           mwskz,
+           lgort,
+           werks,                                                                         "--> Field "Werks" Added by AIRDITDEBI ON 01/10/2024
+           idnlf                                                                          "--> Field "idnlf" added by AIRDITDEBI ON 01/10/2024
+      FROM ekpo
+      INTO TABLE @DATA(lt_ekpo1)
+      FOR ALL ENTRIES IN @lt_ekpo                  "#EC CI_NO_TRANSFORM
+      WHERE ebeln = @lt_ekpo-ebeln
+      AND ebelp = @lt_ekpo-ebelp.
+  ENDIF.
+
+  SORT lt_ekpo1 BY ebeln ASCENDING.
+  READ TABLE lt_ekpo1 INTO DATA(ls_sloc_ekpo) INDEX 1.  "#EC CI_NOORDER
+
+  SELECT adrnr
+    UP TO 1 ROWS                                        "#EC CI_NOORDER
+    FROM twlad
+    INTO @DATA(lv_sloc_adrnr)
+    WHERE lgort = @ls_sloc_ekpo-lgort
+    AND werks = @lv_ekpo-werks.
+  ENDSELECT.
+
+*  ..................fetching storage loc address.................................
+  IF lv_sloc_adrnr IS NOT INITIAL.
+    SELECT name1, name2, name_co, street,
+           str_suppl1, str_suppl2, str_suppl3,
+           city1, city2, post_code1, country, region
+       UP TO 1 ROWS
+       FROM adrc
+       INTO @DATA(ls_sloc_address)
+       WHERE addrnumber = @lv_sloc_adrnr
+       ORDER BY street.
+    ENDSELECT.
+    IF ls_sloc_address IS NOT INITIAL.
+
+      gs_print_data-name1 = ls_sloc_address-name1.
+      gs_print_data-name_co = ls_sloc_address-name_co.
+      gs_print_data-street_sloc = ls_sloc_address-street.
+      gs_print_data-street2_sloc = ls_sloc_address-str_suppl1.
+      gs_print_data-street3_sloc = ls_sloc_address-str_suppl2.
+      gs_print_data-street4_sloc = ls_sloc_address-str_suppl3.
+      gs_print_data-city_sloc = ls_sloc_address-city1.
+      gs_print_data-city2_sloc = ls_sloc_address-city2.
+      gs_print_data-post_code1_sloc = ls_sloc_address-post_code1.
+    ENDIF.
+  ENDIF.
+
+  IF ls_sloc_address-region IS NOT INITIAL.
+    SELECT bezei
+           FROM t005u
+           INTO @gs_print_data-region_sloc
+       UP TO 1 ROWS
+           WHERE bland = @ls_sloc_address-region
+           AND spras = 'E'
+           AND land1 = @ls_sloc_address-country.
+    ENDSELECT.
+  ENDIF.
+
+  "Fetching country field for vendor address and assigning in global strucure
+  IF ls_sloc_address-country IS NOT INITIAL.
+    SELECT landx
+           FROM t005t
+           INTO @gs_print_data-country_sloc
+         UP TO 1 ROWS
+           WHERE land1 = @ls_sloc_address-country
+           AND spras = 'E'.
+    ENDSELECT.
+  ENDIF.
+
+  SELECT knumv
+         FROM ekko
+         INTO @DATA(lv_knumv)
+    UP TO 1 ROWS
+         WHERE ebeln = @p_ebeln.
+  ENDSELECT.
+
+  IF lv_knumv IS NOT INITIAL.
+    SELECT knumv,
+           kposn,
+           kschl,
+           kbetr,
+           krech,
+           kwert,
+           kpein
+      FROM prcd_elements
+      INTO TABLE @DATA(lt_prcd)
+      WHERE knumv = @lv_knumv.
+  ENDIF.
+
+  IF lt_ekpo1[] IS NOT INITIAL.
+
+    IF lv_ekorg = '1103'.
+      SELECT kschl,
+             knumh,
+             mwskz
+        FROM a003
+        INTO TABLE @DATA(lt_a003)
+        FOR ALL ENTRIES IN @lt_ekpo1               "#EC CI_NO_TRANSFORM
+        WHERE mwskz = @lt_ekpo1-mwskz
+        AND kappl = 'TX'
+        AND aland = 'GB'.
+    ELSE.
+      SELECT kschl,
+        knumh,
+        mwskz
+   FROM a003
+   INTO TABLE @lt_a003
+   FOR ALL ENTRIES IN @lt_ekpo1                    "#EC CI_NO_TRANSFORM
+   WHERE mwskz = @lt_ekpo1-mwskz
+   AND kappl = 'TX'
+   AND aland = 'IN'.
+    ENDIF.
+  ENDIF.
+
+  IF lt_a003[] IS NOT INITIAL.
+    SELECT knumh,
+           kschl,
+           kopos,
+           kbetr
+      FROM konp
+      INTO TABLE @DATA(lt_konp)
+      FOR ALL ENTRIES IN @lt_a003                  "#EC CI_NO_TRANSFORM
+      WHERE knumh = @lt_a003-knumh.
+  ENDIF.
+
+  DATA: ls_konp  LIKE LINE OF lt_konp,
+        lv_index TYPE sy-tabix.
+
+  SORT lt_ekpo1 BY ebelp mwskz.
+  SORT lt_prcd BY kposn.
+  SORT lt_conditions BY ebelp.
+  SORT lt_gst BY ebelp.
+  SORT lt_konp BY knumh kschl.
+  SORT lt_a003 BY mwskz.
+
+*--> Fetching all manufacturing Plant details for which
+*    "Supplier Material Number" Come with Item Description.
+  SELECT werks FROM zmm_plant_smn INTO TABLE @DATA(lt_plant_smn). "#EC CI_NOWHERE                     " added by Airditdebi on 01-10-2024.
+
+  LOOP AT lt_ekpo1 INTO DATA(lwa_ekpo1) ##INTO_OK.
+    IF lwa_ekpo1-loekz NE 'L'.
+*multiple values present in lt_knop table need to make changes here read table will not work
+      IF lv_bsart NE TEXT-010.
+        READ TABLE lt_a003 INTO DATA(lwa_a003) WITH KEY mwskz = lwa_ekpo1-mwskz BINARY SEARCH  ##NEEDED.
+        CLEAR lv_index.
+        lv_index = sy-tabix.
+        IF sy-subrc = 0.
+          LOOP AT lt_a003 INTO DATA(ls_a003) FROM lv_index.
+            IF lwa_ekpo1-mwskz <> ls_a003-mwskz.
+              EXIT.
+            ELSE.
+              READ TABLE lt_konp INTO ls_konp WITH KEY knumh = ls_a003-knumh kschl = ls_a003-kschl BINARY SEARCH  ##NEEDED.
+              IF sy-subrc = 0.
+                CASE ls_a003-kschl.
+                  WHEN lc_jiig.
+                    lwa_gst-igst = lwa_ekpo1-netpr * ( ls_konp-kbetr / 1000 ).
+                    lwa_gst-igst_per = ls_konp-kbetr / 10.
+                  WHEN lc_jicg.
+                    lwa_gst-cgst = lwa_ekpo1-netpr * ( ls_konp-kbetr / 1000 ).
+                    lwa_gst-cgst_per = ls_konp-kbetr / 10.
+                  WHEN lc_jisg.
+                    lwa_gst-sgst = lwa_ekpo1-netpr * ( ls_konp-kbetr / 1000 ).
+                    lwa_gst-sgst_per = ls_konp-kbetr / 10.
+                  WHEN 'MWVS'.
+                    lwa_gst-vat = lwa_ekpo1-netpr * ( ls_konp-kbetr / 1000 ).
+                    lwa_gst-vat_per = ls_konp-kbetr / 10.
+                ENDCASE.
+              ENDIF.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+
+        lwa_gst-ebeln = lwa_ekpo1-ebeln.
+        lwa_gst-ebelp = lwa_ekpo1-ebelp.
+
+        APPEND lwa_gst TO lt_gst.
+        CLEAR: lwa_gst,
+               lv_bsart.
+      ENDIF.
+
+      lwa_final_items-sr_no = sy-tabix.
+      lwa_final_items-ebeln = lwa_ekpo1-ebeln.
+      lwa_final_items-ebelp = lwa_ekpo1-ebelp.
+      lwa_final_items-matnr = lwa_ekpo1-matnr.
+
+      IF lwa_ekpo1-idnlf IS NOT INITIAL AND line_exists( lt_plant_smn[ werks = lwa_ekpo1-werks ] ).                                 "--> line no"766-770' added by airditdebi
+        lwa_final_items-txz01 = |{ lwa_ekpo1-txz01 } { lwa_ekpo1-idnlf }|..
+      ELSE.
+        lwa_final_items-txz01 = lwa_ekpo1-txz01.
+      ENDIF.
+      lwa_final_items-j_1bnbm = lwa_ekpo1-j_1bnbm.
+      lwa_final_items-menge = lwa_ekpo1-menge.
+      lwa_final_items-meins = lwa_ekpo1-meins.
+      lwa_final_items-loekz = lwa_ekpo1-loekz.
+      IF lwa_ekpo1-brtwr < 0.
+        lwa_final_items-brtwr = lwa_ekpo1-brtwr * -1.
+      ELSE.
+        lwa_final_items-brtwr = lwa_ekpo1-brtwr.
+      ENDIF.
+
+
+      IF lv_waers = 'JPY'.
+        lwa_ekpo1-netpr = lwa_ekpo1-netpr * 100.
+      ENDIF.
+      lwa_final_items-basic_value = ( ( lwa_ekpo1-netpr /  lwa_ekpo1-peinh ) * lwa_ekpo1-menge ).
+      lwa_final_items-netpr = lwa_ekpo1-netpr / lwa_ekpo1-peinh.
+
+      APPEND lwa_final_items TO lt_final_items.
+      CLEAR lwa_final_items.
+
+      READ TABLE lt_prcd INTO DATA(ls_prcd) WITH KEY kposn = lwa_ekpo1-ebelp BINARY SEARCH  ##NEEDED.
+      CLEAR lv_index.
+      lv_index = sy-tabix.
+      IF sy-subrc = 0.
+        LOOP AT lt_prcd INTO DATA(lwa_prcd) FROM lv_index.
+          IF lwa_ekpo1-ebelp <> lwa_prcd-kposn.
+            EXIT.
+          ELSE.
+            IF lwa_prcd-kschl = lc_p000 OR lwa_prcd-kschl = lc_p001 OR lwa_prcd-kschl = lc_pb00 OR lwa_prcd-kschl = lc_pbxx or lwa_prcd-kschl = 'ZBP0'.
+              lv_unit_rt = ( lv_unit_rt + lwa_prcd-kbetr ) / ( lwa_prcd-kpein ).
+            ELSEIF lwa_prcd-kschl = lc_ra00 OR lwa_prcd-kschl = lc_ra01 OR lwa_prcd-kschl = lc_ra02 OR lwa_prcd-kschl = lc_r000
+              OR lwa_prcd-kschl = lc_r001 OR lwa_prcd-kschl = lc_r002 OR lwa_prcd-kschl = lc_r003.
+              lv_discount = lv_discount + lwa_prcd-kbetr.
+            ELSEIF lwa_prcd-kschl = lc_pnb1 OR lwa_prcd-kschl = lc_pnc1 OR lwa_prcd-kschl = lc_pnf1
+              OR lwa_prcd-kschl = 'PFA1' OR lwa_prcd-kschl  = 'PFB1' OR lwa_prcd-kschl = 'PFC1'.
+              lv_packing = lv_packing + lwa_prcd-kwert.
+            ELSEIF lwa_prcd-kschl = lc_fsa1 OR lwa_prcd-kschl = lc_fsb1 OR lwa_prcd-kschl = lc_fsc1
+                OR lwa_prcd-kschl = 'FRA1' OR lwa_prcd-kschl = 'FRB1' OR lwa_prcd-kschl = 'FRC1'.
+              lv_freight = lv_freight + lwa_prcd-kwert.
+            ELSEIF lwa_prcd-kschl = lc_jexs.
+              lv_tax_value = lv_tax_value + lwa_prcd-kbetr.
+            ENDIF.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+
+      lwa_conditions-ebeln = lwa_ekpo1-ebeln.
+      lwa_conditions-ebelp = lwa_ekpo1-ebelp.
+      lwa_conditions-unit_rt = lv_unit_rt.
+      lwa_conditions-discount =  lv_discount.
+      lwa_conditions-freight = lv_freight.
+      lwa_conditions-packaging = lv_packing.
+
+      IF lv_freight IS INITIAL AND lv_packing IS INITIAL.
+        lwa_conditions-total_tax =  lv_tax_value.
+      ENDIF.
+
+      APPEND lwa_conditions TO lt_conditions.
+      CLEAR: lwa_conditions, lv_discount, lv_freight, lv_packing, lv_tax_value, lv_unit_rt.
+
+      READ TABLE lt_conditions INTO DATA(ls_condition) WITH KEY ebelp = lwa_ekpo1-ebelp BINARY SEARCH  ##NEEDED.
+      CLEAR lv_index.
+      lv_index = sy-tabix.
+      IF sy-subrc = 0.
+        LOOP AT lt_conditions INTO lwa_conditions FROM lv_index.
+          IF lwa_ekpo1-ebelp <> lwa_conditions-ebelp.
+            EXIT.
+          ELSE.
+            IF lwa_conditions-discount < 0.
+              lwa_final_items-discount = lwa_conditions-discount * -1.
+            ELSE.
+              lwa_final_items-discount = lwa_conditions-discount.
+            ENDIF.
+            lwa_final_items-unit_rt = lwa_conditions-unit_rt.
+            lwa_final_items-freight = lwa_conditions-freight.
+            lwa_final_items-packaging = lwa_conditions-packaging.
+            lwa_final_items-total_tax = lwa_conditions-total_tax.
+            lwa_final_items-total_value  = ( ( lwa_ekpo1-netpr / lwa_ekpo1-peinh ) * lwa_ekpo1-menge )
+            + lwa_final_items-total_tax + lwa_conditions-packaging + lwa_conditions-freight.
+            MODIFY lt_final_items FROM lwa_final_items TRANSPORTING discount freight packaging unit_rt total_tax total_value WHERE ebelp = lwa_ekpo1-ebelp.
+            CLEAR: lwa_final_items, lwa_conditions.
+          ENDIF.
+        ENDLOOP.
+      ENDIF.
+
+      IF lt_gst[] IS NOT INITIAL.
+        READ TABLE lt_gst INTO DATA(ls_gst) WITH KEY ebelp = lwa_ekpo1-ebelp BINARY SEARCH ##NEEDED.
+        CLEAR lv_index.
+        lv_index = sy-tabix.
+        IF sy-subrc = 0.
+          LOOP AT lt_gst INTO lwa_gst FROM lv_index.
+            IF lwa_ekpo1-ebelp <> lwa_gst-ebelp.
+              EXIT.
+            ELSE.
+              READ TABLE lt_final_items INTO DATA(ls_final) WITH KEY ebelp = lwa_ekpo1-ebelp.
+              IF sy-subrc = 0.
+                IF ls_final-packaging IS NOT INITIAL OR ls_final-freight IS NOT INITIAL. "to calculat gst if either P&F or Freight is present (23/04/24)
+                  DATA: lv_new   TYPE kbetr,
+                        lv_total TYPE kbetr.
+                  lv_new = ( ls_final-netpr * lwa_ekpo1-menge ) + ( ls_final-packaging + ls_final-freight ).
+                  lv_total = lv_total + ( lv_new * ( lwa_gst-igst_per / 100 ) ).
+                  lv_total = lv_total + ( lv_new * ( lwa_gst-cgst_per / 100 ) ).
+                  lv_total = lv_total + ( lv_new * ( lwa_gst-sgst_per / 100 ) ).
+                  lv_total = lv_total + ( lv_new * ( lwa_gst-vat_per / 100 ) ).
+                  lwa_final_items-total_tax = lv_total.
+                  lwa_final_items-total_value  = ( lwa_ekpo1-netpr * lwa_ekpo1-menge ) + lv_total + ls_final-packaging + ls_final-freight.
+                  MODIFY lt_final_items FROM lwa_final_items TRANSPORTING total_tax total_value WHERE ebelp = lwa_ekpo1-ebelp.
+                  CLEAR: lv_total, ls_final.
+                ENDIF.
+                IF ls_final-packaging IS INITIAL AND ls_final-freight IS INITIAL AND lv_ekorg = '1103'.
+                  DATA: lv_new1   TYPE kbetr,
+                        lv_total1 TYPE kbetr.
+                  lv_new1 = ( ls_final-netpr * lwa_ekpo1-menge ).
+                  lv_total1 = lv_total1 + ( lv_new1 * ( lwa_gst-vat_per / 100 ) ).
+                  lwa_final_items-total_tax = lv_total1.
+                  lwa_final_items-total_value  = ( lwa_ekpo1-netpr * lwa_ekpo1-menge ) + lv_total1.
+                  MODIFY lt_final_items FROM lwa_final_items TRANSPORTING total_tax total_value WHERE ebelp = lwa_ekpo1-ebelp.
+                  CLEAR: lv_total, ls_final.
+                ENDIF.
+              ENDIF.
+              lwa_final_items-igst = lwa_gst-igst_per.
+              lwa_final_items-cgst = lwa_gst-cgst_per.
+              lwa_final_items-sgst = lwa_gst-sgst_per.
+              lwa_final_items-vat  = lwa_gst-vat_per.
+              MODIFY lt_final_items FROM lwa_final_items TRANSPORTING igst cgst sgst vat WHERE ebelp = lwa_ekpo1-ebelp.
+              CLEAR: lwa_final_items, lwa_gst.
+            ENDIF.
+          ENDLOOP.
+        ENDIF.
+      ENDIF.
+    ENDIF.
+  ENDLOOP.
+
+*  delete table lt_final_items with table key LOEKZ = 'L'.
+
+*Calling Generated fucntion module
+  CALL FUNCTION 'SSF_FUNCTION_MODULE_NAME'
+    EXPORTING
+      formname           = lc_formname
+    IMPORTING
+      fm_name            = lv_fm_name
+    EXCEPTIONS
+      no_form            = 1
+      no_function_module = 2
+      OTHERS             = 3.
+  IF sy-subrc <> 0.
+    MESSAGE ID sy-msgid
+    TYPE sy-msgty
+    NUMBER sy-msgno
+    WITH sy-msgv1 sy-msgv2.
+  ENDIF.
+
+* Start of change by Masters1 for DS changes
+  IF sy-tcode = 'ZDS_COCKPIT'.
+
+    DATA: v_e_devtype    TYPE rspoptype,
+          icntrlparam    TYPE ssfctrlop,
+*          lt_otfdata     TYPE TABLE OF itcoo,
+          output_options TYPE ssfcompop,
+          it_otf         TYPE STANDARD TABLE OF itcoo,
+          ls_job_output  TYPE ssfcrescl,
+*          sform          TYPE tdsfname,
+          lv_sign        TYPE c.
+
+    IMPORT lv_sign FROM MEMORY ID 'ZDSIGN'.
+
+    CALL FUNCTION 'SSF_GET_DEVICE_TYPE'
+      EXPORTING
+        i_language             = 'E'
+        i_application          = 'SAPDEFAULT'
+      IMPORTING
+        e_devtype              = v_e_devtype
+      EXCEPTIONS
+        no_language            = 1
+        language_not_installed = 2
+        no_devtype_found       = 3
+        system_error           = 4
+        OTHERS                 = 5.
+
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid
+      TYPE sy-msgty
+      NUMBER sy-msgno
+      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+    IF lv_sign IS INITIAL.
+      ls_control_parameters-preview    = 'X'.
+      ls_control_parameters-no_dialog  = 'X'.
+      ls_output_options-tddest = 'LP01'.
+
+      CALL FUNCTION lv_fm_name
+        EXPORTING
+          control_parameters    = ls_control_parameters
+          output_options        = ls_output_options
+          gv_werks              = lv_ekpo-werks
+          gv_street             = ls_adrc-street
+          gv_street1            = ls_adrc-str_suppl1      "ls_adrc-company_street1
+          gv_street2            = ls_adrc-str_suppl2      "ls_adrc-company_street2
+          gv_street3            = ls_adrc-str_suppl3      "ls_adrc-company_street3
+          gv_city               = ls_adrc-city1
+          gv_post_code          = ls_adrc-post_code1      "ls_adrc-post_code
+          gv_state              = lv_bezei
+          gv_gstin              = lv_gstin
+          gt_final_items        = lt_final_items
+          gv_country            = lv_landx
+          gv_partner_street     = ls_adrc_partner-street
+          gv_partner_street1    = ls_adrc_partner-street1
+          gv_partner_street2    = ls_adrc_partner-street2
+          gv_partner_street3    = ls_adrc_partner-street3
+          gv_partner_city       = ls_adrc_partner-city1
+          gv_partner_state      = lv_bezei_partner
+          gv_partner_country    = lv_landx_partner
+          gv_partner_name       = lv_lfa1-name1
+          gv_shipping_term      = lv_shipping_term
+          gv_last_delivery_date = lv_last_delivery_date
+          gv_payment_terms      = zterm_txt
+          gv_ebeln              = p_ebeln
+          gv_partner_gstin      = lv_lfa1-stcd3
+          gv_order_date         = lv_order_date
+          gv_version            = lv_revno
+          gv_ammendment_date    = lv_rev_dat
+          gv_butxt              = lv_butxt
+          gv_release_strategy   = lv_release_strategy
+          gv_graphic_name       = lv_background
+          gv_doc_type           = lv_doc_type
+          gv_title              = lv_title
+          gv_po_val_dt          = lv_po_val_date
+          gv_waers              = lv_waers
+          gv_ekorg              = lv_ekorg
+          gt_delivery_schdl     = lt_dlv_schdl
+          gv_projnam            = lv_projname
+          gv_purchaser          = lv_purchaser
+          gs_sloc               = gs_print_data
+        EXCEPTIONS
+          formatting_error      = 1
+          internal_error        = 2
+          send_error            = 3
+          user_canceled         = 4
+          OTHERS                = 5.
+
+      IF sy-subrc <> 0.
+        MESSAGE ID sy-msgid
+        TYPE sy-msgty
+        NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+
+    ELSE.
+      icntrlparam-preview = ''.
+      output_options-tdprinter = v_e_devtype.
+      icntrlparam-no_dialog = 'X'.
+      icntrlparam-getotf = 'X'.
+
+      CALL FUNCTION lv_fm_name
+        EXPORTING
+          control_parameters    = icntrlparam
+          output_options        = output_options
+          gv_werks              = lv_ekpo-werks
+          gv_street             = ls_adrc-street
+          gv_street1            = ls_adrc-str_suppl1      "ls_adrc-company_street1
+          gv_street2            = ls_adrc-str_suppl2      "ls_adrc-company_street2
+          gv_street3            = ls_adrc-str_suppl3      "ls_adrc-company_street3
+          gv_city               = ls_adrc-city1
+          gv_state              = lv_bezei
+          gv_gstin              = lv_gstin
+          gt_final_items        = lt_final_items
+          gv_country            = lv_landx
+          gv_partner_street     = ls_adrc_partner-street
+          gv_partner_street1    = ls_adrc_partner-street1
+          gv_partner_street2    = ls_adrc_partner-street2
+          gv_partner_street3    = ls_adrc_partner-street3
+          gv_partner_city       = ls_adrc_partner-city1
+          gv_partner_state      = lv_bezei_partner
+          gv_partner_country    = lv_landx_partner
+          gv_partner_name       = lv_lfa1-name1
+          gv_shipping_term      = lv_shipping_term
+          gv_last_delivery_date = lv_last_delivery_date
+          gv_payment_terms      = zterm_txt
+          gv_ebeln              = p_ebeln
+          gv_partner_gstin      = lv_lfa1-stcd3
+          gv_order_date         = lv_order_date
+          gv_version            = lv_revno
+          gv_ammendment_date    = lv_rev_dat
+          gv_butxt              = lv_butxt
+          gv_release_strategy   = lv_release_strategy
+          gv_graphic_name       = lv_background
+          gv_doc_type           = lv_doc_type
+          gv_title              = lv_title
+          gv_po_val_dt          = lv_po_val_date
+          gv_waers              = lv_waers
+          gv_ekorg              = lv_ekorg
+          gt_delivery_schdl     = lt_dlv_schdl
+          gv_projnam            = lv_projname
+          gv_purchaser          = lv_purchaser
+          gs_sloc               = gs_print_data
+        IMPORTING
+          job_output_info       = ls_job_output
+        EXCEPTIONS
+          formatting_error      = 1
+          internal_error        = 2
+          send_error            = 3
+          user_canceled         = 4
+          OTHERS                = 5.
+
+      IF sy-subrc <> 0.
+        MESSAGE ID sy-msgid
+        TYPE sy-msgty
+        NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+
+      it_otf[] = ls_job_output-otfdata[].
+
+      EXPORT it_otf[] TO MEMORY ID 'DS_OTF' .           "Export to Memory is Done by Master India Team, So not able to clear the Extended check Warning
+
+    ENDIF.
+
+  ELSE.
+    IF  nast-kschl = 'ZMTM'.
+      CALL FUNCTION 'SSF_GET_DEVICE_TYPE'
+        EXPORTING
+          i_language             = 'E'
+          i_application          = 'SAPDEFAULT'
+        IMPORTING
+          e_devtype              = v_e_devtype
+        EXCEPTIONS
+          no_language            = 1
+          language_not_installed = 2
+          no_devtype_found       = 3
+          system_error           = 4
+          OTHERS                 = 5.
+
+      IF sy-subrc <> 0.
+        MESSAGE ID sy-msgid
+        TYPE sy-msgty
+        NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+
+      ls_output_options-tdnoprev  = 'X'.
+      ls_output_options-tddest = 'LP01'.
+      ls_output_options-tdnoprint = 'X'.
+      ls_output_options-tdprinter = v_e_devtype.
+    ENDIF.
+
+    CALL FUNCTION lv_fm_name
+      EXPORTING
+        control_parameters    = ls_control_parameters
+        output_options        = ls_output_options
+        gv_werks              = lv_ekpo-werks
+        gv_street             = ls_adrc-street
+        gv_street1            = ls_adrc-str_suppl1      "ls_adrc-company_street1
+        gv_street2            = ls_adrc-str_suppl2      "ls_adrc-company_street2
+        gv_street3            = ls_adrc-str_suppl3      "ls_adrc-company_street3
+        gv_city               = ls_adrc-city1
+        gv_post_code          = ls_adrc-post_code1      "ls_adrc-post_code
+        gv_state              = lv_bezei
+        gv_gstin              = lv_gstin
+        gt_final_items        = lt_final_items
+        gv_country            = lv_landx
+        gv_partner_street     = ls_adrc_partner-street
+        gv_partner_street1    = ls_adrc_partner-street1
+        gv_partner_street2    = ls_adrc_partner-street2
+        gv_partner_street3    = ls_adrc_partner-street3
+        gv_partner_city       = ls_adrc_partner-city1
+        gv_partner_state      = lv_bezei_partner
+        gv_partner_country    = lv_landx_partner
+        gv_partner_name       = lv_lfa1-name1
+        gv_partner_post_code  = ls_adrc_partner-post_code
+        gv_shipping_term      = lv_shipping_term
+        gv_last_delivery_date = lv_last_delivery_date
+        gv_payment_terms      = zterm_txt
+        gv_ebeln              = p_ebeln
+        gv_partner_gstin      = lv_lfa1-stcd3
+        gv_order_date         = lv_order_date
+        gv_version            = lv_revno
+        gv_ammendment_date    = lv_rev_dat
+        gv_butxt              = lv_butxt
+        gv_release_strategy   = lv_release_strategy
+        gv_graphic_name       = lv_background
+        gv_doc_type           = lv_doc_type
+        gv_title              = lv_title
+        gv_po_val_dt          = lv_po_val_date
+        gv_waers              = lv_waers
+        gv_ekorg              = lv_ekorg
+        gt_delivery_schdl     = lt_dlv_schdl
+        gv_projnam            = lv_projname
+        gv_purchaser          = lv_purchaser
+        gs_sloc               = gs_print_data
+      IMPORTING
+        job_output_info       = ls_job_output
+      EXCEPTIONS
+        formatting_error      = 1
+        internal_error        = 2
+        send_error            = 3
+        user_canceled         = 4
+        OTHERS                = 5.
+    IF sy-subrc <> 0.
+      MESSAGE ID sy-msgid
+      TYPE sy-msgty
+      NUMBER sy-msgno
+      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+    ENDIF.
+
+    IF nast-kschl = 'ZMTM'.
+
+      DATA: lo_bcs          TYPE REF TO cl_bcs,
+            lo_doc_bcs      TYPE REF TO cl_document_bcs,
+            lo_recep        TYPE REF TO if_recipient_bcs,
+*            lo_sapuser_bcs  TYPE REF TO cl_sapuser_bcs,
+            gr_sender       TYPE REF TO cl_sapuser_bcs,
+            gr_send_request TYPE REF TO cl_bcs ##NEEDED,
+            lo_cx_bcx       TYPE REF TO cx_bcs.
+
+      DATA: lv_bin_filesize TYPE so_obj_len,
+            lv_sent_to_all  TYPE os_boolean ##NEEDED,
+            lv_bin_xstr     TYPE xstring,
+            lv_string_text  TYPE string.
+
+      "Internal Tables.
+      DATA:
+*        lt_otfdata1       TYPE ssfcrescl,
+        lt_binary_content TYPE solix_tab,
+        lt_text1          TYPE bcsy_text,
+        lt_pdf_tab        TYPE STANDARD TABLE OF tline,
+        lt_otf            TYPE STANDARD TABLE OF itcoo.
+
+      "Work Areas
+      lt_otf[] = ls_job_output-otfdata[].
+
+
+      CALL FUNCTION 'CONVERT_OTF'
+        EXPORTING
+          format                = 'PDF'
+        IMPORTING
+          bin_filesize          = lv_bin_filesize
+          bin_file              = lv_bin_xstr
+        TABLES
+          otf                   = lt_otf[]
+          lines                 = lt_pdf_tab[]
+        EXCEPTIONS
+          err_max_linewidth     = 1
+          err_format            = 2
+          err_conv_not_possible = 3
+          OTHERS                = 4.
+      IF sy-subrc <> 0.
+        MESSAGE ID sy-msgid TYPE sy-msgty NUMBER sy-msgno
+        WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+      ENDIF.
+
+
+*******Convert Xstring to binary*****************
+      CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+        EXPORTING
+          buffer     = lv_bin_xstr
+        TABLES
+          binary_tab = lt_binary_content.
+
+      TRY.
+* -------- create persistent send request ------------------------
+          lo_bcs = cl_bcs=>create_persistent( ).
+
+          "Create send request
+          gr_send_request = cl_bcs=>create_persistent( ).
+
+          "Email FROM...
+          gr_sender = cl_sapuser_bcs=>create( 'BGUSER' ).
+          "Add sender to send request
+          CALL METHOD lo_bcs->set_sender
+            EXPORTING
+              i_sender = gr_sender.
+
+          "First line
+          CONCATENATE TEXT-011 cl_abap_char_utilities=>newline INTO lv_string_text.
+          APPEND lv_string_text TO lt_text1.
+          CLEAR lv_string_text.
+          "Second line
+          CONCATENATE TEXT-012 "'Please find the attached Purchase order.'
+          cl_abap_char_utilities=>newline INTO lv_string_text.
+          APPEND lv_string_text TO lt_text1.
+          CLEAR lv_string_text.
+          "Third line
+          APPEND TEXT-013 TO lt_text1. "'Best Regards,'
+          "Fourth line
+          APPEND TEXT-014 TO lt_text1. "'Thankyou.'
+
+*---------------------------------------------------------------------
+*-----------------& Create object for Document *------------------------
+*---------------------------------------------------------------------
+          lo_doc_bcs = cl_document_bcs=>create_document(
+            i_type    = lc_type "'RAW'
+            i_text    = lt_text1[]
+*           i_length  = '12'
+            i_subject = TEXT-015 && p_ebeln ). "Subject of the Email         'Purchase order '
+
+*---------------------------------------------------------------------
+*-----------------& Add attachment to document *----------------
+*---------------------------------------------------------------------
+* BCS expects document content here e.g. from document upload
+
+          CALL METHOD lo_doc_bcs->add_attachment
+            EXPORTING
+              i_attachment_type    = 'PDF'
+              i_attachment_size    = lv_bin_filesize
+              i_attachment_subject = TEXT-015 && p_ebeln      "'Purchase Order'
+*             i_attachment_subject = i_subject
+              i_att_content_hex    = lt_binary_content.
+
+* add document to send request
+          CALL METHOD lo_bcs->set_document( lo_doc_bcs ).
+
+*---------------------------------------------------------------------
+*------------------------& Set Sender *-------------------------
+*---------------------------------------------------------------------
+
+          DATA : lv_email TYPE adr6-smtp_addr.
+
+          SELECT SINGLE adrnr FROM lfa1 INTO @DATA(lv_adrnr11) WHERE lifnr = @nast-parnr.
+          IF lv_adrnr11 IS NOT INITIAL.
+            SELECT smtp_addr
+              UP TO 1 ROWS                              "#EC CI_NOORDER
+              FROM adr6 INTO @lv_email
+              WHERE addrnumber = @lv_adrnr11 AND flg_nouse = ' '.
+            ENDSELECT.
+          ENDIF.
+
+          lo_recep = cl_cam_address_bcs=>create_internet_address( lv_email ).
+
+          "Add recipient with its respective attributes to send request
+          CALL METHOD lo_bcs->add_recipient
+            EXPORTING
+              i_recipient = lo_recep
+              i_express   = 'X'.
+
+          CALL METHOD lo_bcs->set_send_immediately
+            EXPORTING
+              i_send_immediately = 'X'.
+
+*---------------------------------------------------------------------
+*-----------------& Send the email *-----------------------------
+*---------------------------------------------------------------------
+          CALL METHOD lo_bcs->send(
+            EXPORTING
+              i_with_error_screen = 'X'
+            RECEIVING
+              result              = lv_sent_to_all ).
+*
+*          IF lv_sent_to_all IS NOT INITIAL.
+**            COMMIT WORK.
+*          ENDIF.
+
+*---------------------------------------------------------------------
+*-----------------& Exception Handling *------------------------
+*---------------------------------------------------------------------
+        CATCH cx_bcs INTO lo_cx_bcx.
+          "Appropriate Exception Handling
+          WRITE: TEXT-016, lo_cx_bcx->error_type.             "'Exception:'
+*          ENDIF.
+      ENDTRY.
+
+    ENDIF.
+
+    "commented on 27/05/2024 for removing ATC and EPC checks
+*    IF sy-subrc <> 0.
+*      MESSAGE ID sy-msgid
+*      TYPE sy-msgty
+*      NUMBER sy-msgno
+*      WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+*    ENDIF.
+  ENDIF.
+ENDFORM.

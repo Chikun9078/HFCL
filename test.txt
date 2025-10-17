@@ -1,0 +1,16 @@
+Business Requirment : In ME21N , when we are creating a Po,each line item's of PO must have same Profit center.
+-----------------------------------------------------------------------------------------------------------------------
+
+Step 1
+-------------
+Check the available enhancement option  By using CL_EXITHANDER class or through GET BADI or CALL BADI.
+There are so many otherWays are there , but i feel this is suitable for every situation.
+
+Step 2
+-----------
+Check Wheather any Implementation Preesent for "Classic BADI/New BADI ".
+For my case i got a "NEW BADI/Kernel BADI" and it have some implementation by others but here i have created a new Implementation for the "New BADI" By providing the Implementation class.
+Then Choose the suitable class method in which you write yiur Business Logic For Meet your Business Requirement,Then activete The class.
+
+Step 3
+----------

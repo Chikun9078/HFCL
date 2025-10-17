@@ -1,0 +1,895 @@
+*----------------------------------------------------------------------*
+* Business Requirement : Need a single report to Fetch ASN/SES Detail
+*                        to know the status of open/closed entries.
+* PROGRAM NAME : ZMM_ASN_DETAIL_REPORT
+* AUTHOR       : Debidutta Swain(AIRDITDEBI) <AIRDIT>
+* CREATED DATE : 10-09-2024
+* Ticket NO    : 24735
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date:          Changed By:
+*    Modification:
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Report ZMM_ASN_DETAIL_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmm_asn_detail_report.
+
+*-->Structure Type Declaration.
+TYPES : BEGIN OF ty_asn_final,
+          ebeln       LIKE ekko-ebeln,            " Purchase Documet Number
+          ekorg       LIKE ekko-ekorg,            " Purchasing Organization
+          ekgpr       LIKE ekko-ekgrp,            " Purchasing Group
+          aedat       LIKE ekko-aedat,            " Creation Date of Purchasing Document
+          lifnr       LIKE ekko-lifnr,            " Supplier Code
+          name1       LIKE lfa1-name1,            " Supplier Name
+          waers       LIKE ekko-waers,            " Currency
+          ebelp       LIKE ekbe-ebelp,            " Purchasing Item Number
+          vbeln_st    LIKE ekbe-vbeln_st,         " ASN no /SES No
+          asn_date_e  LIKE ekbe-budat,            " ASN /SES Entry Date
+          grn_no      LIKE ekbe-belnr,            " GRN NO.
+          grn_date_p  LIKE ekbe-budat,            " GRN Posting Date
+          grn_date_e  LIKE ekbe-cpudt,            " GRN Entry Date
+          bwart       LIKE ekbe-bwart,            " Movement Type
+          grn_ref_doc LIKE ekbe-lfbnr,            " GRN Reference Document No.
+          amount      LIKE ekbe-wrbtr,            " Amount
+          miro_no     LIKE ekbe-belnr,            " MIRO NO.
+          miro_date_p LIKE ekbe-budat,            " MIRO Posting Date
+          miro_date_e LIKE ekbe-cpudt,            " MIRO Entry Date
+          asn_qty     LIKE ekbe-menge,            " ASN Qty
+          gr_qty      LIKE ekbe-menge,            " GR Qty
+          miro_value  LIKE ekbe-wrbtr,            " MIRO Value
+          inv_amnt_lc LIKE ekbe-dmbtr,            " Invoice amount LC
+          ref_inv_no  LIKE ekbe-xblnr,            " Reference Vendor Invoice No
+        END OF ty_asn_final.
+
+TYPES:BEGIN OF ty_ekko,
+        ebeln LIKE ekko-ebeln,
+        aedat LIKE ekko-aedat,
+        ekorg LIKE ekko-ekorg,
+        ekgrp LIKE ekko-ekgrp,
+        lifnr LIKE ekko-lifnr,
+        waers LIKE ekko-waers,
+        name1 LIKE lfa1-name1,
+      END OF  ty_ekko.
+
+TYPES: BEGIN OF ty_asn_grn,
+         ebeln    LIKE ekbe-ebeln,    " po number
+         ebelp    LIKE ekbe-ebelp,    " po item number
+         vgabe    LIKE ekbe-vgabe,    " Transaction/event type, purchase order history
+         belnr    LIKE ekbe-belnr,    " GRN NO.
+         budat    LIKE ekbe-budat,    " ASN Entry Date/ GRN Posting date
+         bwart    LIKE ekbe-bwart,    " Movement Type
+         menge    LIKE ekbe-menge,    " ASN Qty / GR Qty
+         wrbtr    LIKE ekbe-wrbtr,    " Amount
+         xblnr    LIKE ekbe-xblnr,    " Reference Vendor Invoice No
+         lfbnr    LIKE ekbe-lfbnr,    " Reference Document No.
+         cpudt    LIKE ekbe-cpudt,    " GRN Entry Date
+         vbeln_st LIKE ekbe-vbeln_st, " ASN NO.
+       END OF ty_asn_grn.
+
+TYPES: BEGIN OF ty_miro,
+         ebeln LIKE ekbe-ebeln,    " po number
+         ebelp LIKE ekbe-ebelp,    " po item number
+         vgabe LIKE ekbe-vgabe,    " Transaction/event type, purchase order history
+         belnr LIKE ekbe-belnr,    " MIRO No.
+         budat LIKE ekbe-budat,    " MIRO posting Date
+         dmbtr LIKE ekbe-dmbtr,    " MIRO Value
+         wrbtr LIKE ekbe-wrbtr,    " Invoice Amount LC
+         lfbnr LIKE ekbe-lfbnr,    " Reference Document No.
+         cpudt LIKE ekbe-cpudt,    " MIRO posting Date
+       END OF ty_miro.
+
+TYPES: BEGIN OF ty_ses,
+         ebeln LIKE ekbe-ebeln,
+         ebelp LIKE ekbe-ebelp,
+         vgabe LIKE ekbe-vgabe,
+         belnr TYPE ekbe-belnr,
+         budat LIKE ekbe-budat,
+         menge LIKE ekbe-menge,
+         dmbtr LIKE ekbe-dmbtr,
+         wrbtr LIKE ekbe-wrbtr,
+         lfbnr LIKE ekbe-lfbnr,
+       END OF ty_ses.
+
+*--> Data Object declaration.
+DATA: lv_ebeln TYPE ekko-ebeln,    "--> Purchase Order
+      lv_aedat TYPE ekko-aedat,    "--> Creation Date of Purchasing Document
+      lv_ekorg TYPE ekko-ekorg.    "--> Purchasing Organization
+
+DATA: temp_asn     TYPE ty_asn_final,
+      ls_asn_final TYPE ty_asn_final.
+
+DATA: lt_ekko      TYPE TABLE OF ty_ekko,
+      lt_asn_grn   TYPE TABLE OF ty_asn_grn,
+      lt_migo      TYPE TABLE OF ty_miro,
+      lt_ses       TYPE TABLE OF ty_ses,
+      lt_asn_final TYPE TABLE OF ty_asn_final.
+
+DATA: fcat TYPE slis_fieldcat_alv  OCCURS 0 WITH HEADER LINE.
+
+*--> Selection screen Preparation.
+SELECTION-SCREEN BEGIN OF  BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS :s_ebeln FOR lv_ebeln OBLIGATORY ,
+                  s_ekorg FOR lv_ekorg,
+                  s_aedat FOR lv_aedat.
+SELECTION-SCREEN END OF BLOCK b1.
+
+*--> Validating the input value.
+AT SELECTION-SCREEN.
+
+  "--> Validating Purchase Order Number.
+  SELECT ebeln FROM ekko
+  INTO TABLE @DATA(check_ebeln)
+  WHERE ebeln IN @s_ebeln.
+
+  IF check_ebeln IS INITIAL.
+    MESSAGE TEXT-002 TYPE 'E'.
+  ENDIF.
+
+  "--> Validating Purchasing Organization.
+  IF s_ekorg IS NOT INITIAL.
+    SELECT ekorg FROM t024e
+    INTO TABLE @DATA(check_ekorg)
+    WHERE ekorg IN @s_ekorg.
+
+    IF check_ekorg IS INITIAL.
+      MESSAGE TEXT-003 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+
+  "--> Fetch Detail Based on selection screen detail.
+
+START-OF-SELECTION.
+  SELECT ekko~ebeln,ekko~aedat,ekko~ekorg,                  "#EC CI_NO_TRANSFORM
+         ekko~ekgrp,ekko~lifnr,ekko~waers,
+         lfa1~name1
+  FROM ekko
+  LEFT OUTER JOIN lfa1 ON ekko~lifnr = lfa1~lifnr
+  WHERE ekko~ebeln IN @s_ebeln AND
+        ekko~ekorg IN @s_ekorg AND
+        ekko~aedat IN @s_aedat
+  INTO TABLE @lt_ekko.
+
+  IF lt_ekko IS NOT INITIAL.
+    PERFORM get_data.                "--> get the ASN report Related Details
+    PERFORM process_data.            "--> Prepare the final ASN related result.
+    PERFORM display_data.            "--> Display the ASN detail in ALV formart.
+
+  ELSE.
+    MESSAGE TEXT-004 TYPE 'E'.
+  ENDIF.
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_asn_grn_data.
+  PERFORM get_miro_data.
+  PERFORM get_ses_data.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+
+  IF lt_ekko IS NOT INITIAL.
+    LOOP AT lt_ekko INTO DATA(ls_ekko).
+      LOOP AT lt_asn_grn INTO DATA(ls_asn_grn).
+        IF  ls_asn_grn-ebeln EQ ls_ekko-ebeln.
+
+          ls_asn_final-ebeln = ls_ekko-ebeln.                                                         "--> Purchasing Document Number
+          ls_asn_final-ekorg = ls_ekko-ekorg.                                                         "--> Purchasing Organization
+          ls_asn_final-ekgpr = ls_ekko-ekgrp.                                                         "--> Purchasing Group
+          ls_asn_final-lifnr = ls_ekko-lifnr.                                                         "--> Supplier
+          ls_asn_final-aedat = ls_ekko-aedat.                                                         "--> Creation Date Of Purchasing Document
+          ls_asn_final-name1 = ls_ekko-name1.                                                         "--> Supplier Name
+          ls_asn_final-waers = ls_ekko-waers.                                                         "--> Currency
+          ls_asn_final-ebelp = ls_asn_grn-ebelp.                                                      "--> Purchasing Item
+
+          IF ls_asn_grn-vbeln_st IS NOT INITIAL .                                                     "--> ASN no /SES No & ASN /SES Entry Date
+            ls_asn_final-vbeln_st   = ls_asn_grn-vbeln_st.
+            ls_asn_final-asn_date_e = ls_asn_grn-budat.
+            ls_asn_final-asn_qty    = ls_asn_grn-menge.                                                   "--> ASN Qty
+            ls_asn_final-gr_qty     = ls_asn_grn-menge.                                                   "--> GR Qty
+          ELSE.
+            READ TABLE lt_ses INTO DATA(ls_ses) WITH  KEY ebeln = ls_asn_grn-ebeln
+                                                          lfbnr = ls_asn_grn-lfbnr BINARY SEARCH.
+            IF ls_ses IS NOT INITIAL.
+              ls_asn_final-vbeln_st   = ls_ses-belnr.
+              ls_asn_final-asn_date_e = ls_ses-budat.
+              ls_asn_final-asn_qty    = ls_ses-menge.                                                   "--> ASN Qty
+              ls_asn_final-gr_qty     = ls_ses-menge.                                                   "--> GR Qty
+            ENDIF.
+          ENDIF.
+
+          ls_asn_final-grn_no      = ls_asn_grn-belnr.                                                   "--> GRN No.
+          ls_asn_final-grn_date_p  = ls_asn_grn-budat.                                                   "--> GRN Posting Date
+          ls_asn_final-grn_date_e  = ls_asn_grn-cpudt.                                                   "--> GRN Entry Date
+          ls_asn_final-bwart       = ls_asn_grn-bwart.                                                   "--> Movement Type
+          ls_asn_final-grn_ref_doc = ls_asn_grn-lfbnr.                                                   "--> GRN Ref Document Number.
+          ls_asn_final-amount      = ls_asn_grn-wrbtr.                                                   "--> Amount
+          ls_asn_final-ref_inv_no  = ls_asn_grn-xblnr.                                                   "--> Reference Vendor Invoice No
+
+          READ TABLE lt_migo INTO DATA(ls_miro) WITH KEY ebeln = ls_asn_grn-ebeln
+                                                         ebelp = ls_asn_grn-ebelp
+                                                         lfbnr = ls_asn_grn-lfbnr BINARY SEARCH.
+          IF ls_miro IS NOT INITIAL.
+            ls_asn_final-miro_no     = ls_miro-belnr.                                                  "--> MIRO NO.
+            ls_asn_final-miro_date_p = ls_miro-budat.                                                  "--> MIRO posting Date
+            ls_asn_final-miro_date_e = ls_miro-cpudt.                                                  "--> MIRO entry Date
+            ls_asn_final-miro_value  = ls_miro-wrbtr.                                                  "--> MIRO Value
+            ls_asn_final-inv_amnt_lc = ls_miro-dmbtr.                                                  "--> Invoice amount LC
+          ENDIF.
+
+          APPEND ls_asn_final TO lt_asn_final.
+        ENDIF.
+        CLEAR :ls_asn_grn,ls_ses,ls_miro,ls_asn_final.
+      ENDLOOP.
+      CLEAR ls_ekko.
+    ENDLOOP.
+
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+  PERFORM get_all_catalogs.                         "--> Prepare the Catalog for display formart.
+  PERFORM display_alv_grid_display.                 "--> Display The final Result.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_asn_grn_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_asn_grn_data .
+  IF  lt_ekko IS NOT INITIAL .
+    SELECT ebeln,ebelp,vgabe,belnr,budat,
+           bwart,menge,wrbtr,xblnr,lfbnr,cpudt,vbeln_st
+    FROM ekbe
+    FOR ALL ENTRIES IN @lt_ekko                                      "#EC CI_NO_TRANSFORM
+    WHERE ebeln = @lt_ekko-ebeln AND
+          vgabe = '1'
+    INTO TABLE @lt_asn_grn.
+  ENDIF.
+
+  SORT lt_asn_grn BY ebeln ebelp belnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_miro_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_miro_data .
+  IF lt_asn_grn IS NOT INITIAL.
+    SELECT ebeln,ebelp,vgabe,belnr,
+           budat,dmbtr,wrbtr,lfbnr,cpudt
+    FROM ekbe
+    FOR ALL ENTRIES IN @lt_asn_grn
+    WHERE ebeln = @lt_asn_grn-ebeln AND
+          ebelp = @lt_asn_grn-ebelp AND
+          vgabe = '2' AND
+          lfbnr = @lt_asn_grn-lfbnr
+    INTO TABLE @lt_migo.
+  ENDIF.
+  SORT lt_migo BY ebeln lfbnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_ses_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_ses_data .
+  IF lt_ekko IS NOT INITIAL.
+    SELECT ebeln,ebelp,vgabe,belnr,budat,menge,dmbtr,wrbtr,lfbnr         " #EC CI_NO_TRANSFORM
+    FROM ekbe
+    FOR ALL ENTRIES IN @lt_ekko
+    WHERE ebeln = @lt_ekko-ebeln AND
+          vgabe = '9'
+    INTO TABLE @lt_ses.
+  ENDIF.
+
+  SORT lt_ses BY ebeln ebelp lfbnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_all_catalogs
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_all_catalogs .
+
+  CLEAR : fcat[].
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'EKORG'        'Purchasing Organization'                   '5'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'EKGPR'        'Purchasing Group'                          '5'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'LIFNR'        'Supplier'                                  '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'NAME1'        'Supplier Name'                             '40'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'EBELN'        'Purchase Order No.'                        '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'EBELP'        'Item'                                      '5'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'VBELN_ST'     'ASN no/SES No'                             '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'ASN_DATE_E'   'ASN/SES Entry Date'                        '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GRN_NO'       'GRN No'                                    '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GRN_DATE_P'   'GRN Posting Date'                          '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GRN_DATE_E'   'GRN Entry  Date'                           '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'BWART'        'Movement Type'                             '5'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GRN_REF_DOC'  'GRN Ref. Document'                         '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'AMOUNT'       'Amount'                                    '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'MIRO_NO'      'MIRO No'                                   '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'MIRO_DATE_P'  'MIRO Posting Date'                         '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'MIRO_DATE_E'  'MIRO Entry Date'                           '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'ASN_QTY'      'ASN Qty'                                   '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GR_QTY'       'GR Qty'                                    '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'MIRO_VALUE'   'MIRO Value'                                '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'INV_AMNT_LC'  'Invoice amount LC'                         '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'REF_INV_NO'   'Reference Vendor Invoice No'               '20'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'WAERS'        'Currency'                                  '5'.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form  get_catalog
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_catalog  USING    VALUE(p1)
+                           VALUE(p2)
+                           VALUE(p3)
+                           VALUE(p4).
+  CLEAR :fcat.
+  fcat-tabname    = p1.
+  fcat-fieldname  = p2.
+  fcat-seltext_l  = p3.
+  fcat-outputlen  = p4.
+
+  APPEND fcat.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+  DATA: ls_layout TYPE slis_layout_alv.
+
+  CLEAR : ls_layout.
+  ls_layout-colwidth_optimize = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+      is_layout          = ls_layout
+      it_fieldcat        = fcat[]
+      i_save             = 'A'
+    TABLES
+      t_outtab           = lt_asn_final.
+ENDFORM.
+
+
+
+
+
+
+
+"---------------------------------------------------------------------------------------------------------------------------change 2
+*----------------------------------------------------------------------*
+* Business Requirement : Need a single report to Fetch ASN/SES Detail
+*                        to know the status of open/closed entries.
+* PROGRAM NAME : ZMM_ASN_DETAIL_REPORT
+* AUTHOR       : Debidutta Swain(AIRDITDEBI) <AIRDIT>
+* CREATED DATE : 10-09-2024
+* Ticket NO    : 24735
+*----------------------------------------------------------------------*
+* CHANGE HISTORY
+*-----------------
+* 1. Changed Date: 25-09-2024    Changed By: AIRDITDEBI
+*    Ticket no   :
+*    Modification:
+*----------------------------------------------------------------------*
+*&---------------------------------------------------------------------*
+*& Report ZMM_ASN_DETAIL_REPORT
+*&---------------------------------------------------------------------*
+*&
+*&---------------------------------------------------------------------*
+REPORT zmm_asn_detail_report.
+
+*-->Structure Type Declaration.
+TYPES : BEGIN OF ty_asn_final,
+          ebeln       LIKE ekko-ebeln,            " Purchase Documet Number
+          ekorg       LIKE ekko-ekorg,            " Purchasing Organization
+          ekgpr       LIKE ekko-ekgrp,            " Purchasing Group
+          aedat       LIKE ekko-aedat,            " Creation Date of Purchasing Document
+          lifnr       LIKE ekko-lifnr,            " Supplier Code
+          name1       LIKE lfa1-name1,            " Supplier Name
+          waers       LIKE ekko-waers,            " Currency
+          ebelp       LIKE ekbe-ebelp,            " Purchasing Item Number
+          vbeln_st    LIKE ekbe-vbeln_st,         " ASN no /SES No
+          asn_date_e  LIKE ekbe-budat,            " ASN /SES Entry Date
+          grn_no      LIKE ekbe-belnr,            " GRN NO.
+          grn_date_p  LIKE ekbe-budat,            " GRN Posting Date
+          grn_date_e  LIKE ekbe-cpudt,            " GRN Entry Date
+          bwart       LIKE ekbe-bwart,            " Movement Type
+          grn_ref_doc LIKE ekbe-lfbnr,            " GRN Reference Document No.
+          amount      LIKE ekbe-wrbtr,            " Amount
+          miro_no     LIKE ekbe-belnr,            " MIRO NO.
+          miro_date_p LIKE ekbe-budat,            " MIRO Posting Date
+          miro_date_e LIKE ekbe-cpudt,            " MIRO Entry Date
+          asn_qty     LIKE ekbe-menge,            " ASN Qty
+          gr_qty      LIKE ekbe-menge,            " GR Qty
+          miro_value  LIKE ekbe-wrbtr,            " MIRO Value
+          inv_amnt_lc LIKE ekbe-dmbtr,            " Invoice amount LC
+          ref_inv_no  LIKE ekbe-xblnr,            " Reference Vendor Invoice No
+        END OF ty_asn_final.
+
+TYPES:BEGIN OF ty_ekko,
+        ebeln LIKE ekko-ebeln,
+        aedat LIKE ekko-aedat,
+        ekorg LIKE ekko-ekorg,
+        ekgrp LIKE ekko-ekgrp,
+        lifnr LIKE ekko-lifnr,
+        waers LIKE ekko-waers,
+        name1 LIKE lfa1-name1,
+      END OF  ty_ekko.
+
+TYPES: BEGIN OF ty_asn_grn,
+         ebeln    LIKE ekbe-ebeln,    " po number
+         ebelp    LIKE ekbe-ebelp,    " po item number
+         vgabe    LIKE ekbe-vgabe,    " Transaction/event type, purchase order history
+         belnr    LIKE ekbe-belnr,    " GRN NO.
+         budat    LIKE ekbe-budat,    " ASN Entry Date/ GRN Posting date
+         bwart    LIKE ekbe-bwart,    " Movement Type
+         menge    LIKE ekbe-menge,    " ASN Qty / GR Qty
+         dmbtr    LIKE ekbe-dmbtr,    " Invoice amount LC                         ""--------->added
+         wrbtr    LIKE ekbe-wrbtr,    " Amount
+         xblnr    LIKE ekbe-xblnr,    " Reference Vendor Invoice No
+         lfbnr    LIKE ekbe-lfbnr,    " Reference Document No.
+         matnr    LIKE ekbe-matnr,    " Material code
+         cpudt    LIKE ekbe-cpudt,    " GRN Entry Date
+         vbeln_st LIKE ekbe-vbeln_st, " ASN NO.
+       END OF ty_asn_grn.
+
+TYPES: BEGIN OF ty_rbkp,
+         belnr LIKE rbkp-belnr,
+         xblnr LIKE rbkp-xblnr,
+         budat LIKE rbkp-budat,
+         cpudt LIKE rbkp-cpudt,
+       END OF ty_rbkp.
+
+TYPES: BEGIN OF ty_rseg,
+         belnr LIKE rbkp-belnr,
+         buzei LIKE rseg-buzei,
+         ebeln LIKE rseg-ebeln,
+         ebelp LIKE rseg-ebelp,
+         matnr LIKE rseg-matnr,
+         wrbtr LIKE rseg-wrbtr,
+       END OF ty_rseg.
+
+TYPES: BEGIN OF ty_miro,
+         xblnr LIKE ekbe-xblnr,
+         belnr LIKE rbkp-belnr,
+         buzei LIKE rseg-buzei,
+         ebeln LIKE rseg-ebeln,
+         ebelp LIKE rseg-ebelp,
+         matnr LIKE rseg-matnr,
+         wrbtr LIKE rseg-wrbtr,
+         budat LIKE rbkp-budat,
+         cpudt LIKE rbkp-cpudt,
+
+       END OF ty_miro.
+
+TYPES: BEGIN OF ty_ses,
+         ebeln LIKE ekbe-ebeln,
+         ebelp LIKE ekbe-ebelp,
+         vgabe LIKE ekbe-vgabe,
+         belnr TYPE ekbe-belnr,
+         budat LIKE ekbe-budat,
+         menge LIKE ekbe-menge,
+         dmbtr LIKE ekbe-dmbtr,
+         wrbtr LIKE ekbe-wrbtr,
+         lfbnr LIKE ekbe-lfbnr,
+       END OF ty_ses.
+
+*--> Data Object declaration.
+DATA: lv_ebeln TYPE ekko-ebeln,    "--> Purchase Order
+      lv_aedat TYPE ekko-aedat,    "--> Creation Date of Purchasing Document
+      lv_ekorg TYPE ekko-ekorg.    "--> Purchasing Organization
+
+DATA: temp_asn     TYPE ty_asn_final,
+      ls_mirO      TYPE ty_miro,
+      ls_asn_final TYPE ty_asn_final.
+
+DATA: lt_ekko      TYPE TABLE OF ty_ekko,
+      lt_asn_grn   TYPE TABLE OF ty_asn_grn,
+      lt_rbkp      TYPE TABLE OF ty_rbkp,
+      lt_rseg      TYPE TABLE OF ty_rseg,
+      lt_miro      TYPE TABLE OF ty_miro,
+      lt_ses       TYPE TABLE OF ty_ses,
+      lt_asn_final TYPE TABLE OF ty_asn_final.
+
+DATA: fcat TYPE slis_fieldcat_alv  OCCURS 0 WITH HEADER LINE.
+
+*--> Selection screen Preparation.
+SELECTION-SCREEN BEGIN OF  BLOCK b1 WITH FRAME TITLE TEXT-001.
+  SELECT-OPTIONS :s_ebeln FOR lv_ebeln OBLIGATORY ,
+                  s_ekorg FOR lv_ekorg,
+                  s_aedat FOR lv_aedat.
+SELECTION-SCREEN END OF BLOCK b1.
+
+*--> Validating the input value.
+AT SELECTION-SCREEN.
+
+  "--> Validating Purchase Order Number.
+  SELECT ebeln FROM ekko
+  INTO TABLE @DATA(check_ebeln)
+  WHERE ebeln IN @s_ebeln.
+
+  IF check_ebeln IS INITIAL.
+    MESSAGE TEXT-002 TYPE 'E'.
+  ENDIF.
+
+  "--> Validating Purchasing Organization.
+  IF s_ekorg IS NOT INITIAL.
+    SELECT ekorg FROM t024e
+    INTO TABLE @DATA(check_ekorg)
+    WHERE ekorg IN @s_ekorg.
+
+    IF check_ekorg IS INITIAL.
+      MESSAGE TEXT-003 TYPE 'E'.
+    ENDIF.
+  ENDIF.
+
+  "--> Fetch Detail Based on selection screen detail.
+
+START-OF-SELECTION.
+  SELECT ekko~ebeln,ekko~aedat,ekko~ekorg,         "#EC CI_NO_TRANSFORM
+         ekko~ekgrp,ekko~lifnr,ekko~waers,
+         lfa1~name1
+  FROM ekko
+  LEFT OUTER JOIN lfa1 ON ekko~lifnr = lfa1~lifnr
+  WHERE ekko~ebeln IN @s_ebeln AND
+        ekko~ekorg IN @s_ekorg AND
+        ekko~aedat IN @s_aedat
+  INTO TABLE @lt_ekko.
+
+  IF lt_ekko IS NOT INITIAL.
+    PERFORM get_data.                "--> get the ASN report Related Details
+    PERFORM process_data.            "--> Prepare the final ASN related result.
+    PERFORM display_data.            "--> Display the ASN detail in ALV formart.
+
+  ELSE.
+    MESSAGE TEXT-004 TYPE 'E'.
+  ENDIF.
+*&---------------------------------------------------------------------*
+*& Form get_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_data .
+  PERFORM get_asn_grn_data.
+  PERFORM get_miro_data.
+  PERFORM get_ses_data.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form process_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM process_data .
+
+  IF lt_ekko IS NOT INITIAL.
+    LOOP AT lt_ekko INTO DATA(ls_ekko).
+      LOOP AT lt_asn_grn INTO DATA(ls_asn_grn).
+        IF  ls_asn_grn-ebeln EQ ls_ekko-ebeln.
+
+          ls_asn_final-ebeln = ls_ekko-ebeln.                                                         "--> Purchasing Document Number
+          ls_asn_final-ekorg = ls_ekko-ekorg.                                                         "--> Purchasing Organization
+          ls_asn_final-ekgpr = ls_ekko-ekgrp.                                                         "--> Purchasing Group
+          ls_asn_final-lifnr = ls_ekko-lifnr.                                                         "--> Supplier
+          ls_asn_final-aedat = ls_ekko-aedat.                                                         "--> Creation Date Of Purchasing Document
+          ls_asn_final-name1 = ls_ekko-name1.                                                         "--> Supplier Name
+          ls_asn_final-waers = ls_ekko-waers.                                                         "--> Currency
+          ls_asn_final-ebelp = ls_asn_grn-ebelp.                                                      "--> Purchasing Item
+
+          IF ls_asn_grn-vbeln_st IS NOT INITIAL .                                                     "--> ASN no /SES No & ASN /SES Entry Date
+            ls_asn_final-vbeln_st   = ls_asn_grn-vbeln_st.
+            ls_asn_final-asn_date_e = ls_asn_grn-budat.
+            ls_asn_final-asn_qty    = ls_asn_grn-menge.                                                   "--> ASN Qty
+            ls_asn_final-gr_qty     = ls_asn_grn-menge.                                                   "--> GR Qty
+          ELSE.
+            READ TABLE lt_ses INTO DATA(ls_ses) WITH  KEY ebeln = ls_asn_grn-ebeln
+                                                          lfbnr = ls_asn_grn-lfbnr BINARY SEARCH.
+            IF ls_ses IS NOT INITIAL.
+              ls_asn_final-vbeln_st   = ls_ses-belnr.
+              ls_asn_final-asn_date_e = ls_ses-budat.
+              ls_asn_final-asn_qty    = ls_ses-menge.                                                   "--> ASN Qty
+              ls_asn_final-gr_qty     = ls_ses-menge.                                                   "--> GR Qty
+            ENDIF.
+          ENDIF.
+
+          ls_asn_final-grn_no      = ls_asn_grn-belnr.                                                   "--> GRN No.
+          ls_asn_final-grn_date_p  = ls_asn_grn-budat.                                                   "--> GRN Posting Date
+          ls_asn_final-grn_date_e  = ls_asn_grn-cpudt.                                                   "--> GRN Entry Date
+          ls_asn_final-bwart       = ls_asn_grn-bwart.                                                   "--> Movement Type
+          ls_asn_final-grn_ref_doc = ls_asn_grn-lfbnr.                                                   "--> GRN Ref Document Number.
+          ls_asn_final-amount      = ls_asn_grn-wrbtr.                                                   "--> Amount
+          ls_asn_final-ref_inv_no  = ls_asn_grn-xblnr.                                                   "--> Reference Vendor Invoice No
+          ls_asn_final-inv_amnt_lc = ls_asn_grn-dmbtr.                                                  "--> Invoice amount LC
+
+          READ TABLE lt_miro INTO DATA(ls_miro) WITH KEY ebeln = ls_asn_grn-ebeln ebelp = ls_asn_grn-ebelp
+                                                         xblnr = ls_asn_grn-xblnr matnr = ls_asn_grn-matnr.
+          IF ls_miro IS NOT INITIAL.
+            ls_asn_final-miro_no     = ls_miro-belnr.                                                  "--> MIRO NO.
+            ls_asn_final-miro_date_p = ls_miro-budat.                                                  "--> MIRO posting Date
+            ls_asn_final-miro_date_e = ls_miro-cpudt.                                                  "--> MIRO entry Date
+            ls_asn_final-miro_value  = ls_miro-wrbtr.                                                  "--> MIRO Value
+          ENDIF.
+
+          APPEND ls_asn_final TO lt_asn_final.
+        ENDIF.
+        CLEAR :ls_asn_grn,ls_ses,ls_miro,ls_asn_final.
+      ENDLOOP.
+      CLEAR ls_ekko.
+    ENDLOOP.
+
+  ENDIF.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form display_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_data .
+  PERFORM get_all_catalogs.                         "--> Prepare the Catalog for display formart.
+  PERFORM display_alv_grid_display.                 "--> Display The final Result.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_asn_grn_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_asn_grn_data .
+  IF  lt_ekko IS NOT INITIAL .
+    SELECT ebeln,ebelp,vgabe,belnr,budat,
+           bwart,menge,dmbtr,wrbtr,xblnr,lfbnr,matnr,cpudt,vbeln_st
+    FROM ekbe
+    FOR ALL ENTRIES IN @lt_ekko                    "#EC CI_NO_TRANSFORM
+    WHERE ebeln = @lt_ekko-ebeln AND
+          vgabe = '1'
+    INTO TABLE @lt_asn_grn.
+  ENDIF.
+
+  SORT lt_asn_grn BY ebeln ebelp xblnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_miro_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_miro_data .
+
+  PERFORM: get_rbkp_data,
+           get_rseg_data.
+
+  LOOP AT lt_asn_grn INTO DATA(ls_asn_grn).
+    LOOP AT lt_rbkp INTO DATA(ls_rbkp).
+      IF  ls_rbkp-xblnr = ls_asn_grn-xblnr.
+        LOOP AT lt_rseg INTO DATA(ls_RSeg).
+          IF ls_rseg-belnr EQ ls_rbkp-belnr AND ls_rseg-matnr EQ ls_aSn_grn-matnr.
+
+            ls_miro-belnr = ls_rseg-belnr.
+            ls_miro-xblnr = ls_rbkp-xblnr.
+            ls_miro-buzei = ls_rseg-buzei.
+            ls_miro-ebeln = ls_rseg-ebeln.
+            ls_miro-ebelp = ls_rseg-ebelp.
+            ls_miro-matnr = ls_rseg-matnr.
+            ls_miro-wrbtr = ls_rseg-wrbtr.
+            ls_miro-budat = ls_rbkp-budat.
+            ls_miro-cpudt = ls_rbkp-cpudt.
+
+            APPEND ls_miro TO lt_miro.
+          ENDIF.
+          CLEAR: ls_rseg,ls_miro.
+        ENDLOOP.
+      ENDIF.
+      CLEAR ls_rbkp.
+    ENDLOOP.
+    CLEAR ls_asn_grn.
+  ENDLOOP.
+
+  SORT lt_miro BY ebeln ebelp xblnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_ses_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_ses_data .
+  IF lt_ekko IS NOT INITIAL.
+    SELECT ebeln,ebelp,vgabe,belnr,budat,menge,dmbtr,wrbtr,lfbnr         " #EC CI_NO_TRANSFORM
+    FROM ekbe
+    FOR ALL ENTRIES IN @lt_ekko
+    WHERE ebeln = @lt_ekko-ebeln AND
+          vgabe = '9'
+    INTO TABLE @lt_ses.
+  ENDIF.
+
+  SORT lt_ses BY ebeln ebelp lfbnr.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_rbkp_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_rbkp_data .
+  IF lt_asn_grn IS NOT INITIAL.
+    SELECT belnr,xblnr,budat,cpudt
+    FROM rbkp INTO TABLE @lt_rbkp
+    FOR ALL ENTRIES IN @lt_asn_grn
+    WHERE xblnr = @lt_asn_grn-xblnr.
+  ENDIF.
+
+  SORT lt_rbkp BY belnr.
+ENDFORM.
+*&---------------------------------------------------------------------*
+*& Form get_rseg_data
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_rseg_data .
+  IF lt_rbkp IS NOT INITIAL.
+    SELECT belnr,buzei,ebeln,ebelp,matnr,wrbtr
+    FROM rseg INTO TABLE @lt_rseg
+    FOR ALL ENTRIES IN @lt_rbkp
+    WHERE belnr = @lt_rbkp-belnr.
+  ENDIF.
+
+  SORT lt_rseg BY belnr ebelp.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form get_all_catalogs
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_all_catalogs .
+
+  CLEAR : fcat[].
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'EKORG'        'Purchasing Organization'                   '5'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'EKGPR'        'Purchasing Group'                          '5'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'LIFNR'        'Supplier'                                  '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'NAME1'        'Supplier Name'                             '40'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'EBELN'        'Purchase Order No.'                        '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'EBELP'        'Item'                                      '5'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'VBELN_ST'     'ASN no/SES No'                             '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'ASN_DATE_E'   'ASN/SES Entry Date'                        '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GRN_NO'       'GRN No'                                    '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GRN_DATE_P'   'GRN Posting Date'                          '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GRN_DATE_E'   'GRN Entry  Date'                           '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'BWART'        'Movement Type'                             '5'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GRN_REF_DOC'  'GRN Ref. Document'                         '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'AMOUNT'       'Amount'                                    '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'MIRO_NO'      'MIRO No'                                   '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'MIRO_DATE_P'  'MIRO Posting Date'                         '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'MIRO_DATE_E'  'MIRO Entry Date'                           '10'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'ASN_QTY'      'ASN Qty'                                   '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'GR_QTY'       'GR Qty'                                    '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'MIRO_VALUE'   'MIRO Value'                                '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'INV_AMNT_LC'  'Invoice amount LC'                         '15'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'REF_INV_NO'   'Reference Vendor Invoice No'               '20'.
+  PERFORM get_catalog USING 'LT_ASN_FINAL'   'WAERS'        'Currency'                                  '5'.
+ENDFORM.
+
+
+*&---------------------------------------------------------------------*
+*& Form  get_catalog
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM get_catalog  USING    VALUE(p1)
+                           VALUE(p2)
+                           VALUE(p3)
+                           VALUE(p4).
+  CLEAR :fcat.
+  fcat-tabname    = p1.
+  fcat-fieldname  = p2.
+  fcat-seltext_l  = p3.
+  fcat-outputlen  = p4.
+
+  APPEND fcat.
+ENDFORM.
+
+*&---------------------------------------------------------------------*
+*& Form display_alv_grid_display
+*&---------------------------------------------------------------------*
+*& text
+*&---------------------------------------------------------------------*
+*& -->  p1        text
+*& <--  p2        text
+*&---------------------------------------------------------------------*
+FORM display_alv_grid_display .
+  DATA: ls_layout TYPE slis_layout_alv.
+
+  CLEAR : ls_layout.
+  ls_layout-colwidth_optimize = 'X'.
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = sy-repid
+      is_layout          = ls_layout
+      it_fieldcat        = fcat[]
+      i_save             = 'A'
+    TABLES
+      t_outtab           = lt_asn_final.
+ENDFORM.
+
+
+
+
+
+"-----------------------------------------------------------------------------------------------change 3
